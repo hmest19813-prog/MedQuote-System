@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام عروض الأسعار - MedQuote Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-primary: #0a0f1e;
+  --bg-secondary: #0f1629;
+  --bg-card: #141c2e;
+  --bg-hover: #1a2438;
+  --border: #1e2d4a;
+  --border-light: #253352;
+  --accent-blue: #2563eb;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-purple: #8b5cf6;
+  --text-primary: #f0f4ff;
+  --text-secondary: #94a3b8;
+  --text-muted: #4a5a7a;
+  --gradient-blue: linear-gradient(135deg, #2563eb, #06b6d4);
+  --gradient-card: linear-gradient(135deg, #141c2e, #0f1629);
+  --shadow-glow: 0 0 30px rgba(37,99,235,0.15);
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.4);
+  --radius: 12px;
+  --radius-lg: 16px;
+  --font: 'IBM Plex Sans Arabic', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+body { font-family: var(--font); background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; direction: rtl; }
+#root { min-height: 100vh; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+
+/* Layout */
+.app-layout { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 260px; min-height: 100vh; background: var(--bg-secondary);
+  border-left: 1px solid var(--border); display: flex; flex-direction: column;
+  position: fixed; top: 0; right: 0; z-index: 100;
+  transition: transform 0.3s ease;
+}
+.sidebar.collapsed { transform: translateX(260px); }
+.main-content { flex: 1; margin-right: 260px; display: flex; flex-direction: column; min-height: 100vh; }
+.topbar {
+  height: 64px; background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; position: sticky; top: 0; z-index: 50;
+}
+.page-content { flex: 1; padding: 28px; overflow-x: hidden; }
+
+/* Sidebar */
+.sidebar-logo {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.logo-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--gradient-blue); display: flex; align-items: center; justify-content: center;
+  font-size: 20px; box-shadow: var(--shadow-glow);
+}
+.logo-text { font-size: 15px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+.logo-sub { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+
+.nav-section { padding: 12px 12px 4px; }
+.nav-label { font-size: 10px; color: var(--text-muted); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; padding: 0 8px 8px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: 8px; cursor: pointer; transition: all 0.2s; margin-bottom: 2px;
+  color: var(--text-secondary); font-size: 14px; font-weight: 500;
+  border: 1px solid transparent;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active {
+  background: rgba(37,99,235,0.15); color: #60a5fa;
+  border-color: rgba(37,99,235,0.3);
+}
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+.nav-badge {
+  margin-right: auto; background: var(--accent-blue); color: white;
+  font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600;
+}
+
+.sidebar-bottom {
+  margin-top: auto; padding: 16px; border-top: 1px solid var(--border);
+}
+.user-card {
+  display: flex; align-items: center; gap: 10px; padding: 10px;
+  border-radius: 8px; background: var(--bg-hover); cursor: pointer;
+}
+.user-avatar {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: var(--gradient-blue); display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px;
+}
+.user-name { font-size: 13px; font-weight: 600; }
+.user-role { font-size: 11px; color: var(--accent-cyan); }
+
+/* Cards */
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.card-glass {
+  background: rgba(20,28,46,0.8); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); backdrop-filter: blur(10px);
+}
+.stat-card {
+  padding: 20px; display: flex; flex-direction: column; gap: 4px;
+  position: relative; overflow: hidden;
+}
+.stat-card::before {
+  content: ''; position: absolute; top: 0; right: 0; width: 100%; height: 2px;
+}
+.stat-card.blue::before { background: var(--accent-blue); }
+.stat-card.cyan::before { background: var(--accent-cyan); }
+.stat-card.emerald::before { background: var(--accent-emerald); }
+.stat-card.amber::before { background: var(--accent-amber); }
+.stat-card.rose::before { background: var(--accent-rose); }
+
+.stat-icon { font-size: 28px; margin-bottom: 8px; }
+.stat-value { font-size: 28px; font-weight: 700; font-family: var(--font-mono); }
+.stat-label { font-size: 13px; color: var(--text-secondary); }
+.stat-change { font-size: 12px; margin-top: 4px; }
+.stat-change.up { color: var(--accent-emerald); }
+.stat-change.down { color: var(--accent-rose); }
+
+/* Grid */
+.grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+  border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: none; transition: all 0.2s; font-family: var(--font);
+  white-space: nowrap;
+}
+.btn-primary { background: var(--accent-blue); color: white; }
+.btn-primary:hover { background: #1d4ed8; box-shadow: 0 4px 12px rgba(37,99,235,0.4); }
+.btn-secondary { background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-light); }
+.btn-secondary:hover { background: var(--border); }
+.btn-danger { background: rgba(244,63,94,0.15); color: var(--accent-rose); border: 1px solid rgba(244,63,94,0.3); }
+.btn-danger:hover { background: rgba(244,63,94,0.25); }
+.btn-success { background: rgba(16,185,129,0.15); color: var(--accent-emerald); border: 1px solid rgba(16,185,129,0.3); }
+.btn-success:hover { background: rgba(16,185,129,0.25); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-lg { padding: 12px 24px; font-size: 15px; }
+.btn-icon { padding: 8px; }
+
+/* Forms */
+.form-group { margin-bottom: 16px; }
+.form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-control {
+  width: 100%; padding: 10px 14px; background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary);
+  font-size: 14px; font-family: var(--font); transition: all 0.2s;
+  direction: rtl;
+}
+.form-control:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+.form-control::placeholder { color: var(--text-muted); }
+textarea.form-control { resize: vertical; min-height: 80px; }
+select.form-control { cursor: pointer; }
+
+/* Tables */
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+thead tr { border-bottom: 1px solid var(--border); }
+th { padding: 10px 14px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-align: right; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+td { padding: 12px 14px; font-size: 13px; border-bottom: 1px solid rgba(30,45,74,0.5); }
+tr:hover td { background: var(--bg-hover); }
+tr:last-child td { border-bottom: none; }
+
+/* Badges */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-draft { background: rgba(148,163,184,0.15); color: #94a3b8; }
+.badge-sent { background: rgba(6,182,212,0.15); color: #06b6d4; }
+.badge-approved { background: rgba(16,185,129,0.15); color: #10b981; }
+.badge-rejected { background: rgba(244,63,94,0.15); color: #f43f5e; }
+.badge-converted { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.badge-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.badge-confirmed { background: rgba(16,185,129,0.15); color: #10b981; }
+.badge-processing { background: rgba(37,99,235,0.15); color: #60a5fa; }
+.badge-delivered { background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.badge-cancelled { background: rgba(244,63,94,0.15); color: #f43f5e; }
+.badge-admin { background: rgba(139,92,246,0.15); color: #8b5cf6; }
+.badge-employee { background: rgba(37,99,235,0.15); color: #60a5fa; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  backdrop-filter: blur(4px);
+}
+.modal {
+  background: var(--bg-card); border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg); width: 100%; max-width: 900px;
+  max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+.modal-header {
+  padding: 20px 24px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg-card); z-index: 1;
+}
+.modal-title { font-size: 17px; font-weight: 700; }
+.modal-body { padding: 24px; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-start; }
+
+/* Page header */
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-title { font-size: 22px; font-weight: 700; }
+.page-subtitle { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.breadcrumb span { cursor: pointer; }
+.breadcrumb span:hover { color: var(--accent-cyan); }
+
+/* Search & Filters */
+.search-bar { position: relative; }
+.search-bar input { padding-right: 40px; }
+.search-icon { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+.filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* Toast */
+.toast-container { position: fixed; top: 20px; left: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  padding: 12px 16px; border-radius: 10px; font-size: 13px; font-weight: 500;
+  display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  animation: slideIn 0.3s ease; min-width: 280px;
+}
+.toast-success { background: #064e3b; border: 1px solid #10b981; color: #6ee7b7; }
+.toast-error { background: #4c0519; border: 1px solid #f43f5e; color: #fda4af; }
+.toast-info { background: #1e3a5f; border: 1px solid #2563eb; color: #93c5fd; }
+@keyframes slideIn { from { opacity:0; transform:translateX(-20px); } to { opacity:1; transform:translateX(0); } }
+
+/* Auth */
+.auth-page {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 60% 20%, rgba(37,99,235,0.12) 0%, transparent 60%),
+              radial-gradient(ellipse at 20% 80%, rgba(6,182,212,0.08) 0%, transparent 50%),
+              var(--bg-primary);
+}
+.auth-card {
+  width: 100%; max-width: 420px; background: var(--bg-card);
+  border: 1px solid var(--border-light); border-radius: 20px;
+  padding: 40px; box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+}
+.auth-logo { text-align: center; margin-bottom: 32px; }
+.auth-logo-icon {
+  width: 64px; height: 64px; border-radius: 16px; background: var(--gradient-blue);
+  display: flex; align-items: center; justify-content: center; font-size: 28px;
+  margin: 0 auto 12px; box-shadow: 0 8px 24px rgba(37,99,235,0.4);
+}
+.auth-title { font-size: 22px; font-weight: 700; text-align: center; }
+.auth-subtitle { font-size: 13px; color: var(--text-secondary); text-align: center; margin-top: 4px; }
+
+/* Quotation Print */
+@media print {
+  body { background: white !important; color: #000 !important; }
+  .no-print { display: none !important; }
+  .print-area { display: block !important; }
+}
+.quote-preview {
+  background: white; color: #1a1a1a; padding: 40px; font-family: 'IBM Plex Sans Arabic', sans-serif;
+  max-width: 900px; margin: 0 auto; border-radius: 8px;
+  box-shadow: 0 4px 40px rgba(0,0,0,0.3);
+}
+.quote-preview table { width: 100%; border-collapse: collapse; }
+.quote-preview th { background: #1a3a6e; color: white; padding: 8px 12px; font-size: 12px; text-align: center; }
+.quote-preview td { padding: 7px 12px; font-size: 12px; border: 1px solid #ddd; text-align: center; }
+.quote-preview tr:nth-child(even) td { background: #f8faff; }
+
+/* Activity */
+.activity-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid rgba(30,45,74,0.5); }
+.activity-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.activity-time { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.tab { padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text-secondary); transition: all 0.2s; }
+.tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+.tab:hover:not(.active) { color: var(--text-primary); }
+
+/* Items table in quotation form */
+.items-table { width: 100%; border-collapse: collapse; }
+.items-table th { background: var(--bg-primary); padding: 8px; font-size: 11px; color: var(--text-muted); text-align: right; border: 1px solid var(--border); }
+.items-table td { padding: 6px; border: 1px solid var(--border); }
+.items-table input { background: var(--bg-secondary); border: none; color: var(--text-primary); padding: 6px 8px; width: 100%; font-family: var(--font); font-size: 13px; border-radius: 4px; }
+.items-table input:focus { outline: 1px solid var(--accent-blue); }
+
+/* Progress */
+.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+
+/* Loading */
+.spinner { width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 60px 20px; }
+.empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.empty-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); }
+.empty-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+/* Separator */
+.sep { height: 1px; background: var(--border); margin: 20px 0; }
+
+/* Chip */
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px; font-size: 12px; background: var(--bg-hover); border: 1px solid var(--border); }
+
+/* Topbar */
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-title { font-size: 16px; font-weight: 700; }
+
+/* Notification bell */
+.notif-btn { position: relative; }
+.notif-dot { position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; background: var(--accent-rose); border-radius: 50%; border: 2px solid var(--bg-secondary); }
+
+/* Summary box */
+.summary-box { background: var(--bg-primary); border-radius: 10px; padding: 16px; border: 1px solid var(--border); }
+.summary-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; }
+.summary-row.total { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 10px; font-size: 15px; font-weight: 700; color: var(--accent-cyan); }
+
+/* Chart wrapper */
+.chart-wrapper { padding: 20px; }
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .grid-4 { grid-template-columns: repeat(2,1fr); }
+  .grid-3 { grid-template-columns: 1fr 1fr; }
+  .grid-2-1 { grid-template-columns: 1fr; }
+}
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(260px); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { margin-right: 0; }
+  .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+}
+
+/* Divider with text */
+.divider-text { display: flex; align-items: center; gap: 10px; margin: 16px 0; }
+.divider-text::before, .divider-text::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.divider-text span { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Section Header */
+.section-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.section-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+
+/* Print styles */
+.print-quote { display: none; }
+@media print { .print-quote { display: block !important; } .no-print { display: none !important; } }
+
+/* Number input dir fix */
+input[type="number"] { direction: ltr; text-align: right; }
+
+/* Dropdown */
+.dropdown { position: relative; }
+.dropdown-menu {
+  position: absolute; top: 100%; right: 0; z-index: 200; min-width: 160px;
+  background: var(--bg-card); border: 1px solid var(--border-light);
+  border-radius: 10px; box-shadow: var(--shadow-card); margin-top: 4px;
+  overflow: hidden;
+}
+.dropdown-item { padding: 10px 14px; font-size: 13px; cursor: pointer; transition: background 0.15s; display: flex; align-items: center; gap: 8px; }
+.dropdown-item:hover { background: var(--bg-hover); }
+.dropdown-item.danger { color: var(--accent-rose); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const { useState, useEffect, useCallback, useRef, createContext, useContext, useMemo } = React;
+const { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } = Recharts;
+
+// ========================
+// CONTEXT & STATE
+// ========================
+const AppContext = createContext(null);
+
+const USERS_DB = [
+  { id: 1, username: 'admin', password: 'admin123', name: 'محمد جوابرة', role: 'admin', email: 'admin@medquote.com', phone: '0798802030', joinDate: '2024-01-01' },
+  { id: 2, username: 'sales1', password: 'sales123', name: 'أحمد الخالد', role: 'employee', email: 'ahmed@medquote.com', phone: '0791234567', joinDate: '2024-03-15' },
+  { id: 3, username: 'sales2', password: 'sales456', name: 'سارة المحمود', role: 'employee', email: 'sara@medquote.com', phone: '0797654321', joinDate: '2024-06-01' },
+];
+
+const INITIAL_QUOTATIONS = [
+  {
+    id: 1, number: 'QT-2026-001', customer: 'جامعة جدارا', attention: 'قسم المشتريات المحترمين', phone: '0799001122',
+    address: 'إربد - الأردن', date: '2026-05-05', reference: 'لوازم بحثية', currency: 'JOD',
+    status: 'approved', createdBy: 2, createdByName: 'أحمد الخالد',
+    notes: 'البضائع المعروضة ذات جودة عالية', terms: 'صلاحية العرض 60 يوم',
+    preparedBy: 'الدكتور محمد جوابرة', delivery: 'PROMPT', createdAt: '2026-05-05T10:00:00',
+    items: [
+      { id:1, name:'Pipette Tips Set (1000µl)', description:'', unit:'pk/500', qty:4, unitPrice:5, total:20, origin:'CHINA', delivery:'PROMPT', notes:'' },
+      { id:2, name:'Pipette Tips Set (200µl)', description:'', unit:'pk/1000', qty:1, unitPrice:4.8, total:4.8, origin:'CHINA', delivery:'PROMPT', notes:'' },
+      { id:3, name:'Screw Cap Glass Bottle 100ml', description:'', unit:'Each', qty:4, unitPrice:3.85, total:15.4, origin:'CHINA', delivery:'PROMPT', notes:'' },
+      { id:4, name:'Petri Dishes', description:'', unit:'pk/500', qty:30, unitPrice:33, total:990, origin:'CHINA', delivery:'PROMPT', notes:'' },
+      { id:5, name:'Mueller-Hinton agar', description:'', unit:'500gm', qty:4, unitPrice:39, total:156, origin:'CHINA', delivery:'PROMPT', notes:'' },
+    ],
+    subtotal: 1186.2, discountPct: 5, discountAmt: 59.31, grandTotal: 1126.89, taxPct: 16, taxAmt: 180.3, nettPrice: 1307.19,
+    archived: false,
+  },
+  {
+    id: 2, number: 'QT-2026-002', customer: 'جامعة اليرموك', attention: 'مختبرات الكيمياء', phone: '0788223344',
+    address: 'إربد - الأردن', date: '2026-05-08', reference: 'أجهزة مختبرية', currency: 'JOD',
+    status: 'sent', createdBy: 3, createdByName: 'سارة المحمود',
+    notes: '', terms: 'صلاحية العرض 30 يوم', preparedBy: 'سارة المحمود',
+    delivery: 'PROMPT', createdAt: '2026-05-08T14:00:00',
+    items: [
+      { id:1, name:'Ethanol', description:'', unit:'2.5lit', qty:4, unitPrice:14, total:56, origin:'HAYAT', delivery:'PROMPT', notes:'' },
+      { id:2, name:'Methanol', description:'', unit:'2.5lit', qty:4, unitPrice:14, total:56, origin:'HAYAT', delivery:'PROMPT', notes:'' },
+      { id:3, name:'Complete Set of Filtration Equipment', description:'', unit:'set', qty:1, unitPrice:265, total:265, origin:'CHINA', delivery:'PROMPT', notes:'' },
+    ],
+    subtotal: 377, discountPct: 0, discountAmt: 0, grandTotal: 377, taxPct: 16, taxAmt: 60.32, nettPrice: 437.32,
+    archived: false,
+  },
+  {
+    id: 3, number: 'QT-2026-003', customer: 'مستشفى الملك المسيح', attention: 'قسم الأبحاث', phone: '0799334455',
+    address: 'عمان - الأردن', date: '2026-05-10', reference: 'مستلزمات طبية', currency: 'JOD',
+    status: 'draft', createdBy: 2, createdByName: 'أحمد الخالد',
+    notes: '', terms: '', preparedBy: 'أحمد الخالد',
+    delivery: 'PROMPT', createdAt: '2026-05-10T09:00:00',
+    items: [
+      { id:1, name:'Sterile cotton Swabs', description:'', unit:'pk/100', qty:5, unitPrice:2.25, total:11.25, origin:'CHINA', delivery:'PROMPT', notes:'' },
+      { id:2, name:'Graduated Centrifuge Tubes (15 ml)', description:'', unit:'pk/50', qty:5, unitPrice:9.25, total:46.25, origin:'CHINA', delivery:'PROMPT', notes:'' },
+    ],
+    subtotal: 57.5, discountPct: 0, discountAmt: 0, grandTotal: 57.5, taxPct: 16, taxAmt: 9.2, nettPrice: 66.7,
+    archived: false,
+  },
+];
+
+const INITIAL_ORDERS = [
+  {
+    id: 1, number: 'ORD-2026-001', quotationId: 1, quotationNumber: 'QT-2026-001',
+    customer: 'جامعة جدارا', status: 'confirmed', total: 1307.19,
+    createdBy: 2, createdByName: 'أحمد الخالد', createdAt: '2026-05-06T11:00:00',
+    archived: false,
+  }
+];
+
+const INITIAL_LOGS = [
+  { id:1, userId:2, userName:'أحمد الخالد', action:'إنشاء عرض سعر', target:'QT-2026-001', createdAt:'2026-05-05T10:00:00' },
+  { id:2, userId:3, userName:'سارة المحمود', action:'إنشاء عرض سعر', target:'QT-2026-002', createdAt:'2026-05-08T14:00:00' },
+  { id:3, userId:2, userName:'أحمد الخالد', action:'تحويل لطلب', target:'ORD-2026-001', createdAt:'2026-05-06T11:00:00' },
+];
+
+// ========================
+// UTILS
+// ========================
+const fmt = (n, dec=2) => Number(n||0).toLocaleString('en-US', {minimumFractionDigits:dec, maximumFractionDigits:dec});
+const today = () => new Date().toISOString().slice(0,10);
+const now = () => new Date().toISOString();
+const nextQNum = (list) => { const n = list.length + 1; return `QT-2026-${String(n).padStart(3,'0')}`; };
+const nextONum = (list) => { const n = list.length + 1; return `ORD-2026-${String(n).padStart(3,'0')}`; };
+const timeAgo = (dt) => {
+  const diff = (Date.now() - new Date(dt)) / 60000;
+  if (diff < 60) return `منذ ${Math.floor(diff)} دقيقة`;
+  if (diff < 1440) return `منذ ${Math.floor(diff/60)} ساعة`;
+  return `منذ ${Math.floor(diff/1440)} يوم`;
+};
+const statusLabel = { draft:'مسودة', sent:'مُرسل', approved:'مُعتمد', rejected:'مرفوض', converted:'محوّل لطلب' };
+const orderStatusLabel = { pending:'معلق', confirmed:'مؤكد', processing:'قيد التنفيذ', delivered:'مُسلَّم', cancelled:'ملغي' };
+
+// ========================
+// TOAST
+// ========================
+function ToastContainer({toasts}) {
+  return React.createElement('div', {className:'toast-container'},
+    toasts.map(t => React.createElement('div', {key:t.id, className:`toast toast-${t.type}`},
+      React.createElement('span', null, t.type==='success'?'✓':t.type==='error'?'✕':'ℹ'),
+      t.msg
+    ))
+  );
+}
+
+// ========================
+// AUTH PAGE
+// ========================
+function AuthPage({onLogin}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = (e) => {
+    e && e.preventDefault();
+    setError('');
+    setLoading(true);
+    setTimeout(() => {
+      const user = USERS_DB.find(u => u.username === username && u.password === password);
+      if (user) { onLogin(user); }
+      else { setError('اسم المستخدم أو كلمة المرور غير صحيحة'); }
+      setLoading(false);
+    }, 600);
+  };
+
+  return React.createElement('div', {className:'auth-page'},
+    React.createElement('div', {className:'auth-card'},
+      React.createElement('div', {className:'auth-logo'},
+        React.createElement('div', {className:'auth-logo-icon'}, '🧪'),
+        React.createElement('div', {className:'auth-title'}, 'MedQuote Pro'),
+        React.createElement('div', {className:'auth-subtitle'}, 'نظام إدارة عروض الأسعار الطبية والعلمية'),
+      ),
+      React.createElement('div', {className:'form-group'},
+        React.createElement('label', {className:'form-label'}, 'اسم المستخدم'),
+        React.createElement('input', {className:'form-control', placeholder:'أدخل اسم المستخدم', value:username, onChange:e=>setUsername(e.target.value), onKeyDown:e=>e.key==='Enter'&&submit()})
+      ),
+      React.createElement('div', {className:'form-group'},
+        React.createElement('label', {className:'form-label'}, 'كلمة المرور'),
+        React.createElement('input', {type:'password', className:'form-control', placeholder:'أدخل كلمة المرور', value:password, onChange:e=>setPassword(e.target.value), onKeyDown:e=>e.key==='Enter'&&submit()})
+      ),
+      error && React.createElement('div', {style:{color:'#f43f5e',fontSize:13,marginBottom:12,textAlign:'center'}}, error),
+      React.createElement('button', {className:'btn btn-primary btn-lg', style:{width:'100%',justifyContent:'center'}, onClick:submit, disabled:loading},
+        loading ? React.createElement('div', {className:'spinner'}) : 'تسجيل الدخول'
+      ),
+      React.createElement('div', {className:'divider-text', style:{marginTop:24}},
+        React.createElement('span', null, 'بيانات تجريبية')
+      ),
+      React.createElement('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+        React.createElement('div', {className:'card', style:{padding:'10px 12px',cursor:'pointer'}, onClick:()=>{setUsername('admin');setPassword('admin123');}},
+          React.createElement('div', {style:{fontSize:11,color:'#8b5cf6',fontWeight:600}}, 'مدير'),
+          React.createElement('div', {style:{fontSize:12,marginTop:2}}, 'admin / admin123'),
+        ),
+        React.createElement('div', {className:'card', style:{padding:'10px 12px',cursor:'pointer'}, onClick:()=>{setUsername('sales1');setPassword('sales123');}},
+          React.createElement('div', {style:{fontSize:11,color:'#60a5fa',fontWeight:600}}, 'موظف'),
+          React.createElement('div', {style:{fontSize:12,marginTop:2}}, 'sales1 / sales123'),
+        )
+      )
+    )
+  );
+}
+
+// ========================
+// SIDEBAR
+// ========================
+function Sidebar({currentPage, setPage, user, onLogout}) {
+  const navItems = [
+    {label:'لوحة التحكم', icon:'📊', page:'dashboard'},
+    {label:'عروض الأسعار', icon:'📋', page:'quotations'},
+    {label:'إنشاء عرض سعر', icon:'➕', page:'new-quotation'},
+    {label:'الطلبات', icon:'📦', page:'orders'},
+    {label:'الأرشيف', icon:'🗄️', page:'archive'},
+    ...(user.role==='admin' ? [
+      {label:'المستخدمون', icon:'👥', page:'users'},
+      {label:'سجل النشاط', icon:'📝', page:'activity'},
+    ] : []),
+  ];
+
+  return React.createElement('div', {className:'sidebar'},
+    React.createElement('div', {className:'sidebar-logo'},
+      React.createElement('div', {className:'logo-icon'}, '🧪'),
+      React.createElement('div', null,
+        React.createElement('div', {className:'logo-text'}, 'MedQuote Pro'),
+        React.createElement('div', {className:'logo-sub'}, 'نظام عروض الأسعار'),
+      )
+    ),
+    React.createElement('div', {className:'nav-section'},
+      React.createElement('div', {className:'nav-label'}, 'القائمة الرئيسية'),
+      navItems.map(item =>
+        React.createElement('div', {key:item.page, className:`nav-item ${currentPage===item.page?'active':''}`, onClick:()=>setPage(item.page)},
+          React.createElement('span', {className:'nav-icon'}, item.icon),
+          item.label,
+          item.badge && React.createElement('span', {className:'nav-badge'}, item.badge),
+        )
+      )
+    ),
+    React.createElement('div', {className:'sidebar-bottom'},
+      React.createElement('div', {className:'user-card', onClick:onLogout},
+        React.createElement('div', {className:'user-avatar'}, user.name[0]),
+        React.createElement('div', null,
+          React.createElement('div', {className:'user-name'}, user.name),
+          React.createElement('div', {className:'user-role'}, user.role==='admin'?'مدير النظام':'موظف مبيعات'),
+        )
+      )
+    )
+  );
+}
+
+// ========================
+// TOPBAR
+// ========================
+function Topbar({page, user, notifCount, onToggleMobile}) {
+  const titles = {
+    dashboard:'لوحة التحكم', quotations:'عروض الأسعار', 'new-quotation':'إنشاء عرض سعر جديد',
+    orders:'الطلبات', archive:'الأرشيف', users:'إدارة المستخدمين', activity:'سجل النشاط',
+  };
+  return React.createElement('div', {className:'topbar'},
+    React.createElement('div', {className:'topbar-left'},
+      React.createElement('button', {className:'btn btn-secondary btn-icon', onClick:onToggleMobile, style:{display:'none',cursor:'pointer'}}, '☰'),
+      React.createElement('div', {className:'topbar-title'}, titles[page]||''),
+    ),
+    React.createElement('div', {className:'topbar-right'},
+      React.createElement('div', {className:'notif-btn'},
+        React.createElement('button', {className:'btn btn-secondary btn-icon'}, '🔔'),
+        notifCount > 0 && React.createElement('div', {className:'notif-dot'}),
+      ),
+      React.createElement('div', {style:{fontSize:13,color:'var(--text-secondary)'}},
+        React.createElement('span', {style:{color:'var(--text-muted)'}}, 'مرحباً، '),
+        user.name.split(' ')[0],
+      ),
+      React.createElement('div', {className:'badge', style:{background:user.role==='admin'?'rgba(139,92,246,0.2)':'rgba(37,99,235,0.2)',color:user.role==='admin'?'#8b5cf6':'#60a5fa'}},
+        user.role==='admin'?'مدير':'موظف'
+      ),
+    )
+  );
+}
+
+// ========================
+// DASHBOARD
+// ========================
+function Dashboard({quotations, orders, logs, user}) {
+  const myQuotes = user.role==='admin' ? quotations : quotations.filter(q=>q.createdBy===user.id);
+  const myOrders = user.role==='admin' ? orders : orders.filter(o=>o.createdBy===user.id);
+
+  const stats = [
+    {label:'إجمالي عروض الأسعار', value:myQuotes.length, icon:'📋', color:'blue', change:'+3 هذا الشهر'},
+    {label:'إجمالي الطلبات', value:myOrders.length, icon:'📦', color:'cyan', change:'+1 هذا الشهر'},
+    {label:'عروض معلقة', value:myQuotes.filter(q=>q.status==='sent').length, icon:'⏳', color:'amber', change:''},
+    {label:'عروض مُعتمدة', value:myQuotes.filter(q=>q.status==='approved').length, icon:'✅', color:'emerald', change:''},
+    {label:'إجمالي القيمة', value:`${fmt(myQuotes.reduce((s,q)=>s+q.nettPrice,0))} JOD`, icon:'💰', color:'purple'},
+  ];
+
+  const chartData = [
+    {month:'يناير', quotes:4, orders:2},
+    {month:'فبراير', quotes:6, orders:3},
+    {month:'مارس', quotes:8, orders:5},
+    {month:'أبريل', quotes:5, orders:4},
+    {month:'مايو', quotes:myQuotes.length, orders:myOrders.length},
+  ];
+
+  const statusData = [
+    {name:'مسودة', value:myQuotes.filter(q=>q.status==='draft').length, color:'#94a3b8'},
+    {name:'مُرسل', value:myQuotes.filter(q=>q.status==='sent').length, color:'#06b6d4'},
+    {name:'مُعتمد', value:myQuotes.filter(q=>q.status==='approved').length, color:'#10b981'},
+    {name:'مرفوض', value:myQuotes.filter(q=>q.status==='rejected').length, color:'#f43f5e'},
+  ].filter(d=>d.value>0);
+
+  const recentLogs = (user.role==='admin' ? logs : logs.filter(l=>l.userId===user.id)).slice(0,6);
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', null,
+        React.createElement('div', {className:'page-title'}, `أهلاً، ${user.name.split(' ')[0]} 👋`),
+        React.createElement('div', {className:'page-subtitle'}, `نظرة عامة على نشاطك — ${new Date().toLocaleDateString('ar-JO', {weekday:'long',year:'numeric',month:'long',day:'numeric'})}`),
+      )
+    ),
+
+    React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:14,marginBottom:20}},
+      stats.map((s,i) => React.createElement('div', {key:i, className:`card stat-card ${s.color}`},
+        React.createElement('div', {className:'stat-icon'}, s.icon),
+        React.createElement('div', {className:'stat-value'}, s.value),
+        React.createElement('div', {className:'stat-label'}, s.label),
+        s.change && React.createElement('div', {className:'stat-change up'}, s.change),
+      ))
+    ),
+
+    React.createElement('div', {className:'grid-2-1', style:{marginBottom:20}},
+      React.createElement('div', {className:'card'},
+        React.createElement('div', {className:'section-header'},
+          React.createElement('div', {className:'section-title'}, '📈 نشاط عروض الأسعار')
+        ),
+        React.createElement('div', {className:'chart-wrapper'},
+          React.createElement(ResponsiveContainer, {width:'100%', height:220},
+            React.createElement(BarChart, {data:chartData},
+              React.createElement(CartesianGrid, {strokeDasharray:'3 3', stroke:'#1e2d4a'}),
+              React.createElement(XAxis, {dataKey:'month', stroke:'#4a5a7a', fontSize:11}),
+              React.createElement(YAxis, {stroke:'#4a5a7a', fontSize:11}),
+              React.createElement(Tooltip, {contentStyle:{background:'#141c2e',border:'1px solid #1e2d4a',borderRadius:8,color:'#f0f4ff',fontSize:12}}),
+              React.createElement(Bar, {dataKey:'quotes', name:'عروض', fill:'#2563eb', radius:[4,4,0,0]}),
+              React.createElement(Bar, {dataKey:'orders', name:'طلبات', fill:'#06b6d4', radius:[4,4,0,0]}),
+            )
+          )
+        )
+      ),
+      React.createElement('div', {className:'card'},
+        React.createElement('div', {className:'section-header'},
+          React.createElement('div', {className:'section-title'}, '🥧 حالات العروض')
+        ),
+        React.createElement('div', {className:'chart-wrapper'},
+          statusData.length > 0 ?
+            React.createElement(ResponsiveContainer, {width:'100%', height:180},
+              React.createElement(PieChart, null,
+                React.createElement(Pie, {data:statusData, cx:'50%', cy:'50%', outerRadius:70, dataKey:'value', label:({name,value})=>`${name}: ${value}`},
+                  statusData.map((d,i) => React.createElement(Cell, {key:i, fill:d.color}))
+                ),
+                React.createElement(Tooltip, {contentStyle:{background:'#141c2e',border:'1px solid #1e2d4a',borderRadius:8,color:'#f0f4ff',fontSize:12}})
+              )
+            ) :
+            React.createElement('div', {className:'empty-state'},
+              React.createElement('div', {className:'empty-icon'}, '📊'),
+              React.createElement('div', {className:'empty-title'}, 'لا توجد بيانات'),
+            )
+        )
+      )
+    ),
+
+    React.createElement('div', {className:'grid-2'},
+      React.createElement('div', {className:'card'},
+        React.createElement('div', {className:'section-header'},
+          React.createElement('div', {className:'section-title'}, '📋 آخر عروض الأسعار')
+        ),
+        React.createElement('div', {className:'table-wrapper'},
+          React.createElement('table', null,
+            React.createElement('thead', null, React.createElement('tr', null,
+              ['رقم العرض','العميل','المبلغ','الحالة'].map(h => React.createElement('th', {key:h}, h))
+            )),
+            React.createElement('tbody', null,
+              myQuotes.slice(-5).reverse().map(q =>
+                React.createElement('tr', {key:q.id},
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12,color:'#60a5fa'}}, q.number)),
+                  React.createElement('td', null, q.customer),
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)'}}, `${fmt(q.nettPrice)} JOD`)),
+                  React.createElement('td', null, React.createElement('span', {className:`badge badge-${q.status}`}, statusLabel[q.status])),
+                )
+              )
+            )
+          )
+        )
+      ),
+      React.createElement('div', {className:'card'},
+        React.createElement('div', {className:'section-header'},
+          React.createElement('div', {className:'section-title'}, '🕐 سجل النشاط الأخير')
+        ),
+        React.createElement('div', {style:{padding:'0 16px'}},
+          recentLogs.length === 0 ?
+            React.createElement('div', {className:'empty-state', style:{padding:'30px'}},
+              React.createElement('div', {className:'empty-icon'}, '📝'),
+              React.createElement('div', {className:'empty-title'}, 'لا يوجد نشاط')
+            ) :
+            recentLogs.map(l =>
+              React.createElement('div', {key:l.id, className:'activity-item'},
+                React.createElement('div', {className:'activity-dot', style:{background:'#2563eb'}}),
+                React.createElement('div', null,
+                  React.createElement('div', {style:{fontSize:13}}, `${l.userName} — ${l.action}`),
+                  React.createElement('div', {style:{fontSize:12,color:'#60a5fa',marginTop:2}}, l.target),
+                  React.createElement('div', {className:'activity-time'}, timeAgo(l.createdAt)),
+                )
+              )
+            )
+        )
+      )
+    )
+  );
+}
+
+// ========================
+// STATUS BADGE
+// ========================
+function StatusBadge({status, type='quote'}) {
+  const label = type==='order' ? orderStatusLabel[status] : statusLabel[status];
+  return React.createElement('span', {className:`badge badge-${status}`}, label || status);
+}
+
+// ========================
+// QUOTATION FORM
+// ========================
+function QuotationForm({initial, user, onSave, onCancel, mode='create'}) {
+  const emptyItem = () => ({id:Date.now(), name:'', description:'', unit:'', qty:1, unitPrice:0, total:0, origin:'', delivery:'PROMPT', notes:''});
+  const [form, setForm] = useState(initial || {
+    customer:'', attention:'', phone:'', address:'', date:today(),
+    reference:'', currency:'JOD', notes:'', terms:'صلاحية العرض لمدة 60 يوم من تاريخه\nالأجهزة مكفولة لمدة سنة كفالة مصنعية\nالسعر بالدينار الأردني\nضريبة المبيعات غير مشمولة (16%)',
+    preparedBy: user.name, delivery:'PROMPT', discountPct:5, taxPct:16,
+    items:[emptyItem()],
+  });
+
+  const updateField = (k,v) => setForm(p=>({...p,[k]:v}));
+  const updateItem = (idx,k,v) => {
+    setForm(p => {
+      const items = [...p.items];
+      items[idx] = {...items[idx], [k]:v};
+      if(k==='qty'||k==='unitPrice') items[idx].total = (parseFloat(items[idx].qty)||0)*(parseFloat(items[idx].unitPrice)||0);
+      return {...p, items};
+    });
+  };
+  const addItem = () => setForm(p=>({...p, items:[...p.items, emptyItem()]}));
+  const removeItem = (idx) => setForm(p=>({...p, items:p.items.filter((_,i)=>i!==idx)}));
+
+  const subtotal = form.items.reduce((s,i)=>s+(parseFloat(i.total)||0),0);
+  const discAmt = subtotal * (parseFloat(form.discountPct)||0) / 100;
+  const grandTotal = subtotal - discAmt;
+  const taxAmt = grandTotal * (parseFloat(form.taxPct)||0) / 100;
+  const nettPrice = grandTotal + taxAmt;
+
+  const save = (status) => {
+    if(!form.customer.trim()) { alert('يرجى إدخال اسم العميل'); return; }
+    onSave({...form, subtotal, discountAmt:discAmt, grandTotal, taxAmt, nettPrice, status});
+  };
+
+  const ColHeader = (label) => React.createElement('th', null, label);
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'grid-2', style:{marginBottom:16}},
+      React.createElement('div', {className:'card', style:{padding:20}},
+        React.createElement('div', {style:{fontSize:13,fontWeight:700,marginBottom:12,color:'var(--accent-cyan)'}}, '📋 بيانات العميل'),
+        React.createElement('div', {className:'grid-2'},
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'اسم الجهة / العميل *'),
+            React.createElement('input', {className:'form-control', value:form.customer, onChange:e=>updateField('customer',e.target.value), placeholder:'مثال: جامعة جدارا'})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'عناية'),
+            React.createElement('input', {className:'form-control', value:form.attention, onChange:e=>updateField('attention',e.target.value), placeholder:'قسم المشتريات المحترمين'})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'رقم الهاتف'),
+            React.createElement('input', {className:'form-control', value:form.phone, onChange:e=>updateField('phone',e.target.value), dir:'ltr', placeholder:'07XXXXXXXX'})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'العنوان'),
+            React.createElement('input', {className:'form-control', value:form.address, onChange:e=>updateField('address',e.target.value), placeholder:'المدينة - الدولة'})
+          ),
+        ),
+      ),
+      React.createElement('div', {className:'card', style:{padding:20}},
+        React.createElement('div', {style:{fontSize:13,fontWeight:700,marginBottom:12,color:'var(--accent-cyan)'}}, '🗂 تفاصيل العرض'),
+        React.createElement('div', {className:'grid-2'},
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'التاريخ'),
+            React.createElement('input', {type:'date', className:'form-control', value:form.date, onChange:e=>updateField('date',e.target.value), dir:'ltr'})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'رقم المرجع'),
+            React.createElement('input', {className:'form-control', value:form.reference, onChange:e=>updateField('reference',e.target.value), placeholder:'لوازم بحثية'})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'العملة'),
+            React.createElement('select', {className:'form-control', value:form.currency, onChange:e=>updateField('currency',e.target.value), dir:'ltr'},
+              ['JOD','USD','EUR','SAR'].map(c => React.createElement('option', {key:c, value:c}, c))
+            )
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, 'أُعِدَّ بواسطة'),
+            React.createElement('input', {className:'form-control', value:form.preparedBy, onChange:e=>updateField('preparedBy',e.target.value)})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, `خصم (%)`),
+            React.createElement('input', {type:'number', className:'form-control', value:form.discountPct, onChange:e=>updateField('discountPct',e.target.value), min:0, max:100, dir:'ltr'})
+          ),
+          React.createElement('div', {className:'form-group'},
+            React.createElement('label', {className:'form-label'}, `ضريبة المبيعات (%)`),
+            React.createElement('input', {type:'number', className:'form-control', value:form.taxPct, onChange:e=>updateField('taxPct',e.target.value), min:0, dir:'ltr'})
+          ),
+        ),
+      )
+    ),
+
+    React.createElement('div', {className:'card', style:{marginBottom:16}},
+      React.createElement('div', {className:'section-header'},
+        React.createElement('div', {className:'section-title'}, '📦 جدول المنتجات'),
+        React.createElement('button', {className:'btn btn-secondary btn-sm', onClick:addItem}, '+ إضافة صنف'),
+      ),
+      React.createElement('div', {style:{padding:16, overflowX:'auto'}},
+        React.createElement('table', {className:'items-table'},
+          React.createElement('thead', null, React.createElement('tr', null,
+            ['#','اسم المنتج','الوصف','الوحدة','الكمية','سعر الوحدة','الإجمالي','المنشأ','التوصيل','ملاحظات',''].map(ColHeader)
+          )),
+          React.createElement('tbody', null,
+            form.items.map((item, idx) =>
+              React.createElement('tr', {key:item.id},
+                React.createElement('td', {style:{textAlign:'center',color:'var(--text-muted)',width:30}}, idx+1),
+                React.createElement('td', {style:{minWidth:160}}, React.createElement('input', {value:item.name, onChange:e=>updateItem(idx,'name',e.target.value), placeholder:'اسم المنتج'})),
+                React.createElement('td', {style:{minWidth:120}}, React.createElement('input', {value:item.description, onChange:e=>updateItem(idx,'description',e.target.value), placeholder:'وصف اختياري'})),
+                React.createElement('td', {style:{width:80}}, React.createElement('input', {value:item.unit, onChange:e=>updateItem(idx,'unit',e.target.value), placeholder:'pk/500'})),
+                React.createElement('td', {style:{width:60}}, React.createElement('input', {type:'number', value:item.qty, onChange:e=>updateItem(idx,'qty',e.target.value), min:1})),
+                React.createElement('td', {style:{width:90}}, React.createElement('input', {type:'number', value:item.unitPrice, onChange:e=>updateItem(idx,'unitPrice',e.target.value), min:0, step:0.01})),
+                React.createElement('td', {style:{width:90, color:'var(--accent-cyan)', fontFamily:'var(--font-mono)', textAlign:'right', padding:'6px 10px'}}, fmt(item.total)),
+                React.createElement('td', {style:{width:80}}, React.createElement('input', {value:item.origin, onChange:e=>updateItem(idx,'origin',e.target.value), placeholder:'CHINA'})),
+                React.createElement('td', {style:{width:80}}, React.createElement('input', {value:item.delivery, onChange:e=>updateItem(idx,'delivery',e.target.value), placeholder:'PROMPT'})),
+                React.createElement('td', {style:{width:80}}, React.createElement('input', {value:item.notes, onChange:e=>updateItem(idx,'notes',e.target.value)})),
+                React.createElement('td', {style:{width:32}},
+                  React.createElement('button', {className:'btn btn-danger btn-icon btn-sm', onClick:()=>removeItem(idx), title:'حذف'}, '✕')
+                ),
+              )
+            )
+          )
+        )
+      ),
+      React.createElement('div', {style:{display:'flex', justifyContent:'flex-start', padding:'0 16px 16px', gap:16}},
+        React.createElement('div', {className:'summary-box', style:{minWidth:280}},
+          [
+            ['المجموع الفرعي', `${fmt(subtotal)} ${form.currency}`],
+            [`خصم (${form.discountPct}%)`, `- ${fmt(discAmt)} ${form.currency}`],
+            ['إجمالي بعد الخصم', `${fmt(grandTotal)} ${form.currency}`],
+            [`ضريبة المبيعات (${form.taxPct}%)`, `${fmt(taxAmt)} ${form.currency}`],
+          ].map(([l,v]) =>
+            React.createElement('div', {key:l, className:'summary-row'},
+              React.createElement('span', {style:{color:'var(--text-secondary)'}}, l),
+              React.createElement('span', {style:{fontFamily:'var(--font-mono)'}}, v),
+            )
+          ),
+          React.createElement('div', {className:'summary-row total'},
+            React.createElement('span', null, 'السعر الصافي'),
+            React.createElement('span', {style:{fontFamily:'var(--font-mono)'}}, `${fmt(nettPrice)} ${form.currency}`),
+          )
+        )
+      )
+    ),
+
+    React.createElement('div', {className:'grid-2', style:{marginBottom:16}},
+      React.createElement('div', {className:'form-group', style:{marginBottom:0}},
+        React.createElement('label', {className:'form-label'}, 'ملاحظات'),
+        React.createElement('textarea', {className:'form-control', value:form.notes, onChange:e=>updateField('notes',e.target.value), rows:3})
+      ),
+      React.createElement('div', {className:'form-group', style:{marginBottom:0}},
+        React.createElement('label', {className:'form-label'}, 'الشروط والأحكام'),
+        React.createElement('textarea', {className:'form-control', value:form.terms, onChange:e=>updateField('terms',e.target.value), rows:3})
+      )
+    ),
+
+    React.createElement('div', {style:{display:'flex', gap:10}},
+      React.createElement('button', {className:'btn btn-primary', onClick:()=>save('sent')}, '📤 حفظ وإرسال'),
+      React.createElement('button', {className:'btn btn-secondary', onClick:()=>save('draft')}, '💾 حفظ كمسودة'),
+      onCancel && React.createElement('button', {className:'btn btn-secondary', onClick:onCancel}, 'إلغاء'),
+    )
+  );
+}
+
+// ========================
+// QUOTATION PREVIEW (PDF)
+// ========================
+function QuotePreview({quote, onClose}) {
+  const printQuote = () => {
+    const content = document.getElementById('print-content').innerHTML;
+    const win = window.open('', '_blank');
+    win.document.write(`<html dir="rtl"><head><meta charset="UTF-8"><title>عرض سعر ${quote.number}</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>body{font-family:'IBM Plex Sans Arabic',Arial,sans-serif;color:#1a1a1a;direction:rtl;margin:0;padding:20px;background:white;}
+    table{width:100%;border-collapse:collapse;}th{background:#1a3a6e;color:white;padding:8px 10px;font-size:11px;text-align:center;}
+    td{padding:6px 10px;font-size:11px;border:1px solid #ccc;text-align:center;}tr:nth-child(even)td{background:#f5f8ff;}
+    .header-table td{border:none;padding:4px 8px;font-size:12px;}.total-box{background:#f0f4ff;border:2px solid #1a3a6e;padding:12px 20px;border-radius:8px;display:inline-block;min-width:280px;}</style>
+    </head><body>${content}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(()=>{ win.print(); }, 500);
+  };
+
+  const rows = quote.items || [];
+
+  return React.createElement('div', {className:'modal-overlay', onClick:onClose},
+    React.createElement('div', {className:'modal', style:{maxWidth:960}, onClick:e=>e.stopPropagation()},
+      React.createElement('div', {className:'modal-header'},
+        React.createElement('div', {className:'modal-title'}, `معاينة عرض السعر — ${quote.number}`),
+        React.createElement('div', {style:{display:'flex',gap:8}},
+          React.createElement('button', {className:'btn btn-primary btn-sm', onClick:printQuote}, '🖨️ طباعة / PDF'),
+          React.createElement('button', {className:'btn btn-secondary btn-sm', onClick:onClose}, '✕ إغلاق'),
+        )
+      ),
+      React.createElement('div', {className:'modal-body'},
+        React.createElement('div', {id:'print-content'},
+          React.createElement('div', {style:{border:'3px solid #1a3a6e',borderRadius:8,overflow:'hidden'}},
+            // Header
+            React.createElement('div', {style:{background:'#1a3a6e',color:'white',padding:'16px 24px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+              React.createElement('div', null,
+                React.createElement('div', {style:{fontSize:22,fontWeight:700}}, 'المؤسسة العربية للمستلزمات الطبية والعلمية'),
+                React.createElement('div', {style:{fontSize:13,marginTop:4,opacity:0.85}}, 'Arab Foundation for Medical & Scientific Supplies'),
+              ),
+              React.createElement('div', {style:{textAlign:'center'}},
+                React.createElement('div', {style:{fontSize:14,fontWeight:700,background:'rgba(255,255,255,0.2)',padding:'6px 20px',borderRadius:6}}, 'عرض أسعار — Offer'),
+              ),
+              React.createElement('div', {style:{textAlign:'left',fontSize:12}},
+                React.createElement('div', null, `رقم العرض: ${quote.number}`),
+                React.createElement('div', null, `التاريخ: ${quote.date}`),
+                React.createElement('div', null, `العملة: ${quote.currency}`),
+              ),
+            ),
+            // Customer info
+            React.createElement('div', {style:{background:'#eef2ff',padding:'12px 24px',display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12,fontSize:13}},
+              React.createElement('div', null,
+                React.createElement('span', {style:{fontWeight:600,color:'#1a3a6e'}}, 'السادة: '), quote.customer
+              ),
+              React.createElement('div', null,
+                React.createElement('span', {style:{fontWeight:600,color:'#1a3a6e'}}, 'عناية: '), quote.attention
+              ),
+              React.createElement('div', null,
+                React.createElement('span', {style:{fontWeight:600,color:'#1a3a6e'}}, 'رقم المرجع: '), quote.reference
+              ),
+            ),
+            // Table
+            React.createElement('div', {style:{padding:'0 0 0 0'}},
+              React.createElement('table', null,
+                React.createElement('thead', null,
+                  React.createElement('tr', null,
+                    ['No.','ITEM','UNIT','QTY','Unit Price','Total Price','ORIGIN','DELIVERY','NOTES'].map(h =>
+                      React.createElement('th', {key:h, style:{fontSize:11}}, h)
+                    )
+                  )
+                ),
+                React.createElement('tbody', null,
+                  rows.map((item, idx) =>
+                    React.createElement('tr', {key:item.id},
+                      React.createElement('td', null, idx+1),
+                      React.createElement('td', {style:{textAlign:'right',fontWeight:500}}, item.name),
+                      React.createElement('td', null, item.unit),
+                      React.createElement('td', null, item.qty),
+                      React.createElement('td', null, fmt(item.unitPrice)),
+                      React.createElement('td', {style:{fontWeight:600,color:'#1a3a6e'}}, fmt(item.total)),
+                      React.createElement('td', null, item.origin||'—'),
+                      React.createElement('td', null, item.delivery||'PROMPT'),
+                      React.createElement('td', null, item.notes||''),
+                    )
+                  ),
+                  React.createElement('tr', {style:{borderTop:'2px solid #1a3a6e'}},
+                    React.createElement('td', {colSpan:5, style:{textAlign:'left',fontWeight:700,background:'#f0f4ff'}},'Sub Total المجموع الفرعي'),
+                    React.createElement('td', {style:{fontWeight:700,color:'#1a3a6e',background:'#f0f4ff'}}, fmt(quote.subtotal)),
+                    React.createElement('td', {colSpan:3, style:{background:'#f0f4ff'}}),
+                  ),
+                  React.createElement('tr', null,
+                    React.createElement('td', {colSpan:5, style:{textAlign:'left',fontWeight:600}},`Discount خصم (${quote.discountPct||0}%)`),
+                    React.createElement('td', {style:{fontWeight:600,color:'#dc2626'}}, `- ${fmt(quote.discountAmt)}`),
+                    React.createElement('td', {colSpan:3}),
+                  ),
+                  React.createElement('tr', null,
+                    React.createElement('td', {colSpan:5, style:{textAlign:'left',fontWeight:700,background:'#f0f4ff'}},'Grand Total الإجمالي بعد الخصم'),
+                    React.createElement('td', {style:{fontWeight:700,color:'#1a3a6e',background:'#f0f4ff'}}, fmt(quote.grandTotal)),
+                    React.createElement('td', {colSpan:3, style:{background:'#f0f4ff'}}),
+                  ),
+                  React.createElement('tr', null,
+                    React.createElement('td', {colSpan:5, style:{textAlign:'left',fontWeight:600}},`Sales Tax ضريبة المبيعات (${quote.taxPct||16}%)`),
+                    React.createElement('td', {style:{fontWeight:600,color:'#d97706'}}, fmt(quote.taxAmt)),
+                    React.createElement('td', {colSpan:3}),
+                  ),
+                  React.createElement('tr', {style:{background:'#1a3a6e',color:'white'}},
+                    React.createElement('td', {colSpan:5, style:{textAlign:'left',fontWeight:700,fontSize:14}},'Nett Price السعر الصافي'),
+                    React.createElement('td', {style:{fontWeight:700,fontSize:14,color:'#fde68a'}}, `${fmt(quote.nettPrice)} ${quote.currency}`),
+                    React.createElement('td', {colSpan:3}),
+                  ),
+                )
+              )
+            ),
+            // Terms
+            quote.terms && React.createElement('div', {style:{padding:'12px 24px',background:'#fffbeb',borderTop:'1px solid #fde68a'}},
+              (quote.terms||'').split('\n').filter(Boolean).map((t,i) =>
+                React.createElement('div', {key:i, style:{fontSize:11,marginBottom:3}}, `* ${t}`)
+              )
+            ),
+            // Footer
+            React.createElement('div', {style:{padding:'12px 24px',background:'#f8faff',borderTop:'1px solid #ddd',display:'flex',justifyContent:'space-between',fontSize:12}},
+              React.createElement('div', null, `أُعِدَّ بواسطة: ${quote.preparedBy}`),
+              React.createElement('div', null, 'هاتف: 0798802030'),
+              React.createElement('div', {style:{color:'#1a3a6e',fontWeight:600}}, 'Reg No. 1450972'),
+            ),
+          )
+        )
+      )
+    )
+  );
+}
+
+// ========================
+// QUOTATIONS LIST
+// ========================
+function QuotationsList({quotations, setQuotations, orders, setOrders, user, addLog, addToast, setPage}) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [editingQuote, setEditingQuote] = useState(null);
+  const [previewQuote, setPreviewQuote] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(null);
+
+  const myQuotes = (user.role==='admin' ? quotations : quotations.filter(q=>q.createdBy===user.id))
+    .filter(q=>!q.archived);
+
+  const filtered = myQuotes.filter(q => {
+    const matchSearch = !search || q.number.toLowerCase().includes(search.toLowerCase()) || q.customer.includes(search);
+    const matchStatus = statusFilter==='all' || q.status===statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const updateStatus = (id, status) => {
+    setQuotations(p => p.map(q => q.id===id ? {...q, status} : q));
+    addLog(user, `تغيير حالة عرض السعر إلى ${statusLabel[status]}`, quotations.find(q=>q.id===id)?.number||'');
+    addToast('تم تحديث الحالة', 'success');
+    setShowDropdown(null);
+  };
+
+  const archiveQuote = (id) => {
+    setQuotations(p => p.map(q => q.id===id ? {...q, archived:true} : q));
+    addToast('تم أرشفة عرض السعر', 'success');
+    setShowDropdown(null);
+  };
+
+  const deleteQuote = (id) => {
+    if(!confirm('هل أنت متأكد من الحذف؟')) return;
+    setQuotations(p => p.filter(q => q.id!==id));
+    addToast('تم حذف عرض السعر', 'success');
+    setShowDropdown(null);
+  };
+
+  const convertToOrder = (quote) => {
+    const newOrder = {
+      id: Date.now(), number: nextONum(orders),
+      quotationId: quote.id, quotationNumber: quote.number,
+      customer: quote.customer, status: 'pending',
+      total: quote.nettPrice, items: quote.items,
+      createdBy: user.id, createdByName: user.name,
+      createdAt: now(), archived: false,
+      currency: quote.currency,
+    };
+    setOrders(p => [...p, newOrder]);
+    setQuotations(p => p.map(q => q.id===quote.id ? {...q, status:'converted'} : q));
+    addLog(user, 'تحويل عرض سعر لطلب', newOrder.number);
+    addToast(`تم إنشاء الطلب ${newOrder.number}`, 'success');
+    setShowDropdown(null);
+  };
+
+  const duplicateQuote = (quote) => {
+    const newQ = {
+      ...quote, id: Date.now(),
+      number: nextQNum(quotations.filter(q=>!q.archived)),
+      date: today(), status: 'draft',
+      createdBy: user.id, createdByName: user.name,
+      createdAt: now(),
+    };
+    setQuotations(p => [...p, newQ]);
+    addLog(user, 'نسخ عرض سعر', newQ.number);
+    addToast('تم نسخ عرض السعر', 'success');
+    setShowDropdown(null);
+  };
+
+  if(editingQuote) {
+    const saveEdit = (data) => {
+      setQuotations(p => p.map(q => q.id===editingQuote.id ? {...q, ...data, updatedAt:now()} : q));
+      addLog(user, 'تعديل عرض سعر', editingQuote.number);
+      addToast('تم حفظ التعديلات', 'success');
+      setEditingQuote(null);
+    };
+    return React.createElement('div', null,
+      React.createElement('div', {className:'page-header'},
+        React.createElement('div', null,
+          React.createElement('div', {className:'breadcrumb'},
+            React.createElement('span', {onClick:()=>setEditingQuote(null)}, 'عروض الأسعار'),
+            ' › تعديل '
+          ),
+          React.createElement('div', {className:'page-title'}, `تعديل: ${editingQuote.number}`),
+        )
+      ),
+      React.createElement(QuotationForm, {initial:editingQuote, user, onSave:saveEdit, onCancel:()=>setEditingQuote(null), mode:'edit'})
+    );
+  }
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', null,
+        React.createElement('div', {className:'page-title'}, 'عروض الأسعار'),
+        React.createElement('div', {className:'page-subtitle'}, `${filtered.length} عرض`),
+      ),
+      React.createElement('button', {className:'btn btn-primary', onClick:()=>setPage('new-quotation')}, '+ إنشاء عرض جديد'),
+    ),
+
+    React.createElement('div', {className:'card', style:{marginBottom:16}},
+      React.createElement('div', {style:{padding:16, display:'flex', gap:12, flexWrap:'wrap', alignItems:'center'}},
+        React.createElement('div', {className:'search-bar', style:{flex:1, minWidth:200}},
+          React.createElement('input', {className:'form-control', placeholder:'🔍 بحث برقم العرض أو اسم العميل...', value:search, onChange:e=>setSearch(e.target.value)})
+        ),
+        React.createElement('select', {className:'form-control', style:{width:160}, value:statusFilter, onChange:e=>setStatusFilter(e.target.value)},
+          React.createElement('option', {value:'all'}, 'جميع الحالات'),
+          Object.entries(statusLabel).map(([v,l]) => React.createElement('option', {key:v, value:v}, l))
+        ),
+      )
+    ),
+
+    React.createElement('div', {className:'card'},
+      filtered.length === 0 ?
+        React.createElement('div', {className:'empty-state'},
+          React.createElement('div', {className:'empty-icon'}, '📋'),
+          React.createElement('div', {className:'empty-title'}, 'لا توجد عروض أسعار'),
+          React.createElement('div', {className:'empty-sub'}, 'أنشئ عرض سعر جديد للبدء'),
+        ) :
+        React.createElement('div', {className:'table-wrapper'},
+          React.createElement('table', null,
+            React.createElement('thead', null, React.createElement('tr', null,
+              ['رقم العرض','العميل','المرجع','التاريخ','القيمة','الحالة','بواسطة','إجراءات'].map(h =>
+                React.createElement('th', {key:h}, h)
+              )
+            )),
+            React.createElement('tbody', null,
+              filtered.slice().reverse().map(q =>
+                React.createElement('tr', {key:q.id},
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12,color:'#60a5fa',cursor:'pointer'}, onClick:()=>setPreviewQuote(q)}, q.number)),
+                  React.createElement('td', {style:{fontWeight:500}}, q.customer),
+                  React.createElement('td', {style:{color:'var(--text-secondary)',fontSize:12}}, q.reference||'—'),
+                  React.createElement('td', {style:{fontSize:12,color:'var(--text-secondary)'}}, q.date),
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12}}, `${fmt(q.nettPrice)} ${q.currency}`)),
+                  React.createElement('td', null, React.createElement(StatusBadge, {status:q.status})),
+                  React.createElement('td', {style:{fontSize:12,color:'var(--text-secondary)'}}, q.createdByName),
+                  React.createElement('td', null,
+                    React.createElement('div', {style:{display:'flex',gap:4,position:'relative'}},
+                      React.createElement('button', {className:'btn btn-secondary btn-sm', title:'معاينة', onClick:()=>setPreviewQuote(q)}, '👁'),
+                      (user.role==='admin' || q.createdBy===user.id) && React.createElement('button', {className:'btn btn-secondary btn-sm', title:'تعديل', onClick:()=>setEditingQuote(q)}, '✏️'),
+                      React.createElement('div', {className:'dropdown'},
+                        React.createElement('button', {className:'btn btn-secondary btn-sm', onClick:()=>setShowDropdown(showDropdown===q.id?null:q.id)}, '⋮'),
+                        showDropdown===q.id && React.createElement('div', {className:'dropdown-menu'},
+                          React.createElement('div', {className:'dropdown-item', onClick:()=>duplicateQuote(q)}, '📋 نسخ العرض'),
+                          q.status==='approved' && React.createElement('div', {className:'dropdown-item', onClick:()=>convertToOrder(q)}, '📦 تحويل لطلب'),
+                          React.createElement('div', {className:'dropdown-item', onClick:()=>updateStatus(q.id,'sent')}, '📤 تعيين: مُرسل'),
+                          React.createElement('div', {className:'dropdown-item', onClick:()=>updateStatus(q.id,'approved')}, '✅ تعيين: مُعتمد'),
+                          React.createElement('div', {className:'dropdown-item', onClick:()=>updateStatus(q.id,'rejected')}, '❌ تعيين: مرفوض'),
+                          React.createElement('div', {className:'dropdown-item', onClick:()=>archiveQuote(q.id)}, '🗄️ أرشفة'),
+                          (user.role==='admin') && React.createElement('div', {className:'dropdown-item danger', onClick:()=>deleteQuote(q.id)}, '🗑️ حذف'),
+                        )
+                      )
+                    )
+                  ),
+                )
+              )
+            )
+          )
+        )
+    ),
+    previewQuote && React.createElement(QuotePreview, {quote:previewQuote, onClose:()=>setPreviewQuote(null)}),
+    showDropdown && React.createElement('div', {style:{position:'fixed',inset:0,zIndex:150}, onClick:()=>setShowDropdown(null)}),
+  );
+}
+
+// ========================
+// NEW QUOTATION PAGE
+// ========================
+function NewQuotation({quotations, setQuotations, user, addLog, addToast, setPage}) {
+  const save = (data) => {
+    const newQ = {
+      ...data, id: Date.now(),
+      number: nextQNum(quotations),
+      createdBy: user.id, createdByName: user.name,
+      createdAt: now(), archived: false,
+    };
+    setQuotations(p => [...p, newQ]);
+    addLog(user, 'إنشاء عرض سعر جديد', newQ.number);
+    addToast(`تم إنشاء العرض ${newQ.number}`, 'success');
+    setPage('quotations');
+  };
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', null,
+        React.createElement('div', {className:'breadcrumb'},
+          React.createElement('span', {onClick:()=>setPage('quotations')}, 'عروض الأسعار'), ' › إنشاء جديد'
+        ),
+        React.createElement('div', {className:'page-title'}, 'إنشاء عرض سعر جديد'),
+      )
+    ),
+    React.createElement(QuotationForm, {user, onSave:save, onCancel:()=>setPage('quotations')})
+  );
+}
+
+// ========================
+// ORDERS PAGE
+// ========================
+function OrdersPage({orders, setOrders, user, addLog, addToast}) {
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const myOrders = (user.role==='admin' ? orders : orders.filter(o=>o.createdBy===user.id))
+    .filter(o=>!o.archived);
+
+  const filtered = myOrders.filter(o => {
+    const matchSearch = !search || o.number.toLowerCase().includes(search.toLowerCase()) || o.customer.includes(search);
+    const matchStatus = statusFilter==='all' || o.status===statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const updateStatus = (id, status) => {
+    setOrders(p => p.map(o => o.id===id ? {...o, status} : o));
+    addLog(user, `تغيير حالة الطلب إلى ${orderStatusLabel[status]}`, orders.find(o=>o.id===id)?.number||'');
+    addToast('تم تحديث حالة الطلب', 'success');
+  };
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', null,
+        React.createElement('div', {className:'page-title'}, 'الطلبات'),
+        React.createElement('div', {className:'page-subtitle'}, `${filtered.length} طلب`),
+      ),
+    ),
+
+    React.createElement('div', {className:'grid-4', style:{marginBottom:16}},
+      [
+        {label:'إجمالي الطلبات', value:myOrders.length, color:'blue', icon:'📦'},
+        {label:'معلق', value:myOrders.filter(o=>o.status==='pending').length, color:'amber', icon:'⏳'},
+        {label:'مؤكد', value:myOrders.filter(o=>o.status==='confirmed').length, color:'cyan', icon:'✅'},
+        {label:'مُسلَّم', value:myOrders.filter(o=>o.status==='delivered').length, color:'emerald', icon:'🚚'},
+      ].map((s,i) =>
+        React.createElement('div', {key:i, className:`card stat-card ${s.color}`},
+          React.createElement('div', {className:'stat-icon'}, s.icon),
+          React.createElement('div', {className:'stat-value'}, s.value),
+          React.createElement('div', {className:'stat-label'}, s.label),
+        )
+      )
+    ),
+
+    React.createElement('div', {className:'card', style:{marginBottom:16}},
+      React.createElement('div', {style:{padding:16, display:'flex', gap:12}},
+        React.createElement('div', {style:{flex:1}},
+          React.createElement('input', {className:'form-control', placeholder:'🔍 بحث برقم الطلب أو اسم العميل...', value:search, onChange:e=>setSearch(e.target.value)})
+        ),
+        React.createElement('select', {className:'form-control', style:{width:180}, value:statusFilter, onChange:e=>setStatusFilter(e.target.value)},
+          React.createElement('option', {value:'all'}, 'جميع الحالات'),
+          Object.entries(orderStatusLabel).map(([v,l]) => React.createElement('option', {key:v, value:v}, l))
+        ),
+      )
+    ),
+
+    React.createElement('div', {className:'card'},
+      filtered.length === 0 ?
+        React.createElement('div', {className:'empty-state'},
+          React.createElement('div', {className:'empty-icon'}, '📦'),
+          React.createElement('div', {className:'empty-title'}, 'لا توجد طلبات'),
+          React.createElement('div', {className:'empty-sub'}, 'قم بتحويل عرض سعر مُعتمد إلى طلب'),
+        ) :
+        React.createElement('div', {className:'table-wrapper'},
+          React.createElement('table', null,
+            React.createElement('thead', null, React.createElement('tr', null,
+              ['رقم الطلب','عرض السعر','العميل','القيمة','الحالة','تاريخ الإنشاء','بواسطة','تغيير الحالة'].map(h =>
+                React.createElement('th', {key:h}, h)
+              )
+            )),
+            React.createElement('tbody', null,
+              filtered.slice().reverse().map(o =>
+                React.createElement('tr', {key:o.id},
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12,color:'#10b981'}}, o.number)),
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12,color:'#60a5fa'}}, o.quotationNumber)),
+                  React.createElement('td', {style:{fontWeight:500}}, o.customer),
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12}}, `${fmt(o.total)} ${o.currency||'JOD'}`)),
+                  React.createElement('td', null, React.createElement(StatusBadge, {status:o.status, type:'order'})),
+                  React.createElement('td', {style:{fontSize:12,color:'var(--text-secondary)'}}, new Date(o.createdAt).toLocaleDateString('ar-JO')),
+                  React.createElement('td', {style:{fontSize:12,color:'var(--text-secondary)'}}, o.createdByName),
+                  React.createElement('td', null,
+                    React.createElement('select', {
+                      className:'form-control', style:{padding:'4px 8px',fontSize:12,width:140},
+                      value:o.status,
+                      onChange:e=>updateStatus(o.id,e.target.value)
+                    },
+                      Object.entries(orderStatusLabel).map(([v,l]) =>
+                        React.createElement('option', {key:v, value:v}, l)
+                      )
+                    )
+                  ),
+                )
+              )
+            )
+          )
+        )
+    )
+  );
+}
+
+// ========================
+// ARCHIVE PAGE
+// ========================
+function ArchivePage({quotations, orders, user}) {
+  const [tab, setTab] = useState('quotes');
+  const [search, setSearch] = useState('');
+
+  const archivedQuotes = (user.role==='admin' ? quotations : quotations.filter(q=>q.createdBy===user.id))
+    .filter(q=>q.archived).filter(q => !search || q.number.includes(search) || q.customer.includes(search));
+
+  const archivedOrders = (user.role==='admin' ? orders : orders.filter(o=>o.createdBy===user.id))
+    .filter(o=>o.archived).filter(o => !search || o.number.includes(search) || o.customer.includes(search));
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', {className:'page-title'}, 'الأرشيف'),
+    ),
+    React.createElement('div', {className:'card', style:{marginBottom:16,padding:16}},
+      React.createElement('input', {className:'form-control', placeholder:'🔍 بحث في الأرشيف...', value:search, onChange:e=>setSearch(e.target.value)})
+    ),
+    React.createElement('div', {className:'tabs'},
+      React.createElement('div', {className:`tab ${tab==='quotes'?'active':''}`, onClick:()=>setTab('quotes')}, `عروض الأسعار (${archivedQuotes.length})`),
+      React.createElement('div', {className:`tab ${tab==='orders'?'active':''}`, onClick:()=>setTab('orders')}, `الطلبات (${archivedOrders.length})`),
+    ),
+    tab==='quotes' && React.createElement('div', {className:'card'},
+      archivedQuotes.length === 0 ?
+        React.createElement('div', {className:'empty-state'},
+          React.createElement('div', {className:'empty-icon'}, '🗄️'),
+          React.createElement('div', {className:'empty-title'}, 'لا توجد عروض أسعار مؤرشفة'),
+        ) :
+        React.createElement('div', {className:'table-wrapper'},
+          React.createElement('table', null,
+            React.createElement('thead', null, React.createElement('tr', null,
+              ['رقم العرض','العميل','التاريخ','القيمة','الحالة'].map(h => React.createElement('th', {key:h}, h))
+            )),
+            React.createElement('tbody', null,
+              archivedQuotes.map(q =>
+                React.createElement('tr', {key:q.id},
+                  React.createElement('td', null, React.createElement('span', {style:{fontFamily:'var(--font-mono)',fontSize:12,color:'#94a3b8'}}, q.number)),
+                  React.createElement('td', null, q.customer),
+                  React.createElement('td', {style:{fontSize:12}}, q.date),
+                  React.createElement('td', null, `${fmt(q.nettPrice)} ${q.currency}`),
+                  React.createElement('td', null, React.createElement(StatusBadge, {status:q.status})),
+                )
+              )
+            )
+          )
+        )
+    ),
+    tab==='orders' && React.createElement('div', {className:'card'},
+      archivedOrders.length === 0 ?
+        React.createElement('div', {className:'empty-state'},
+          React.createElement('div', {className:'empty-icon'}, '🗄️'),
+          React.createElement('div', {className:'empty-title'}, 'لا توجد طلبات مؤرشفة'),
+        ) :
+        React.createElement('div', {className:'table-wrapper'},
+          React.createElement('table', null,
+            React.createElement('thead', null, React.createElement('tr', null,
+              ['رقم الطلب','العميل','القيمة','الحالة'].map(h => React.createElement('th', {key:h}, h))
+            )),
+            React.createElement('tbody', null,
+              archivedOrders.map(o =>
+                React.createElement('tr', {key:o.id},
+                  React.createElement('td', null, o.number),
+                  React.createElement('td', null, o.customer),
+                  React.createElement('td', null, `${fmt(o.total)} JOD`),
+                  React.createElement('td', null, React.createElement(StatusBadge, {status:o.status, type:'order'})),
+                )
+              )
+            )
+          )
+        )
+    ),
+  );
+}
+
+// ========================
+// USERS PAGE (Admin only)
+// ========================
+function UsersPage({user, addToast}) {
+  const [users, setUsers] = useState(USERS_DB);
+  const [showForm, setShowForm] = useState(false);
+  const [newUser, setNewUser] = useState({username:'', password:'', name:'', email:'', role:'employee', phone:''});
+
+  const addUser = () => {
+    if(!newUser.username || !newUser.password || !newUser.name) { addToast('يرجى ملء جميع الحقول المطلوبة', 'error'); return; }
+    setUsers(p => [...p, {...newUser, id: Date.now(), joinDate: today()}]);
+    addToast('تم إضافة المستخدم', 'success');
+    setShowForm(false);
+    setNewUser({username:'', password:'', name:'', email:'', role:'employee', phone:''});
+  };
+
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', {className:'page-title'}, 'إدارة المستخدمين'),
+      React.createElement('button', {className:'btn btn-primary', onClick:()=>setShowForm(p=>!p)}, '+ إضافة مستخدم'),
+    ),
+
+    showForm && React.createElement('div', {className:'card', style:{padding:20, marginBottom:16}},
+      React.createElement('div', {style:{fontSize:14,fontWeight:700,marginBottom:16}}, 'إضافة مستخدم جديد'),
+      React.createElement('div', {style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}},
+        [
+          {label:'الاسم الكامل *', key:'name', placeholder:'محمد أحمد'},
+          {label:'اسم المستخدم *', key:'username', placeholder:'user123'},
+          {label:'كلمة المرور *', key:'password', placeholder:'••••••••'},
+          {label:'البريد الإلكتروني', key:'email', placeholder:'user@example.com'},
+          {label:'رقم الهاتف', key:'phone', placeholder:'07XXXXXXXX'},
+        ].map(f =>
+          React.createElement('div', {key:f.key, className:'form-group', style:{marginBottom:0}},
+            React.createElement('label', {className:'form-label'}, f.label),
+            React.createElement('input', {className:'form-control', placeholder:f.placeholder, value:newUser[f.key], onChange:e=>setNewUser(p=>({...p,[f.key]:e.target.value}))})
+          )
+        ),
+        React.createElement('div', {className:'form-group', style:{marginBottom:0}},
+          React.createElement('label', {className:'form-label'}, 'الصلاحية'),
+          React.createElement('select', {className:'form-control', value:newUser.role, onChange:e=>setNewUser(p=>({...p,role:e.target.value}))},
+            React.createElement('option', {value:'employee'}, 'موظف'),
+            React.createElement('option', {value:'admin'}, 'مدير'),
+          )
+        )
+      ),
+      React.createElement('div', {style:{display:'flex',gap:8,marginTop:12}},
+        React.createElement('button', {className:'btn btn-primary', onClick:addUser}, 'إضافة'),
+        React.createElement('button', {className:'btn btn-secondary', onClick:()=>setShowForm(false)}, 'إلغاء'),
+      )
+    ),
+
+    React.createElement('div', {className:'card'},
+      React.createElement('div', {className:'table-wrapper'},
+        React.createElement('table', null,
+          React.createElement('thead', null, React.createElement('tr', null,
+            ['#','الاسم','اسم المستخدم','البريد الإلكتروني','الهاتف','الصلاحية','تاريخ الانضمام'].map(h =>
+              React.createElement('th', {key:h}, h)
+            )
+          )),
+          React.createElement('tbody', null,
+            users.map((u,i) =>
+              React.createElement('tr', {key:u.id},
+                React.createElement('td', {style:{color:'var(--text-muted)'}}, i+1),
+                React.createElement('td', {style:{fontWeight:600}},
+                  React.createElement('div', {style:{display:'flex',alignItems:'center',gap:8}},
+                    React.createElement('div', {style:{width:30,height:30,borderRadius:6,background:'var(--gradient-blue)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:12}}, u.name[0]),
+                    u.name,
+                    u.id===user.id && React.createElement('span', {style:{fontSize:10,color:'#06b6d4',fontWeight:600}}, '(أنت)'),
+                  )
+                ),
+                React.createElement('td', {style:{fontFamily:'var(--font-mono)',fontSize:12}}, u.username),
+                React.createElement('td', {style:{fontSize:12,color:'var(--text-secondary)'}}, u.email),
+                React.createElement('td', {style:{fontFamily:'var(--font-mono)',fontSize:12}}, u.phone),
+                React.createElement('td', null, React.createElement('span', {className:`badge badge-${u.role}`}, u.role==='admin'?'مدير':'موظف')),
+                React.createElement('td', {style:{fontSize:12,color:'var(--text-secondary)'}}, u.joinDate),
+              )
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+// ========================
+// ACTIVITY LOG PAGE
+// ========================
+function ActivityPage({logs}) {
+  return React.createElement('div', null,
+    React.createElement('div', {className:'page-header'},
+      React.createElement('div', {className:'page-title'}, 'سجل النشاط'),
+      React.createElement('div', {className:'page-subtitle'}, `${logs.length} إجراء مسجل`),
+    ),
+    React.createElement('div', {className:'card'},
+      logs.length === 0 ?
+        React.createElement('div', {className:'empty-state'},
+          React.createElement('div', {className:'empty-icon'}, '📝'),
+          React.createElement('div', {className:'empty-title'}, 'لا يوجد نشاط مسجل'),
+        ) :
+        React.createElement('div', {style:{padding:'0 20px'}},
+          logs.slice().reverse().map(l =>
+            React.createElement('div', {key:l.id, className:'activity-item'},
+              React.createElement('div', {className:'activity-dot', style:{background:'#2563eb'}}),
+              React.createElement('div', {style:{flex:1}},
+                React.createElement('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+                  React.createElement('div', null,
+                    React.createElement('span', {style:{fontWeight:600}}, l.userName),
+                    React.createElement('span', {style:{color:'var(--text-secondary)',margin:'0 6px'}}, '—'),
+                    l.action,
+                  ),
+                  React.createElement('div', {className:'activity-time'}, timeAgo(l.createdAt)),
+                ),
+                l.target && React.createElement('div', {style:{fontSize:12,color:'#60a5fa',marginTop:2}}, l.target),
+              )
+            )
+          )
+        )
+    )
+  );
+}
+
+// ========================
+// MAIN APP
+// ========================
+function App() {
+  const [user, setUser] = useState(null);
+  const [page, setPage] = useState('dashboard');
+  const [quotations, setQuotations] = useState(INITIAL_QUOTATIONS);
+  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const [logs, setLogs] = useState(INITIAL_LOGS);
+  const [toasts, setToasts] = useState([]);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const addToast = useCallback((msg, type='info') => {
+    const id = Date.now();
+    setToasts(p => [...p, {id, msg, type}]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3000);
+  }, []);
+
+  const addLog = useCallback((u, action, target) => {
+    setLogs(p => [...p, {id:Date.now(), userId:u.id, userName:u.name, action, target, createdAt:now()}]);
+  }, []);
+
+  const logout = () => { setUser(null); setPage('dashboard'); };
+
+  if (!user) return React.createElement(AuthPage, {onLogin:setUser});
+
+  const pageProps = {quotations, setQuotations, orders, setOrders, user, addLog, addToast, setPage, logs};
+
+  const pages = {
+    dashboard: React.createElement(Dashboard, pageProps),
+    quotations: React.createElement(QuotationsList, pageProps),
+    'new-quotation': React.createElement(NewQuotation, pageProps),
+    orders: React.createElement(OrdersPage, pageProps),
+    archive: React.createElement(ArchivePage, pageProps),
+    users: user.role==='admin' ? React.createElement(UsersPage, {user, addToast}) : null,
+    activity: user.role==='admin' ? React.createElement(ActivityPage, {logs}) : null,
+  };
+
+  return React.createElement('div', {className:'app-layout'},
+    React.createElement(Sidebar, {currentPage:page, setPage, user, onLogout:logout}),
+    mobileOpen && React.createElement('div', {style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:99}, onClick:()=>setMobileOpen(false)}),
+    React.createElement('div', {className:'main-content'},
+      React.createElement(Topbar, {page, user, notifCount:1, onToggleMobile:()=>setMobileOpen(p=>!p)}),
+      React.createElement('div', {className:'page-content'},
+        pages[page] || React.createElement('div', {className:'empty-state'},
+          React.createElement('div', {className:'empty-icon'}, '🔒'),
+          React.createElement('div', {className:'empty-title'}, 'غير مصرح بالوصول'),
+        )
+      )
+    ),
+    React.createElement(ToastContainer, {toasts}),
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
