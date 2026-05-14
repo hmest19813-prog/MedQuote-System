@@ -892,7 +892,6 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
-    if (!user?.id) { toast('خطأ: لم يتم تحديد المستخدم، أعد تسجيل الدخول','error'); return; }
     setLoading(true);
     try {
       const payload = {
@@ -901,8 +900,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
         discount_amt: disc_amt.toFixed(3),
         tax_amt: tax_amt.toFixed(3),
         nett_price: nett.toFixed(3),
-        status, created_by: user.id,
-        prepared_by: user.full_name || user.email,
+        status,
       };
       delete payload.id;
       delete payload.created_at;
@@ -935,11 +933,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       const { error: iErr } = await sb.from('quotation_items').insert(itemRows);
       if (iErr) throw iErr;
 
-      await sb.from('activity_logs').insert({
-        user_id: user.id, user_name: user.full_name||user.email,
-        action: `${editQuote?'تعديل':'إنشاء'} عرض سعر — ${SL[status]}`,
-        target_type: 'quotation',
-      }).then(()=>{});
+      // activity log skipped
 
       toast(editQuote ? 'تم التعديل بنجاح' : 'تم الإنشاء بنجاح', 'success');
       onSave();
@@ -1111,7 +1105,7 @@ function QuotesList({ user, quotes, onReload }) {
 
   const changeStatus = async (q, newStatus) => {
     await sb.from('quotations').update({ status: newStatus }).eq('id', q.id);
-    await sb.from('activity_logs').insert({ user_id:user.id, user_name:user.full_name||user.email, action:`تغيير حالة ${q.number} إلى ${SL[newStatus]}`, target_type:'quotation' }).then(()=>{});
+    // log skipped
     toast('تم تغيير الحالة', 'success');
     onReload();
   };
@@ -1130,7 +1124,7 @@ function QuotesList({ user, quotes, onReload }) {
 
   const convertToOrder = async (q) => {
     if (!confirm('تحويل لطلب؟')) return;
-    const { error } = await sb.from('orders').insert({ quotation_id:q.id, quotation_number:q.number, customer_name:q.customer_name, currency:q.currency, total_amount:q.nett_price, status:'pending', created_by:user.id });
+    const { error } = await sb.from('orders').insert({ quotation_id:q.id, quotation_number:q.number, customer_name:q.customer_name, currency:q.currency, total_amount:q.nett_price, status:'pending' });
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
     await sb.from('quotations').update({ status:'converted' }).eq('id', q.id);
     toast('تم التحويل لطلب', 'success'); onReload();
@@ -1277,7 +1271,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
       }));
       await sb.from('quotation_items').insert(itemRows);
 
-      await sb.from('activity_logs').insert({ user_id:user.id, user_name:user.full_name||user.email, action:`تحويل ${quote.number} إلى فاتورة`, target_type:'quotation' }).then(()=>{});
+      // log skipped
 
       toast('تم إصدار الفاتورة بنجاح', 'success');
       onSave();
@@ -1739,11 +1733,7 @@ function App() {
       let qQ = sb.from('quotations').select('*').order('created_at', {ascending:false});
       let oQ = sb.from('orders').select('*').order('created_at', {ascending:false});
       let lQ = sb.from('activity_logs').select('*').order('created_at', {ascending:false}).limit(60);
-      if (role !== 'admin') {
-        qQ=qQ.eq('created_by',userId);
-        oQ=oQ.eq('created_by',userId);
-        lQ=lQ.eq('user_id',userId);
-      }
+      // RLS في Supabase تتحكم بالصلاحيات تلقائياً
       const results = await withTimeout(Promise.all([qQ, oQ, lQ]));
       const [{ data: q, error: qe },{ data: o, error: oe },{ data: l, error: le }] = results;
       if (qe) console.warn('Quotes error:', qe.message);
