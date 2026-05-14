@@ -1587,37 +1587,79 @@ function App() {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    sb.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const { data: profile } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
-        const u = { ...session.user, ...(profile||{}) };
-        setUser(u);
-        await loadData(u.id, u.role);
+    // timeout للحماية من التعليق — إذا ما انتهى خلال 8 ثوانٍ نوقف التحميل
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
+    sb.auth.getSession().then(async ({ data: { session }, error }) => {
+      clearTimeout(safetyTimer);
+      try {
+        if (session?.user && !error) {
+          const { data: profile } = await sb.from('profiles')
+            .select('*').eq('id', session.user.id).single();
+          const u = { ...session.user, ...(profile||{}) };
+          setUser(u);
+          // loadData بدون await — لا نحجب التحميل
+          loadData(u.id, u.role);
+        }
+      } catch(e) {
+        console.warn('Session restore error:', e);
+      } finally {
+        setLoading(false);
       }
+    }).catch(() => {
+      clearTimeout(safetyTimer);
       setLoading(false);
     });
 
     const { data: { subscription } } = sb.auth.onAuthStateChange(async (event, session) => {
       if (event==='SIGNED_IN' && session?.user) {
-        const { data: profile } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
-        const u = { ...session.user, ...(profile||{}) };
-        setUser(u);
-        await loadData(u.id, u.role);
+        try {
+          const { data: profile } = await sb.from('profiles')
+            .select('*').eq('id', session.user.id).single();
+          const u = { ...session.user, ...(profile||{}) };
+          setUser(u);
+          loadData(u.id, u.role);
+        } catch(e) { console.warn('Auth change error:', e); }
       }
-      if (event==='SIGNED_OUT') { setUser(null); setQuotes([]); setOrders([]); setLogs([]); }
+      if (event==='SIGNED_OUT') {
+        setUser(null); setQuotes([]); setOrders([]); setLogs([]);
+      }
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(safetyTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const loadData = async (userId, role) => {
+    // timeout 10 ثوانٍ لكل query
+    const withTimeout = (promise, ms=10000) =>
+      Promise.race([promise, new Promise((_,r) => setTimeout(() => r(new Error('timeout')), ms))]);
+
     try {
       let qQ = sb.from('quotations').select('*').order('created_at', {ascending:false});
       let oQ = sb.from('orders').select('*').order('created_at', {ascending:false});
       let lQ = sb.from('activity_logs').select('*').order('created_at', {ascending:false}).limit(60);
-      if (role !== 'admin') { qQ=qQ.eq('created_by',userId); oQ=oQ.eq('created_by',userId); lQ=lQ.eq('user_id',userId); }
-      const [{ data: q },{ data: o },{ data: l }] = await Promise.all([qQ, oQ, lQ]);
-      setQuotes(q||[]); setOrders(o||[]); setLogs(l||[]);
-    } catch (err) { console.error('Load error:', err); }
+      if (role !== 'admin') {
+        qQ=qQ.eq('created_by',userId);
+        oQ=oQ.eq('created_by',userId);
+        lQ=lQ.eq('user_id',userId);
+      }
+      const results = await withTimeout(Promise.all([qQ, oQ, lQ]));
+      const [{ data: q, error: qe },{ data: o, error: oe },{ data: l, error: le }] = results;
+      if (qe) console.warn('Quotes error:', qe.message);
+      if (oe) console.warn('Orders error:', oe.message);
+      if (le) console.warn('Logs error:', le.message);
+      setQuotes(q||[]);
+      setOrders(o||[]);
+      setLogs(l||[]);
+    } catch (err) {
+      console.error('Load data error:', err.message);
+      // نعرض بيانات فارغة بدلاً من التعليق
+      setQuotes([]); setOrders([]); setLogs([]);
+    }
   };
 
   const handleLogin = async (u) => { setUser(u); await loadData(u.id, u.role); };
