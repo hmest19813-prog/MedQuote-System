@@ -477,7 +477,7 @@ function AuthPage({ onLogin }) {
       let profile = null;
       try {
         const res = await Promise.race([
-          sb.from('profiles').select('*').eq('id', data.user.id).single(),
+          sb.from('profiles').select('*').eq('id', data.user.id).maybeSingle(),
           new Promise((_,r) => setTimeout(() => r(new Error('profile timeout')), 5000))
         ]);
         profile = res.data;
@@ -892,6 +892,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
+    if (!user?.id) { toast('خطأ: لم يتم تحديد المستخدم، أعد تسجيل الدخول','error'); return; }
     setLoading(true);
     try {
       const payload = {
@@ -907,8 +908,10 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       delete payload.created_at;
       delete payload.updated_at;
       delete payload._convertToInvoice;
-      // grand_total محسوب في DB
       delete payload.grand_total;
+      // نتركه للـ DB trigger يولده تلقائياً
+      delete payload.number;
+      delete payload.total_price;
 
       let qId;
       if (editQuote?.id) {
@@ -1247,13 +1250,20 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
     try {
       // تحديث بيانات العرض الأصلي
       await sb.from('quotations').update({
-        customer_name: form.customer_name, attention: form.attention,
-        phone: form.phone, date: form.date, reference: form.reference,
-        currency: form.currency, discount_pct: form.discount_pct, tax_pct: form.tax_pct,
-        notes: form.notes,
-        subtotal: subtotal.toFixed(3), discount_amt: disc_amt.toFixed(3),
-        tax_amt: tax_amt.toFixed(3), nett_price: nett.toFixed(3),
-        status: 'invoiced'
+        customer_name: form.customer_name,
+        attention: form.attention || null,
+        phone: form.phone || null,
+        date: form.date,
+        reference: form.reference || null,
+        currency: form.currency,
+        discount_pct: parseFloat(form.discount_pct) || 0,
+        tax_pct: parseFloat(form.tax_pct) || 16,
+        notes: form.notes || null,
+        subtotal: subtotal.toFixed(3),
+        discount_amt: disc_amt.toFixed(3),
+        tax_amt: tax_amt.toFixed(3),
+        nett_price: nett.toFixed(3),
+        status: 'invoiced',
       }).eq('id', quote.id);
 
       // تحديث الأصناف
@@ -1660,7 +1670,7 @@ function App() {
           let profile = null;
           try {
             const res = await Promise.race([
-              sb.from('profiles').select('*').eq('id', session.user.id).single(),
+              sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle(),
               new Promise((_,r) => setTimeout(() => r(new Error('timeout')), 6000))
             ]);
             profile = res.data;
@@ -1694,7 +1704,7 @@ function App() {
           let profile = null;
           try {
             const res = await Promise.race([
-              sb.from('profiles').select('*').eq('id', session.user.id).single(),
+              sb.from('profiles').select('*').eq('id', session.user.id).maybeSingle(),
               new Promise((_,r) => setTimeout(() => r(new Error('t')), 5000))
             ]);
             profile = res.data;
@@ -1720,6 +1730,7 @@ function App() {
   }, []);
 
   const loadData = async (userId, role) => {
+    if (!userId) { console.warn('loadData: no userId'); return; }
     // timeout 10 ثوانٍ لكل query
     const withTimeout = (promise, ms=10000) =>
       Promise.race([promise, new Promise((_,r) => setTimeout(() => r(new Error('timeout')), ms))]);
