@@ -253,10 +253,51 @@ tr:hover td { background: var(--gray-50); }
 .print-footer-bar { background: linear-gradient(135deg, #c17c2a, #d4a843); color: white; padding: 8px 16px; border-radius: 6px; margin-top: 16px; display: flex; justify-content: space-between; font-size: 10px; }
 
 @media print {
+  /* إخفاء كل شيء أولاً */
+  body > * { display: none !important; }
+
+  /* إظهار الـ modal overlay فقط */
+  body > #root { display: block !important; }
+  .app-layout { display: block !important; }
+  .sidebar { display: none !important; }
+  .main { display: block !important; margin: 0 !important; }
+  .topbar { display: none !important; }
+  .content { display: none !important; }
+
+  /* الـ modal */
+  .modal-overlay {
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  .modal {
+    max-width: 100% !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+  .modal-header { display: none !important; }
+  .modal-footer { display: none !important; }
+  .modal-body {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
   .no-print { display: none !important; }
-  body { background: white !important; }
-  .main, .sidebar, .topbar { display: none !important; }
-  .print-container { padding: 10px 20px !important; }
+
+  /* الـ print container */
+  .print-container {
+    display: block !important;
+    padding: 8mm 10mm !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* عناصر أخرى */
+  body { background: white !important; margin: 0 !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
 }
 
 /* ===================== CHARTS ===================== */
@@ -657,11 +698,11 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
         <div className="modal-header no-print">
           <span className="modal-title">{title} — {doc.number}</span>
           <div className="flex gap-2">
-            <button className="btn btn-primary btn-sm" onClick={()=>window.print()}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>printDoc('print-content')}>🖨️ طباعة / PDF</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="modal-body print-container">
+        <div className="modal-body print-container" id="print-content">
           {/* الرأس */}
           <div className="print-header">
             <div className="print-company">
@@ -1448,6 +1489,93 @@ function UsersPage() {
     </div>
   );
 }
+
+/* ===================== PRINT FUNCTION ===================== */
+const printDoc = (containerId) => {
+  // نجيب محتوى الـ print container
+  const el = document.getElementById(containerId);
+  if (!el) { window.print(); return; }
+
+  const html = el.innerHTML;
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (!w) { window.print(); return; }
+
+  // نجيب كل الـ CSS من الصفحة الحالية
+  const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map(s => s.outerHTML).join('\n');
+
+  // نجيب الـ base64 للصور
+  const logoSrc = HAYAT_LOGO_SRC;
+  const stampSrc = HAYAT_STAMP_SRC;
+
+  w.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'IBM Plex Sans Arabic', sans-serif; background: white; direction: rtl; }
+:root {
+  --primary: #c17c2a;
+  --primary-dark: #9a6020;
+  --primary-gold: #d4a843;
+  --danger: #c81e1e;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+}
+.print-container { background: white; padding: 8mm 12mm; max-width: 100%; }
+.print-header { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; margin-bottom: 14px; }
+.print-company .co-name-ar { font-size: 20px; font-weight: 900; color: #111; font-style: italic; }
+.print-company .co-name-ar span { color: #c17c2a; }
+.print-company .co-name-en { font-size: 11px; color: #c17c2a; font-weight: 600; margin-top: 2px; }
+.print-center { text-align: center; }
+.print-center .hayat-logo { width: 85px; height: 85px; object-fit: contain; }
+.print-info-box { font-size: 11px; color: #555; line-height: 2; text-align: left; }
+.print-divider { border: none; border-top: 3px solid #c17c2a; margin: 8px 0 12px; }
+.print-doc-title { text-align: center; font-size: 18px; font-weight: 900; color: #c17c2a; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 16px; }
+.print-client-box { background: #fffbf4; border: 1.5px solid #f0d9a8; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; }
+.print-client-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 12px; }
+.print-client-grid .field-row { display: flex; gap: 4px; }
+.print-client-grid label { color: #6b7280; font-weight: 700; white-space: nowrap; }
+.print-items { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 11px; }
+.print-items th { background: #c17c2a; color: white; padding: 6px 8px; text-align: center; font-size: 10.5px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.print-items td { padding: 5px 8px; border-bottom: 1px solid #f0d9a8; text-align: center; }
+.print-items tr:nth-child(even) td { background: #fffbf4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.print-totals { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+.print-totals table { width: 280px; font-size: 12px; border: 1px solid #f0d9a8; border-radius: 6px; overflow: hidden; }
+.print-totals td { padding: 5px 10px; border-bottom: 1px solid #f0e8cc; }
+.print-totals tr:last-child td { font-size: 14px; font-weight: 900; color: #c17c2a; background: #fffbf4; border-bottom: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.print-stamp-area { display: flex; justify-content: flex-end; margin-top: 8px; }
+.print-stamp { width: 100px; height: 100px; object-fit: contain; opacity: .85; }
+.print-footer-bar { background: linear-gradient(135deg, #c17c2a, #d4a843); color: white; padding: 7px 14px; border-radius: 5px; margin-top: 12px; display: flex; justify-content: space-between; font-size: 10px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+* { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+@page { margin: 8mm; size: A4; }
+</style>
+</head>
+<body>
+<div class="print-container">
+${html}
+</div>
+</body>
+</html>`);
+
+  w.document.close();
+
+  // انتظر تحميل الخطوط ثم اطبع
+  setTimeout(() => {
+    w.focus();
+    w.print();
+    // أغلق النافذة بعد الطباعة
+    w.onafterprint = () => w.close();
+    setTimeout(() => { try { w.close(); } catch(e){} }, 3000);
+  }, 1200);
+};
 
 /* ===================== APP ===================== */
 function App() {
