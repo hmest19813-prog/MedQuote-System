@@ -456,17 +456,34 @@ function AuthPage({ onLogin }) {
     e.preventDefault();
     setError('');
     setLoading(true);
+    // timeout 12 ثانية للحماية
+    const timer = setTimeout(() => {
+      setLoading(false);
+      setError('انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً');
+    }, 12000);
     try {
       const { data, error: authErr } = await sb.auth.signInWithPassword({ email, password: pass });
       if (authErr) throw authErr;
-      const { data: profile } = await sb.from('profiles').select('*').eq('id', data.user.id).single();
+      // جلب الـ profile مع timeout
+      let profile = null;
+      try {
+        const res = await Promise.race([
+          sb.from('profiles').select('*').eq('id', data.user.id).single(),
+          new Promise((_,r) => setTimeout(() => r(new Error('profile timeout')), 5000))
+        ]);
+        profile = res.data;
+      } catch(pe) {
+        console.warn('Profile fetch slow:', pe.message);
+      }
+      clearTimeout(timer);
       onLogin({ ...data.user, ...(profile||{}) });
     } catch (err) {
-      const msg = err.message;
-      if (msg.includes('Invalid login')) setError('الإيميل أو كلمة المرور غير صحيحة');
+      clearTimeout(timer);
+      const msg = err.message || '';
+      if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) setError('الإيميل أو كلمة المرور غير صحيحة');
       else if (msg.includes('Email not confirmed')) setError('يرجى تأكيد الإيميل أولاً');
-      else if (msg.includes('fetch')) setError('تعذر الاتصال بالخادم — تحقق من الإنترنت');
-      else setError(msg);
+      else if (msg.includes('fetch') || msg.includes('network') || msg.includes('timeout')) setError('تعذر الاتصال — تحقق من الإنترنت');
+      else setError('خطأ: ' + msg);
     } finally {
       setLoading(false);
     }
@@ -831,7 +848,14 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   useEffect(() => {
     if (editQuote?.id) {
       sb.from('quotation_items').select('*').eq('quotation_id', editQuote.id).order('sort_order')
-        .then(({ data }) => { if (data?.length) setItems(data); setLoadingItems(false); });
+        .then(({ data, error }) => {
+          if (error) console.warn('Items error:', error.message);
+          if (data?.length) setItems(data);
+          setLoadingItems(false);
+        })
+        .catch(() => setLoadingItems(false));
+      const t = setTimeout(() => setLoadingItems(false), 6000);
+      return () => clearTimeout(t);
     }
   }, [editQuote]);
 
@@ -1170,7 +1194,18 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
 
   useEffect(() => {
     sb.from('quotation_items').select('*').eq('quotation_id', quote.id).order('sort_order')
-      .then(({ data }) => { setItems(data||[]); setLoading(false); });
+      .then(({ data, error }) => {
+        if (error) console.warn('Items fetch error:', error.message);
+        setItems(data||[]);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.warn('Items fetch failed:', err);
+        setLoading(false);
+      });
+    // safety timeout
+    const t = setTimeout(() => setLoading(false), 6000);
+    return () => clearTimeout(t);
   }, []);
 
   const setF = (k,v) => setForm(f => ({...f,[k]:v}));
@@ -1313,8 +1348,12 @@ function InvoicesPage({ user, quotes, onReload }) {
   const [editing, setEditing] = useState(null);
 
   const openPreview = async (q) => {
-    const { data } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
-    setPreviewItems(data||[]);
+    try {
+      const { data } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
+      setPreviewItems(data||[]);
+    } catch(e) {
+      setPreviewItems([]);
+    }
     setPreviewQ(q);
   };
 
@@ -1662,7 +1701,7 @@ function App() {
     }
   };
 
-  const handleLogin = async (u) => { setUser(u); await loadData(u.id, u.role); };
+  const handleLogin = (u) => { setUser(u); loadData(u.id, u.role); };
   const handleLogout = async () => { await sb.auth.signOut(); setUser(null); setPage('dashboard'); toast('تم تسجيل الخروج', 'info'); };
   const reload = () => user && loadData(user.id, user.role);
 
