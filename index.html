@@ -1095,6 +1095,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [editing, setEditing] = useState(null);
+  const [orderingQ, setOrderingQ] = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -1189,7 +1190,7 @@ function QuotesList({ user, quotes, onReload }) {
                         <button className="btn btn-purple btn-sm" onClick={()=>convertToInvoice(q)} title="تحويل لفاتورة">🧾 فاتورة</button>
                       )}
                       {q.status==='approved' && (
-                        <button className="btn btn-success btn-sm" onClick={()=>convertToOrder(q)}>📦 طلب</button>
+                        <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveQ(q)} title="أرشفة">🗄️</button>
                       {user?.role==='admin' && <button className="btn btn-danger btn-sm" onClick={()=>deleteQ(q)}>🗑</button>}
@@ -1211,6 +1212,137 @@ function QuotesList({ user, quotes, onReload }) {
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
       {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)}/>}
+      {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{setOrderingQ(null);onReload();}} onClose={()=>setOrderingQ(null)}/>}
+    </div>
+  );
+}
+
+/* ===================== ORDER EDIT MODAL (تعديل قبل إصدار الطلب) ===================== */
+function OrderEditModal({ user, quote, onSave, onClose }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    customer_name: quote.customer_name || '',
+    phone:         quote.phone || '',
+    currency:      quote.currency || 'JOD',
+    notes:         '',
+    expected_delivery: '',
+  });
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 6000);
+    sb.from('quotation_items').select('*').eq('quotation_id', quote.id).order('sort_order')
+      .then(({data}) => { setItems(data||[]); setLoading(false); clearTimeout(t); });
+    return () => clearTimeout(t);
+  }, []);
+
+  const total = parseFloat(quote.nett_price||0);
+
+  const handleIssue = async () => {
+    if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    setSaving(true);
+    try {
+      const { error } = await sb.from('orders').insert({
+        quotation_id:      quote.id,
+        quotation_number:  quote.number,
+        customer_name:     form.customer_name,
+        currency:          form.currency,
+        total_amount:      total,
+        notes:             form.notes || null,
+        expected_delivery: form.expected_delivery || null,
+        status:            'pending',
+        created_by:        user?.id || null,
+      });
+      if (error) throw error;
+      await sb.from('quotations').update({ status: 'converted' }).eq('id', quote.id);
+      toast('تم إصدار الطلب بنجاح', 'success');
+      onSave();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="modal-overlay"><div className="modal"><div style={{padding:40,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div></div></div>;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:860}}>
+        <div className="modal-header" style={{background:'#F0FFF4',borderBottom:'2px solid var(--success)'}}>
+          <span className="modal-title" style={{color:'var(--success)'}}>📦 إصدار طلب — مراجعة وتعديل قبل الإصدار</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+
+          {/* بيانات الطلب */}
+          <div className="section-title">بيانات الطلب</div>
+          <div className="form-row mb-4">
+            <div className="form-group">
+              <label className="form-label">اسم العميل *</label>
+              <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">هاتف</label>
+              <input className="form-control" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-row mb-4">
+            <div className="form-group">
+              <label className="form-label">العملة</label>
+              <select className="form-control" value={form.currency} onChange={e=>setF('currency',e.target.value)}>
+                <option>JOD</option><option>USD</option><option>EUR</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ التسليم المتوقع</label>
+              <input type="date" className="form-control" value={form.expected_delivery} onChange={e=>setF('expected_delivery',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group mb-4">
+            <label className="form-label">ملاحظات على الطلب</label>
+            <textarea className="form-control" rows="2" value={form.notes} onChange={e=>setF('notes',e.target.value)} placeholder="أي ملاحظات خاصة بالطلب..."/>
+          </div>
+
+          {/* معلومات العرض المصدر */}
+          <div className="section-title">الأصناف — من عرض السعر {quote.number}</div>
+          <div className="table-wrap" style={{marginBottom:14}}>
+            <table className="print-items" style={{fontSize:12}}>
+              <thead>
+                <tr><th>#</th><th>المنتج</th><th>الوحدة</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>المنشأ</th><th>التوصيل</th></tr>
+              </thead>
+              <tbody>
+                {items.map((it,i) => (
+                  <tr key={i}>
+                    <td>{i+1}</td>
+                    <td style={{textAlign:'right'}}>{it.item_name}</td>
+                    <td>{it.unit||'EACH'}</td>
+                    <td>{it.quantity}</td>
+                    <td>{parseFloat(it.unit_price).toFixed(0)}</td>
+                    <td><strong>{(parseFloat(it.quantity)*parseFloat(it.unit_price)).toFixed(0)}</strong></td>
+                    <td>{it.origin||'CHINA'}</td>
+                    <td>{it.delivery||'PROMPT'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* الإجمالي */}
+          <div style={{display:'flex',justifyContent:'flex-end'}}>
+            <div style={{background:'#F0FFF4',border:'1.5px solid var(--success)',borderRadius:8,padding:'10px 20px',textAlign:'center'}}>
+              <div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700}}>القيمة الإجمالية</div>
+              <div style={{fontSize:22,fontWeight:900,color:'var(--success)'}}>{total.toFixed(3)} {form.currency}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose} disabled={saving}>إلغاء</button>
+          <button className="btn btn-success" onClick={handleIssue} disabled={saving} style={{minWidth:140}}>
+            {saving ? '...' : '📦 إصدار الطلب'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
