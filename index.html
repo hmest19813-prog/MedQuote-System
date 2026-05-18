@@ -334,6 +334,25 @@ tr:hover td { background: var(--gray-50); }
 .filter-bar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--gray-50); border-bottom: 1px solid var(--gray-100); flex-wrap: wrap; }
 .search-input { padding: 7px 11px; border: 1.5px solid var(--gray-200); border-radius: 7px; font-size: 13px; outline: none; min-width: 200px; font-family: inherit; }
 .search-input:focus { border-color: var(--primary); }
+/* ===================== ERP CUSTOMERS ===================== */
+.erp-toolbar { display:flex; align-items:center; gap:10px; padding:12px 18px; background:#fff; border-radius:12px; border:1.5px solid #e2edf5; box-shadow:0 2px 8px rgba(43,143,196,.06); margin-bottom:16px; }
+.erp-section-header { font-size:11px; font-weight:800; color:var(--primary); letter-spacing:.08em; text-transform:uppercase; padding-bottom:10px; border-bottom:2px solid var(--primary-light); margin-bottom:14px; display:flex; align-items:center; gap:6px; }
+.erp-cards { display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:14px; margin-bottom:16px; }
+.erp-card { background:#fff; border:1.5px solid #e2edf5; border-radius:12px; padding:18px; box-shadow:0 2px 8px rgba(43,143,196,.05); }
+.erp-card.main-card { border-top:3px solid var(--primary); }
+.erp-card.contact-card { border-top:3px solid #3FA3D8; }
+.erp-field { display:flex; flex-direction:column; margin-bottom:10px; }
+.erp-field label { font-size:10.5px; font-weight:700; color:#7a8fa6; margin-bottom:3px; letter-spacing:.04em; }
+.erp-value { font-size:13px; font-weight:600; color:#1a2e3d; min-height:18px; }
+.erp-input { font-size:13px; font-weight:600; color:#1a2e3d; background:#f0f8fd; border:1.5px solid #B8DCF0; border-radius:6px; padding:5px 8px; width:100%; font-family:inherit; outline:none; transition:border-color .2s; }
+.erp-input:focus { border-color:var(--primary); background:#fff; }
+.erp-list-header { display:grid; grid-template-columns:100px 1fr 130px 130px 110px 120px 90px; padding:10px 18px; background:linear-gradient(135deg,#1C6A99,#2B8FC4); color:white; font-size:11px; font-weight:800; letter-spacing:.05em; border-radius:12px 12px 0 0; }
+.erp-list-row { display:grid; grid-template-columns:100px 1fr 130px 130px 110px 120px 90px; padding:11px 18px; border-bottom:1px solid #f0f4f8; transition:background .15s; align-items:center; }
+.erp-list-row:last-child { border-bottom:none; }
+.erp-list-row:hover { background:#EBF5FB !important; }
+.erp-badge { display:inline-flex; align-items:center; font-size:10px; padding:2px 8px; border-radius:20px; font-weight:700; margin-right:6px; }
+.erp-badge-primary { background:#EBF5FB; color:#1C6A99; }
+.erp-badge-gray { background:#f3f4f6; color:#374151; }
 
 /* UTILS */
 .text-muted { color: var(--gray-400); }
@@ -1766,14 +1785,38 @@ const printDoc = (containerId) => {
 
 /* ===================== CUSTOMERS ===================== */
 function CustomerForm({ customer, profiles, user, onSave, onClose }) {
-  const [form, setForm] = useState({ name:'', phone:'', alt_phone:'', address:'', website:'', notes:'', assigned_to:'', ...(customer||{}) });
+  const empty = {
+    name:'', customer_code:'', phone:'', fax:'', mobile:'', email:'', alt_phone:'',
+    address:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'',
+    contact1_name:'', contact1_title:'', contact1_phone:'', contact1_mobile:'', contact1_email:'', contact1_ext:'', contact1_notes:'',
+    contact2_name:'', contact2_title:'', contact2_phone:'', contact2_mobile:'', contact2_email:'', contact2_ext:'', contact2_notes:'',
+  };
+  const [form, setForm] = useState({ ...empty, ...(customer||{}) });
   const [loading, setLoading] = useState(false);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
   const handleSave = async () => {
     if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     setLoading(true);
     try {
-      const payload = { name:form.name, phone:form.phone||null, alt_phone:form.alt_phone||null, address:form.address||null, website:form.website||null, notes:form.notes||null, assigned_to:form.assigned_to||null, updated_at:new Date().toISOString() };
+      const payload = {
+        name:form.name, customer_code:form.customer_code||null,
+        phone:form.phone||null, fax:form.fax||null, mobile:form.mobile||null,
+        email:form.email||null, alt_phone:form.alt_phone||null,
+        address:form.address||null, city:form.city||null,
+        website:form.website||null, notes:form.notes||null,
+        category:form.category||null, tags:form.tags||null,
+        assigned_to:form.assigned_to||null,
+        contact1_name:form.contact1_name||null, contact1_title:form.contact1_title||null,
+        contact1_phone:form.contact1_phone||null, contact1_mobile:form.contact1_mobile||null,
+        contact1_email:form.contact1_email||null, contact1_ext:form.contact1_ext||null,
+        contact1_notes:form.contact1_notes||null,
+        contact2_name:form.contact2_name||null, contact2_title:form.contact2_title||null,
+        contact2_phone:form.contact2_phone||null, contact2_mobile:form.contact2_mobile||null,
+        contact2_email:form.contact2_email||null, contact2_ext:form.contact2_ext||null,
+        contact2_notes:form.contact2_notes||null,
+        updated_at:new Date().toISOString()
+      };
       if (customer?.id) {
         const {error} = await sb.from('customers').update(payload).eq('id', customer.id);
         if(error) throw error;
@@ -1787,55 +1830,95 @@ function CustomerForm({ customer, profiles, user, onSave, onClose }) {
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
     finally { setLoading(false); }
   };
+
+  const F = ({label, k, type='text', placeholder='', span}) => (
+    <div className="erp-field" style={span?{gridColumn:'1/-1'}:{}}>
+      <label>{label}</label>
+      {type==='textarea' ? (
+        <textarea className="erp-input" rows="2" value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder}/>
+      ) : (
+        <input className="erp-input" type={type} value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder}/>
+      )}
+    </div>
+  );
+
   return (
     <div className="modal-overlay">
-      <div className="modal">
-        <div className="modal-header">
-          <span className="modal-title">{customer ? 'تعديل عميل' : 'إضافة عميل جديد'}</span>
-          <button className="modal-close" onClick={onClose}>✕</button>
+      <div className="modal" style={{maxWidth:920,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header" style={{background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',borderRadius:'12px 12px 0 0',position:'sticky',top:0,zIndex:10}}>
+          <span className="modal-title" style={{color:'white'}}>{customer ? '✏️ تعديل بيانات العميل' : '➕ إضافة عميل جديد'}</span>
+          <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
-          <div className="form-row mb-4">
-            <div className="form-group">
-              <label className="form-label">اسم العميل *</label>
-              <input className="form-control" value={form.name} onChange={e=>setF('name',e.target.value)} placeholder="اسم الشركة / الجهة"/>
+        <div style={{background:'#f0f4f8',padding:'20px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1.35fr 1fr 1fr',gap:14,marginBottom:14}}>
+
+            {/* Company Panel */}
+            <div className="erp-card main-card">
+              <div className="erp-section-header">🏢 معلومات الشركة / العميل</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <F label="رقم العميل" k="customer_code" placeholder="C-001"/>
+                <div className="erp-field">
+                  <label>المندوب المسؤول</label>
+                  <select className="erp-input" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
+                    <option value="">— اختر —</option>
+                    {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <F label="اسم الشركة / العميل *" k="name" placeholder="اسم الشركة أو الجهة"/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <F label="هاتف" k="phone" placeholder="+962-6-..."/>
+                <F label="فاكس" k="fax" placeholder="+962-6-..."/>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <F label="موبايل" k="mobile" placeholder="+962-7-..."/>
+                <F label="هاتف بديل" k="alt_phone" placeholder="+962-7-..."/>
+              </div>
+              <F label="البريد الإلكتروني" k="email" type="email" placeholder="info@company.com"/>
+              <F label="الموقع الإلكتروني" k="website" placeholder="www.company.com"/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <F label="المدينة / المنطقة" k="city" placeholder="عمّان"/>
+                <F label="التصنيف" k="category" placeholder="مستشفى / صيدلية"/>
+              </div>
+              <F label="Tags / وسوم" k="tags" placeholder="VIP, طبي, حكومي"/>
+              <F label="العنوان التفصيلي" k="address" placeholder="الشارع، المبنى، المنطقة"/>
+              <F label="ملاحظات عامة" k="notes" type="textarea" placeholder="ملاحظات عن العميل..."/>
             </div>
-            <div className="form-group">
-              <label className="form-label">المندوب المسؤول</label>
-              <select className="form-control" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
-                <option value="">— اختر مندوباً —</option>
-                {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
-              </select>
+
+            {/* Contact 1 */}
+            <div className="erp-card contact-card">
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الأول</div>
+              <F label="الاسم الكامل" k="contact1_name" placeholder="الاسم"/>
+              <F label="المسمى الوظيفي" k="contact1_title" placeholder="مدير المشتريات"/>
+              <F label="رقم الهاتف" k="contact1_phone" placeholder="+962-6-..."/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <F label="الموبايل" k="contact1_mobile" placeholder="+962-7-..."/>
+                <F label="تحويلة EXT" k="contact1_ext" placeholder="123"/>
+              </div>
+              <F label="البريد الإلكتروني" k="contact1_email" type="email" placeholder="name@co.com"/>
+              <F label="ملاحظات" k="contact1_notes" type="textarea" placeholder=""/>
             </div>
-          </div>
-          <div className="form-row mb-4">
-            <div className="form-group">
-              <label className="form-label">رقم الهاتف</label>
-              <input className="form-control" value={form.phone||''} onChange={e=>setF('phone',e.target.value)} placeholder="+962..."/>
+
+            {/* Contact 2 */}
+            <div className="erp-card contact-card">
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الثاني</div>
+              <F label="الاسم الكامل" k="contact2_name" placeholder="الاسم"/>
+              <F label="المسمى الوظيفي" k="contact2_title" placeholder="المحاسب / المشرف"/>
+              <F label="رقم الهاتف" k="contact2_phone" placeholder="+962-6-..."/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <F label="الموبايل" k="contact2_mobile" placeholder="+962-7-..."/>
+                <F label="تحويلة EXT" k="contact2_ext" placeholder="456"/>
+              </div>
+              <F label="البريد الإلكتروني" k="contact2_email" type="email" placeholder="name@co.com"/>
+              <F label="ملاحظات" k="contact2_notes" type="textarea" placeholder=""/>
             </div>
-            <div className="form-group">
-              <label className="form-label">رقم بديل</label>
-              <input className="form-control" value={form.alt_phone||''} onChange={e=>setF('alt_phone',e.target.value)} placeholder="+962..."/>
-            </div>
-          </div>
-          <div className="form-row mb-4">
-            <div className="form-group">
-              <label className="form-label">العنوان</label>
-              <input className="form-control" value={form.address||''} onChange={e=>setF('address',e.target.value)} placeholder="عمّان - شارع الملك حسين"/>
-            </div>
-            <div className="form-group">
-              <label className="form-label">موقع ويب</label>
-              <input className="form-control" value={form.website||''} onChange={e=>setF('website',e.target.value)} placeholder="www.example.com"/>
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">ملاحظات</label>
-            <textarea className="form-control" rows="2" value={form.notes||''} onChange={e=>setF('notes',e.target.value)} placeholder="أي ملاحظات عن العميل..."/>
           </div>
         </div>
-        <div className="modal-footer">
+        <div className="modal-footer" style={{borderTop:'2px solid var(--primary-light)',position:'sticky',bottom:0,background:'#fff'}}>
           <button className="btn btn-ghost" onClick={onClose} disabled={loading}>إلغاء</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>{loading?'...':'حفظ'}</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading} style={{minWidth:130}}>
+            {loading ? '...' : '💾 حفظ البيانات'}
+          </button>
         </div>
       </div>
     </div>
@@ -1851,24 +1934,92 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       .then(({data})=>{ setQuotes(data||[]); setLoadingQ(false); });
   }, [customer.id]);
   const assignedName = profiles.find(p=>p.id===customer.assigned_to)?.full_name || '—';
+
+  const Field = ({label, val}) => (
+    <div className="erp-field">
+      <label>{label}</label>
+      <div className="erp-value">{val||'—'}</div>
+    </div>
+  );
+
   return (
     <div>
-      <button className="btn btn-ghost btn-sm" style={{marginBottom:16}} onClick={onBack}>← رجوع للعملاء</button>
-      {editing && <CustomerForm customer={customer} profiles={profiles} user={user} onSave={()=>{ setEditing(false); onBack(); }} onClose={()=>setEditing(false)}/>}
-      <div className="card card-body" style={{marginBottom:16}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
-          <div style={{fontSize:20,fontWeight:900,color:'var(--primary)'}}>{customer.name}</div>
-          <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>
+      {editing && <CustomerForm customer={customer} profiles={profiles} user={user}
+        onSave={()=>{ setEditing(false); onBack(); }} onClose={()=>setEditing(false)}/>}
+
+      {/* ERP Toolbar */}
+      <div className="erp-toolbar">
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← رجوع للقائمة</button>
+        <div style={{flex:1}}/>
+        <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>window.print()}>🖨️ طباعة</button>
+      </div>
+
+      {/* Customer Header Card */}
+      <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:16,padding:'16px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 10px rgba(43,143,196,.07)'}}>
+        <div style={{width:52,height:52,borderRadius:14,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,color:'white',fontWeight:900,flexShrink:0}}>
+          {(customer.name||'?').charAt(0)}
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:16}}>
-          <div><div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700,marginBottom:3}}>الهاتف</div><div style={{fontWeight:600}}>{customer.phone||'—'}</div></div>
-          <div><div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700,marginBottom:3}}>هاتف بديل</div><div style={{fontWeight:600}}>{customer.alt_phone||'—'}</div></div>
-          <div><div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700,marginBottom:3}}>المندوب</div><div style={{fontWeight:600}}>{assignedName}</div></div>
-          <div><div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700,marginBottom:3}}>العنوان</div><div style={{fontWeight:600}}>{customer.address||'—'}</div></div>
-          <div><div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700,marginBottom:3}}>موقع ويب</div><div style={{fontWeight:600}}>{customer.website||'—'}</div></div>
-          {customer.notes && <div style={{gridColumn:'1/-1'}}><div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700,marginBottom:3}}>ملاحظات</div><div style={{fontSize:13,color:'var(--gray-600)'}}>{customer.notes}</div></div>}
+        <div style={{flex:1}}>
+          <div style={{fontSize:20,fontWeight:900,color:'#1a2e3d',marginBottom:6}}>{customer.name}</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+            {customer.customer_code && <span className="erp-badge erp-badge-primary">#{customer.customer_code}</span>}
+            {customer.category && <span className="erp-badge erp-badge-primary">{customer.category}</span>}
+            {(customer.tags||'').split(',').filter(Boolean).map((t,i)=>(
+              <span key={i} className="erp-badge erp-badge-gray">{t.trim()}</span>
+            ))}
+          </div>
+        </div>
+        <div style={{textAlign:'center',padding:'8px 18px',borderRight:'2px solid var(--primary-light)',marginRight:4}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>عروض الأسعار</div>
+          <div style={{fontSize:22,fontWeight:900,color:'var(--primary)'}}>{quotes.length}</div>
+        </div>
+        <div style={{textAlign:'center',padding:'8px 18px'}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>المندوب</div>
+          <div style={{fontSize:14,fontWeight:800,color:'#1a2e3d'}}>{assignedName}</div>
         </div>
       </div>
+
+      {/* Three ERP Panels */}
+      <div className="erp-cards">
+        {/* Company Info */}
+        <div className="erp-card main-card">
+          <div className="erp-section-header">🏢 بيانات الشركة</div>
+          <Field label="الهاتف" val={customer.phone}/>
+          <Field label="فاكس" val={customer.fax}/>
+          <Field label="موبايل" val={customer.mobile}/>
+          <Field label="هاتف بديل" val={customer.alt_phone}/>
+          <Field label="البريد الإلكتروني" val={customer.email}/>
+          <Field label="الموقع الإلكتروني" val={customer.website}/>
+          <Field label="المدينة / المنطقة" val={customer.city}/>
+          <Field label="العنوان" val={customer.address}/>
+          {customer.notes && <Field label="ملاحظات" val={customer.notes}/>}
+        </div>
+        {/* Contact 1 */}
+        <div className="erp-card contact-card">
+          <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الأول</div>
+          <Field label="الاسم" val={customer.contact1_name}/>
+          <Field label="المسمى الوظيفي" val={customer.contact1_title}/>
+          <Field label="الهاتف" val={customer.contact1_phone}/>
+          <Field label="الموبايل" val={customer.contact1_mobile}/>
+          <Field label="البريد الإلكتروني" val={customer.contact1_email}/>
+          <Field label="التحويلة EXT" val={customer.contact1_ext}/>
+          {customer.contact1_notes && <Field label="ملاحظات" val={customer.contact1_notes}/>}
+        </div>
+        {/* Contact 2 */}
+        <div className="erp-card contact-card">
+          <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الثاني</div>
+          <Field label="الاسم" val={customer.contact2_name}/>
+          <Field label="المسمى الوظيفي" val={customer.contact2_title}/>
+          <Field label="الهاتف" val={customer.contact2_phone}/>
+          <Field label="الموبايل" val={customer.contact2_mobile}/>
+          <Field label="البريد الإلكتروني" val={customer.contact2_email}/>
+          <Field label="التحويلة EXT" val={customer.contact2_ext}/>
+          {customer.contact2_notes && <Field label="ملاحظات" val={customer.contact2_notes}/>}
+        </div>
+      </div>
+
+      {/* Linked Quotations */}
       <div className="card">
         <div className="card-header"><span className="card-title">عروض الأسعار الصادرة ({quotes.length})</span></div>
         <div className="table-wrap">
@@ -1921,7 +2072,10 @@ function CustomersPage({ user }) {
   };
 
   const filtered = customers.filter(c =>
-    !search || c.name?.toLowerCase().includes(search.toLowerCase()) || (c.phone||'').includes(search)
+    !search || c.name?.toLowerCase().includes(search.toLowerCase())
+      || (c.phone||'').includes(search)
+      || (c.customer_code||'').toLowerCase().includes(search.toLowerCase())
+      || (c.city||'').includes(search)
   );
 
   const assignedName = (id) => profiles.find(p=>p.id===id)?.full_name || '—';
@@ -1930,47 +2084,64 @@ function CustomersPage({ user }) {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
-        <h2 style={{fontSize:20,fontWeight:800}}>العملاء</h2>
-        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ عميل جديد</button>
+      {/* ERP Toolbar */}
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🏢</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>إدارة العملاء</div>
+            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{customers.length} عميل مسجّل</div>
+          </div>
+        </div>
+        <div style={{flex:1}}/>
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:300}}/>
+        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>
       </div>
+
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
-        <div className="card">
-          <div className="filter-bar">
-            <input className="search-input" placeholder="بحث بالاسم أو الهاتف..." value={search} onChange={e=>setSearch(e.target.value)}/>
-            <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} عميل</span>
+        <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+          {/* List Header */}
+          <div className="erp-list-header">
+            <div>رقم العميل</div>
+            <div>اسم الشركة / العميل</div>
+            <div>الهاتف</div>
+            <div>المسؤول الأول</div>
+            <div>المدينة</div>
+            <div>المندوب</div>
+            <div>إجراءات</div>
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>الاسم</th><th>الهاتف</th><th>هاتف بديل</th><th>العنوان</th><th>المندوب</th><th>إجراءات</th></tr></thead>
-              <tbody>
-                {filtered.map(c=>(
-                  <tr key={c.id}>
-                    <td className="font-bold" style={{color:'var(--primary)',cursor:'pointer'}} onClick={()=>setSelected(c)}>{c.name}</td>
-                    <td>{c.phone||'—'}</td>
-                    <td>{c.alt_phone||'—'}</td>
-                    <td className="text-sm text-muted">{c.address||'—'}</td>
-                    <td>{assignedName(c.assigned_to)}</td>
-                    <td>
-                      <div className="flex gap-2">
-                        <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض">👁</button>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل">✏️</button>
-                        {user?.role==='admin' && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)}>🗑</button>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>لا يوجد عملاء بعد</p><small>اضغط "+ عميل جديد" لإضافة أول عميل</small></div></td></tr>}
-              </tbody>
-            </table>
-          </div>
+          {filtered.length === 0 ? (
+            <div className="empty-state" style={{padding:'60px 20px'}}>
+              <div style={{fontSize:48,marginBottom:12}}>🏢</div>
+              <p>لا يوجد عملاء مطابقون</p>
+              <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث'}</small>
+            </div>
+          ) : filtered.map((c, idx) => (
+            <div key={c.id} className="erp-list-row" style={{background:idx%2===0?'#fff':'#fafcfd'}} onClick={()=>setSelected(c)}>
+              <div style={{fontSize:12,fontWeight:700,color:'#1C6A99'}}>{c.customer_code||'—'}</div>
+              <div>
+                <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{c.name}</div>
+                {c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>{c.category}</span>}
+              </div>
+              <div style={{fontSize:12,color:'#374151'}}>{c.phone||c.mobile||'—'}</div>
+              <div style={{fontSize:12,color:'#374151'}}>
+                {c.contact1_name ? <span>{c.contact1_name}{c.contact1_title && <span style={{color:'#9ca3af',fontWeight:400}}> — {c.contact1_title}</span>}</span> : '—'}
+              </div>
+              <div style={{fontSize:12,color:'#6b7280'}}>{c.city||'—'}</div>
+              <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c.assigned_to)}</div>
+              <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>
+                {user?.role==='admin' && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
+              </div>
+            </div>
+          ))}
         </div>
       )}
       {showForm && <CustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
     </div>
   );
 }
-
 /* ===================== APP ===================== *//* ===================== APP ===================== */
 function App() {
   const [user, setUser] = useState(null);
