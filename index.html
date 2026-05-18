@@ -1186,7 +1186,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <div className="flex gap-2">
                       <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)} title="معاينة">👁</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)} title="تعديل">✏️</button>
-                      {(q.status==='approved'||q.status==='sent') && (
+                      {q.status!=='invoiced' && (
                         <button className="btn btn-purple btn-sm" onClick={()=>convertToInvoice(q)} title="تحويل لفاتورة">🧾 فاتورة</button>
                       )}
                       {q.status!=='converted' && q.status!=='invoiced' && (
