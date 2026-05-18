@@ -2147,17 +2147,17 @@ function App() {
   const [orders, setOrders] = useState([]);
   const [logs, setLogs] = useState([]);
 
+  // ref يحفظ المستخدم الحالي — يمنع إعادة تعيين الـ role عند تجديد الـ token
+  const userRef = React.useRef(null);
+  const setUserSafe = (u) => { userRef.current = u; setUser(u); };
+
   useEffect(() => {
-    // timeout للحماية من التعليق — إذا ما انتهى خلال 8 ثوانٍ نوقف التحميل
-    const safetyTimer = setTimeout(() => {
-      setLoading(false);
-    }, 8000);
+    const safetyTimer = setTimeout(() => { setLoading(false); }, 8000);
 
     sb.auth.getSession().then(async ({ data: { session }, error }) => {
       clearTimeout(safetyTimer);
       try {
         if (session?.user && !error) {
-          // جلب الـ profile مع race timeout
           let profile = null;
           try {
             const res = await Promise.race([
@@ -2168,15 +2168,8 @@ function App() {
           } catch(pe) {
             console.warn('Profile fetch timeout on restore:', pe.message);
           }
-          // الـ id دايماً من auth.user (هو نفسه UUID في profiles)
-          const u = {
-            id: session.user.id,
-            email: session.user.email,
-            ...(profile || {}),
-            // نضمن أن الـ id لا يُستبدل
-            id: session.user.id,
-          };
-          setUser(u);
+          const u = { id: session.user.id, email: session.user.email, ...(profile || {}), id: session.user.id };
+          setUserSafe(u);
           loadData(session.user.id, u.role || 'employee');
         }
       } catch(e) {
@@ -2191,6 +2184,9 @@ function App() {
 
     const { data: { subscription } } = sb.auth.onAuthStateChange(async (event, session) => {
       if (event==='SIGNED_IN' && session?.user) {
+        const existing = userRef.current;
+        // نفس المستخدم ومعه role → تجديد token فقط، لا نُعيد الجلب
+        if (existing?.id === session.user.id && existing?.role) return;
         try {
           let profile = null;
           try {
@@ -2200,17 +2196,15 @@ function App() {
             ]);
             profile = res.data;
           } catch(pe) {}
-          const u = {
-            id: session.user.id,
-            email: session.user.email,
-            ...(profile || {}),
-            id: session.user.id,
-          };
-          setUser(u);
+          // إذا فشل الجلب نحتفظ بالـ role الموجود لنفس المستخدم
+          const fallback = existing?.id === session.user.id ? existing : {};
+          const u = { id: session.user.id, email: session.user.email, ...fallback, ...(profile || {}), id: session.user.id };
+          setUserSafe(u);
           loadData(session.user.id, u.role || 'employee');
         } catch(e) { console.warn('Auth change error:', e); }
       }
       if (event==='SIGNED_OUT') {
+        userRef.current = null;
         setUser(null); setQuotes([]); setOrders([]); setLogs([]);
       }
     });
