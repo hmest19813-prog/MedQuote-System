@@ -1228,7 +1228,7 @@ function QuotesList({ user, quotes, onReload }) {
                         <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveQ(q)} title="أرشفة">🗄️</button>
-                      {user?.role==='admin' && <button className="btn btn-danger btn-sm" onClick={()=>deleteQ(q)}>🗑</button>}
+                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>deleteQ(q)} title="حذف نهائي">🗑 حذف</button>}
                     </div>
                   </td>
                 </tr>
