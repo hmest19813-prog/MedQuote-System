@@ -472,10 +472,13 @@ CREATE INDEX IF NOT EXISTS idx_cust_name   ON public.customers(name);
 CREATE INDEX IF NOT EXISTS idx_cust_assign ON public.customers(assigned_to);
 
 -- ============================================================
--- VIEWS
+-- VIEWS (DROP CASCADE ثم إعادة الإنشاء)
 -- ============================================================
 
-CREATE OR REPLACE VIEW public.quotation_summary AS
+DROP VIEW IF EXISTS public.quotation_summary CASCADE;
+DROP VIEW IF EXISTS public.order_summary CASCADE;
+
+CREATE VIEW public.quotation_summary AS
 SELECT
   q.id, q.number, q.customer_name, q.date, q.status,
   q.nett_price, q.currency,
@@ -489,7 +492,7 @@ LEFT JOIN public.customers       c  ON c.id  = q.customer_id
 LEFT JOIN public.quotation_items qi ON qi.quotation_id = q.id
 GROUP BY q.id, p.full_name, c.name;
 
-CREATE OR REPLACE VIEW public.order_summary AS
+CREATE VIEW public.order_summary AS
 SELECT
   o.id, o.number, o.quotation_number, o.customer_name,
   o.total_amount, o.currency, o.status,
