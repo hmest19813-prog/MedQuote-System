@@ -354,6 +354,23 @@ tr:hover td { background: var(--gray-50); }
 .erp-badge-primary { background:#EBF5FB; color:#1C6A99; }
 .erp-badge-gray { background:#f3f4f6; color:#374151; }
 
+/* CATALOG */
+.cat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; padding:20px; }
+.cat-card { background:#fff; border-radius:12px; border:1.5px solid #e8f0f8; padding:18px; cursor:pointer; transition:all .18s; position:relative; }
+.cat-card:hover { border-color:var(--primary); box-shadow:0 4px 18px rgba(28,106,153,.13); transform:translateY(-2px); }
+.cat-card-name { font-size:15px; font-weight:700; color:var(--gray-800); margin-bottom:4px; }
+.cat-card-cat { font-size:11px; color:#fff; background:var(--primary); border-radius:20px; padding:2px 9px; display:inline-block; margin-bottom:8px; }
+.cat-card-meta { display:flex; gap:12px; font-size:12px; color:var(--gray-500); margin-top:8px; flex-wrap:wrap; }
+.cat-card-price { font-size:17px; font-weight:800; color:var(--primary); margin-top:6px; }
+.cat-card-actions { position:absolute; top:12px; left:12px; display:flex; gap:6px; opacity:0; transition:.15s; }
+.cat-card:hover .cat-card-actions { opacity:1; }
+.cat-toolbar { display:flex; gap:10px; align-items:center; padding:16px 20px; border-bottom:1px solid #eef2f7; flex-wrap:wrap; }
+.cat-picker-row { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid #f0f4f8; cursor:pointer; transition:background .15s; border-radius:8px; }
+.cat-picker-row:hover { background:#EBF5FB; }
+.cat-picker-name { font-weight:600; font-size:14px; color:var(--gray-800); flex:1; }
+.cat-picker-price { font-size:13px; font-weight:700; color:var(--primary); }
+.cat-picker-meta { font-size:11px; color:var(--gray-400); }
+
 /* UTILS */
 .text-muted { color: var(--gray-400); }
 .text-sm { font-size: 12px; }
@@ -560,6 +577,7 @@ const NAV = [
   { id: 'invoices', label: 'الفواتير', icon: '🧾' },
   { id: 'orders', label: 'الطلبات', icon: '📦' },
   { id: 'customers', label: 'العملاء', icon: '🏢' },
+  { id: 'catalog', label: 'الكتالوج', icon: '🗂️' },
   { id: 'archive', label: 'الأرشيف', icon: '🗄️' },
   { id: 'activity', label: 'سجل النشاط', icon: '🕐' },
 ];
@@ -911,9 +929,24 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const tax_amt = after_disc * tax_pct / 100;
   const nett = after_disc + tax_amt;
 
+  const [catalogPicker, setCatalogPicker] = useState(null); // index of item row
+
   const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:0, origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
   const setItem = (idx, k, v) => setItems(i => i.map((it,j) => j===idx ? {...it,[k]:v} : it));
+
+  const applyCatalogItem = (idx, cat) => {
+    setItems(i => i.map((it,j) => j===idx ? {
+      ...it,
+      item_name: cat.name,
+      description: cat.description || it.description,
+      unit: cat.unit || it.unit,
+      unit_price: cat.unit_price ?? it.unit_price,
+      origin: cat.origin || it.origin,
+      delivery: cat.delivery || it.delivery,
+    } : it));
+    setCatalogPicker(null);
+  };
 
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
@@ -977,6 +1010,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
+      {catalogPicker !== null && <CatalogPicker onSelect={cat=>applyCatalogItem(catalogPicker, cat)} onClose={()=>setCatalogPicker(null)}/>}
       <div className="modal" style={{maxWidth:950}}>
         <div className="modal-header">
           <span className="modal-title">{editQuote ? `تعديل ${modeLabel}` : `إنشاء ${modeLabel} جديد`}</span>
@@ -1055,7 +1089,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                   return (
                     <tr key={i}>
                       <td>{i+1}</td>
-                      <td><input value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)} placeholder="اسم المنتج"/></td>
+                      <td><div style={{display:'flex',gap:3,alignItems:'center'}}><input value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)} placeholder="اسم المنتج" style={{flex:1}}/><button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>🗂️</button></div></td>
                       <td><input value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} placeholder="EACH"/></td>
                       <td><input type="number" min="0" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
@@ -1425,10 +1459,16 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
     return () => clearTimeout(t);
   }, []);
 
+  const [catalogPicker, setCatalogPicker] = useState(null);
+
   const setF = (k,v) => setForm(f => ({...f,[k]:v}));
   const setItem = (idx,k,v) => setItems(i => i.map((it,j) => j===idx ? {...it,[k]:v} : it));
   const addItem = () => setItems(i => [...i, { item_name:'', unit:'EACH', quantity:1, unit_price:0, origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
+  const applyCatalogItem = (idx, cat) => {
+    setItems(i => i.map((it,j) => j===idx ? { ...it, item_name:cat.name, description:cat.description||it.description, unit:cat.unit||it.unit, unit_price:cat.unit_price??it.unit_price, origin:cat.origin||it.origin, delivery:cat.delivery||it.delivery } : it));
+    setCatalogPicker(null);
+  };
 
   const subtotal = items.reduce((s,i) => s+(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)), 0);
   const disc_amt = form.discount_type==='amt' ? parseFloat(form.discount_fixed||0) : subtotal * parseFloat(form.discount_pct||0) / 100;
@@ -1487,6 +1527,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
+      {catalogPicker !== null && <CatalogPicker onSelect={cat=>applyCatalogItem(catalogPicker, cat)} onClose={()=>setCatalogPicker(null)}/>}
       <div className="modal" style={{maxWidth:950}}>
         <div className="modal-header" style={{background:'#F0F8FD',borderBottom:'2px solid var(--primary)'}}>
           <span className="modal-title" style={{color:'var(--primary)'}}>🧾 تحويل لفاتورة — مراجعة وتعديل قبل الإصدار</span>
@@ -1538,7 +1579,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
                   return (
                     <tr key={i}>
                       <td>{i+1}</td>
-                      <td><input value={item.item_name||''} onChange={e=>setItem(i,'item_name',e.target.value)}/></td>
+                      <td><div style={{display:'flex',gap:3,alignItems:'center'}}><input value={item.item_name||''} onChange={e=>setItem(i,'item_name',e.target.value)} style={{flex:1}}/><button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>🗂️</button></div></td>
                       <td><input value={item.unit||'EACH'} onChange={e=>setItem(i,'unit',e.target.value)}/></td>
                       <td><input type="number" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
@@ -2093,6 +2134,229 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
   );
 }
 
+/* ==================== CATALOG ==================== */
+
+function CatalogForm({ user, item: editItem, onSave, onClose }) {
+  const blank = { name:'', description:'', unit:'EACH', unit_price:0, origin:'CHINA', delivery:'PROMPT', category:'', notes:'' };
+  const [form, setForm] = React.useState(editItem ? { ...blank, ...editItem } : blank);
+  const [saving, setSaving] = React.useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast('اسم الصنف مطلوب','error'); return; }
+    setSaving(true);
+    const payload = { name:form.name.trim(), description:form.description, unit:form.unit||'EACH',
+      unit_price:parseFloat(form.unit_price)||0, origin:form.origin, delivery:form.delivery,
+      category:form.category, notes:form.notes };
+    let err;
+    if (editItem) {
+      ({ error:err } = await sb.from('catalog_items').update({...payload, updated_at:new Date().toISOString()}).eq('id', editItem.id));
+    } else {
+      ({ error:err } = await sb.from('catalog_items').insert({...payload, created_by: user.id}));
+    }
+    setSaving(false);
+    if (err) { toast('خطأ: '+err.message,'error'); return; }
+    toast(editItem ? 'تم تحديث الصنف' : 'تمت إضافة الصنف', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:520}}>
+        <div className="modal-header">
+          <span>{editItem?'تعديل صنف':'إضافة صنف جديد'}</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-group">
+            <label className="form-label">اسم الصنف *</label>
+            <input className="form-input" value={form.name} onChange={e=>setF('name',e.target.value)} placeholder="اسم المنتج أو الصنف"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">الوصف</label>
+            <input className="form-input" value={form.description} onChange={e=>setF('description',e.target.value)} placeholder="وصف مختصر"/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div className="form-group">
+              <label className="form-label">الفئة</label>
+              <input className="form-input" value={form.category} onChange={e=>setF('category',e.target.value)} placeholder="مثال: أجهزة طبية"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الوحدة</label>
+              <input className="form-input" value={form.unit} onChange={e=>setF('unit',e.target.value)} placeholder="EACH"/>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div className="form-group">
+              <label className="form-label">سعر الوحدة</label>
+              <input className="form-input" type="number" min="0" step="0.001" value={form.unit_price} onChange={e=>setF('unit_price',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المنشأ</label>
+              <input className="form-input" value={form.origin} onChange={e=>setF('origin',e.target.value)} placeholder="CHINA"/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">مدة التوصيل</label>
+            <select className="form-input" value={form.delivery} onChange={e=>setF('delivery',e.target.value)}>
+              <option>PROMPT</option>
+              <option>2-4 WEEKS</option>
+              <option>4-6 WEEKS</option>
+              <option>8-12 WEEKS</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-input" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جارٍ الحفظ...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogPicker({ onSelect, onClose }) {
+  const [items, setItems] = React.useState([]);
+  const [search, setSearch] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    sb.from('catalog_items').select('*').eq('is_active', true).order('name')
+      .then(({data}) => { setItems(data||[]); setLoading(false); });
+  }, []);
+
+  const filtered = items.filter(it =>
+    !search || it.name.toLowerCase().includes(search.toLowerCase()) ||
+    (it.category||'').toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:500}}>
+        <div className="modal-header">
+          <span>اختر من الكتالوج</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body" style={{padding:'12px 16px'}}>
+          <input className="search-input" placeholder="ابحث باسم الصنف أو الفئة..." value={search} onChange={e=>setSearch(e.target.value)} style={{width:'100%',marginBottom:12}}/>
+          {loading ? <div style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>جارٍ التحميل...</div>
+          : filtered.length === 0 ? <div style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>لا توجد أصناف</div>
+          : <div style={{maxHeight:360,overflowY:'auto',display:'flex',flexDirection:'column',gap:4}}>
+              {filtered.map(it => (
+                <div key={it.id} className="cat-picker-row" onClick={()=>onSelect(it)}>
+                  <div style={{flex:1}}>
+                    <div className="cat-picker-name">{it.name}</div>
+                    <div className="cat-picker-meta">{[it.category, it.unit, it.origin, it.delivery].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  <div className="cat-picker-price">{parseFloat(it.unit_price||0).toFixed(3)}</div>
+                </div>
+              ))}
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogPage({ user }) {
+  const [items, setItems] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [search, setSearch] = React.useState('');
+  const [showForm, setShowForm] = React.useState(false);
+  const [editing, setEditing] = React.useState(null);
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('catalog_items').select('*').order('name');
+    setItems(data||[]);
+    setLoading(false);
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const deleteItem = async (it) => {
+    if (!window.confirm(`حذف "${it.name}"؟`)) return;
+    const { error } = await sb.from('catalog_items').delete().eq('id', it.id);
+    if (error) { toast('فشل الحذف: '+error.message,'error'); return; }
+    toast('تم حذف الصنف','success');
+    load();
+  };
+
+  const toggleActive = async (it) => {
+    await sb.from('catalog_items').update({ is_active: !it.is_active, updated_at: new Date().toISOString() }).eq('id', it.id);
+    load();
+  };
+
+  const filtered = items.filter(it =>
+    !search ||
+    it.name.toLowerCase().includes(search.toLowerCase()) ||
+    (it.category||'').toLowerCase().includes(search.toLowerCase()) ||
+    (it.origin||'').toLowerCase().includes(search.toLowerCase())
+  );
+
+  const categories = [...new Set(items.map(i=>i.category).filter(Boolean))];
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {showForm && <CatalogForm user={user} item={editing} onSave={()=>{setShowForm(false);setEditing(null);load();}} onClose={()=>{setShowForm(false);setEditing(null);}}/>}
+
+      {/* Toolbar */}
+      <div className="cat-toolbar">
+        <input className="search-input" placeholder="ابحث باسم الصنف أو الفئة أو المنشأ..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200}}/>
+        <span style={{fontSize:12,color:'var(--gray-400)',whiteSpace:'nowrap'}}>{filtered.length} صنف</span>
+        <button className="btn btn-primary btn-sm" onClick={()=>{setEditing(null);setShowForm(true);}}>+ إضافة صنف</button>
+      </div>
+
+      {/* Stats strip */}
+      {categories.length > 0 && (
+        <div style={{display:'flex',gap:8,padding:'8px 20px',flexWrap:'wrap',borderBottom:'1px solid #eef2f7'}}>
+          {categories.map(cat => (
+            <span key={cat} className="erp-badge erp-badge-primary" style={{cursor:'pointer'}} onClick={()=>setSearch(cat)}>{cat}</span>
+          ))}
+        </div>
+      )}
+
+      {loading ? <div style={{textAlign:'center',padding:40,color:'var(--gray-400)'}}>جارٍ التحميل...</div>
+      : filtered.length === 0 ? (
+        <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
+          <div style={{fontSize:48,marginBottom:12}}>🗂️</div>
+          <div style={{fontSize:16,fontWeight:600}}>الكتالوج فارغ</div>
+          <div style={{fontSize:13,marginTop:4}}>ابدأ بإضافة أصنافك ومنتجاتك</div>
+          <button className="btn btn-primary" style={{marginTop:16}} onClick={()=>{setEditing(null);setShowForm(true);}}>+ إضافة أول صنف</button>
+        </div>
+      ) : (
+        <div className="cat-grid" style={{flex:1,overflowY:'auto'}}>
+          {filtered.map(it => (
+            <div key={it.id} className="cat-card" style={{opacity: it.is_active ? 1 : 0.55}}>
+              {it.category && <div className="cat-card-cat">{it.category}</div>}
+              <div className="cat-card-name">{it.name}</div>
+              {it.description && <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:4}}>{it.description}</div>}
+              <div className="cat-card-price">{parseFloat(it.unit_price||0).toFixed(3)} JOD</div>
+              <div className="cat-card-meta">
+                {it.unit && <span>📦 {it.unit}</span>}
+                {it.origin && <span>🌐 {it.origin}</span>}
+                {it.delivery && <span>🚚 {it.delivery}</span>}
+              </div>
+              {!it.is_active && <div style={{fontSize:11,color:'var(--danger)',marginTop:6,fontWeight:600}}>● غير نشط</div>}
+              <div className="cat-card-actions">
+                <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontSize:12}} onClick={e=>{e.stopPropagation();setEditing(it);setShowForm(true);}}>✏️</button>
+                {isAdmin && <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontSize:12}} onClick={e=>{e.stopPropagation();toggleActive(it);}} title={it.is_active?'إخفاء':'إظهار'}>{it.is_active?'🚫':'✅'}</button>}
+                {isAdmin && <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontSize:12,color:'var(--danger)'}} onClick={e=>{e.stopPropagation();deleteItem(it);}}>🗑️</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CustomersPage({ user }) {
   const [customers, setCustomers] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -2318,7 +2582,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون' };
 
   return (
     <div className="app-layout">
@@ -2334,6 +2598,7 @@ function App() {
           {page==='invoices' && <InvoicesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='orders' && <OrdersPage user={user} orders={orders} onReload={reload}/>}
           {page==='customers' && <CustomersPage user={user}/>}
+          {page==='catalog' && <CatalogPage user={user}/>}
           {page==='archive' && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && <ActivityPage logs={logs}/>}
           {page==='users' && user.role==='admin' && <UsersPage/>}
