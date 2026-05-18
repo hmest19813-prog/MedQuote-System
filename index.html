@@ -537,7 +537,6 @@ function AuthPage({ onLogin }) {
 /* ===================== SIDEBAR ===================== */
 const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: '📊' },
-  { id: 'new-quote', label: 'إنشاء عرض جديد', icon: '➕' },
   { id: 'quotes', label: 'عروض الأسعار', icon: '📋' },
   { id: 'invoices', label: 'الفواتير', icon: '🧾' },
   { id: 'orders', label: 'الطلبات', icon: '📦' },
@@ -1094,7 +1093,19 @@ function QuotesList({ user, quotes, onReload }) {
   const [filter, setFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [profiles, setProfiles] = useState({});
   const [editing, setEditing] = useState(null);
+
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    sb.from('profiles').select('id,full_name').then(({data}) => {
+      const map = {};
+      (data||[]).forEach(p => { map[p.id] = p.full_name; });
+      setProfiles(map);
+    });
+  }, []);
   const [orderingQ, setOrderingQ] = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
@@ -1166,7 +1177,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th></tr>
+              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th>{isAdmin && <th>المُصدِر</th>}<th>تغيير الحالة</th><th>إجراءات</th></tr>
             </thead>
             <tbody>
               {filtered.map(q => (
@@ -1176,6 +1187,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <td className="text-sm text-muted">{q.date}</td>
                   <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
                   <td><SBadge status={q.status}/></td>
+                  {isAdmin && <td className="text-sm text-muted">{profiles[q.created_by] || '—'}</td>}
                   <td>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
@@ -1198,7 +1210,7 @@ function QuotesList({ user, quotes, onReload }) {
                   </td>
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan="7"><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={isAdmin?8:7}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -2101,7 +2113,7 @@ function App() {
         </div>
         <div className="content">
           {page==='dashboard' && <Dashboard quotes={quotes} orders={orders} logs={logs} user={user}/>}
-          {(page==='quotes'||page==='new-quote') && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
+          {page==='quotes' && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
           {page==='invoices' && <InvoicesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='orders' && <OrdersPage user={user} orders={orders} onReload={reload}/>}
           {page==='customers' && <CustomersPage user={user}/>}
