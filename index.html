@@ -1189,7 +1189,7 @@ function QuotesList({ user, quotes, onReload }) {
                       {(q.status==='approved'||q.status==='sent') && (
                         <button className="btn btn-purple btn-sm" onClick={()=>convertToInvoice(q)} title="تحويل لفاتورة">🧾 فاتورة</button>
                       )}
-                      {q.status==='approved' && (
+                      {q.status!=='converted' && q.status!=='invoiced' && (
                         <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveQ(q)} title="أرشفة">🗄️</button>
