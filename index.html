@@ -819,7 +819,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
               <table>
                 <tbody>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{parseFloat(doc.subtotal||0).toFixed(0)}</td></tr>
-                  <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Discount</td><td style={{textAlign:'left',color:'var(--danger)'}}>{parseFloat(doc.discount_amt||0).toFixed(2)}</td></tr>
+                  <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Discount {doc.discount_type==='amt'?`(${doc.currency})`:`(${doc.discount_pct||0}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{parseFloat(doc.discount_amt||0).toFixed(2)}</td></tr>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Grand Total</td><td style={{textAlign:'left'}}>{(parseFloat(doc.subtotal||0)-parseFloat(doc.discount_amt||0)).toFixed(2)}</td></tr>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sales Tax ({doc.tax_pct||16}%)</td><td style={{textAlign:'left'}}>{parseFloat(doc.tax_amt||0).toFixed(3)}</td></tr>
                   <tr><td>Nett Price</td><td style={{textAlign:'left'}}>{parseFloat(doc.nett_price||0).toFixed(3)} {doc.currency}</td></tr>
@@ -864,7 +864,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     customer_name:'', attention:'', phone:'', address:'',
     date: today(), reference:'', currency:'JOD',
     delivery:'PROMPT', notes:'', terms:'',
-    discount_pct: 5, tax_pct: 16,
+    discount_pct: 5, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
     ...(editQuote || {})
   });
   const [items, setItems] = useState([
@@ -904,7 +904,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
 
   const subtotal = items.reduce((s,i) => s + (parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)), 0);
   const disc_pct = parseFloat(form.discount_pct||0);
-  const disc_amt = subtotal * disc_pct / 100;
+  const disc_fixed = parseFloat(form.discount_fixed||0);
+  const disc_amt = form.discount_type === 'amt' ? disc_fixed : subtotal * disc_pct / 100;
   const after_disc = subtotal - disc_amt;
   const tax_pct = parseFloat(form.tax_pct||0);
   const tax_amt = after_disc * tax_pct / 100;
@@ -1075,8 +1076,17 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
             <div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">الخصم %</label>
-                  <input type="number" min="0" max="100" className="form-control" value={form.discount_pct} onChange={e=>setF('discount_pct',e.target.value)}/>
+                  <label className="form-label">الخصم</label>
+                  <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                    <div style={{display:'flex',borderRadius:7,overflow:'hidden',border:'1.5px solid var(--gray-200)',flexShrink:0}}>
+                      <button type="button" onClick={()=>setF('discount_type','pct')} style={{padding:'6px 10px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.discount_type==='pct'?'var(--primary)':'#fff',color:form.discount_type==='pct'?'white':'var(--gray-600)'}}>%</button>
+                      <button type="button" onClick={()=>setF('discount_type','amt')} style={{padding:'6px 10px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.discount_type==='amt'?'var(--primary)':'#fff',color:form.discount_type==='amt'?'white':'var(--gray-600)'}}>مبلغ</button>
+                    </div>
+                    {form.discount_type==='pct'
+                      ? <input type="number" min="0" max="100" className="form-control" value={form.discount_pct} onChange={e=>setF('discount_pct',e.target.value)}/>
+                      : <input type="number" min="0" step="0.001" className="form-control" value={form.discount_fixed} onChange={e=>setF('discount_fixed',e.target.value)} placeholder="0.000"/>
+                    }
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">الضريبة %</label>
@@ -1092,7 +1102,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
               <table style={{width:'100%',fontSize:13}}>
                 <tbody>
                   <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Sub Total</td><td style={{textAlign:'left',fontWeight:600}}>{subtotal.toFixed(3)}</td></tr>
-                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Discount ({disc_pct}%)</td><td style={{textAlign:'left',color:'var(--danger)'}}>{disc_amt.toFixed(3)}</td></tr>
+                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Discount {form.discount_type==='amt'?`(${form.currency})`: `(${disc_pct}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{disc_amt.toFixed(3)}</td></tr>
                   <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Grand Total</td><td style={{textAlign:'left',fontWeight:600}}>{after_disc.toFixed(3)}</td></tr>
                   <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Sales Tax ({tax_pct}%)</td><td style={{textAlign:'left'}}>{tax_amt.toFixed(3)}</td></tr>
                   <tr style={{borderTop:'2px solid var(--primary)'}}><td style={{padding:'8px 0',fontWeight:800,color:'var(--primary)'}}>Nett Price</td><td style={{textAlign:'left',fontWeight:800,fontSize:15,color:'var(--primary)'}}>{nett.toFixed(3)} {form.currency}</td></tr>
@@ -1393,7 +1403,7 @@ function OrderEditModal({ user, quote, onSave, onClose }) {
 
 /* ===================== INVOICE EDIT MODAL (تعديل قبل تحويل لفاتورة) ===================== */
 function InvoiceEditModal({ user, quote, onSave, onClose }) {
-  const [form, setForm] = useState({ ...quote });
+  const [form, setForm] = useState({ discount_type:'pct', discount_fixed:0, ...quote });
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1421,7 +1431,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
 
   const subtotal = items.reduce((s,i) => s+(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)), 0);
-  const disc_amt = subtotal * parseFloat(form.discount_pct||0) / 100;
+  const disc_amt = form.discount_type==='amt' ? parseFloat(form.discount_fixed||0) : subtotal * parseFloat(form.discount_pct||0) / 100;
   const after_disc = subtotal - disc_amt;
   const tax_amt = after_disc * parseFloat(form.tax_pct||0) / 100;
   const nett = after_disc + tax_amt;
@@ -1440,6 +1450,8 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         reference: form.reference || null,
         currency: form.currency,
         discount_pct: parseFloat(form.discount_pct) || 0,
+        discount_type: form.discount_type || 'pct',
+        discount_fixed: parseFloat(form.discount_fixed||0),
         tax_pct: parseFloat(form.tax_pct) || 16,
         notes: form.notes || null,
         subtotal: subtotal.toFixed(3),
@@ -1498,7 +1510,19 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
             <div className="form-group"><label className="form-label">المرجع</label><input className="form-control" value={form.reference||''} onChange={e=>setF('reference',e.target.value)}/></div>
           </div>
           <div className="form-row mb-4">
-            <div className="form-group"><label className="form-label">الخصم %</label><input type="number" min="0" className="form-control" value={form.discount_pct} onChange={e=>setF('discount_pct',e.target.value)}/></div>
+            <div className="form-group">
+                <label className="form-label">الخصم</label>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <div style={{display:'flex',borderRadius:7,overflow:'hidden',border:'1.5px solid var(--gray-200)',flexShrink:0}}>
+                    <button type="button" onClick={()=>setF('discount_type','pct')} style={{padding:'6px 10px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.discount_type==='pct'?'var(--primary)':'#fff',color:form.discount_type==='pct'?'white':'var(--gray-600)'}}>%</button>
+                    <button type="button" onClick={()=>setF('discount_type','amt')} style={{padding:'6px 10px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.discount_type==='amt'?'var(--primary)':'#fff',color:form.discount_type==='amt'?'white':'var(--gray-600)'}}>مبلغ</button>
+                  </div>
+                  {form.discount_type==='pct'
+                    ? <input type="number" min="0" max="100" className="form-control" value={form.discount_pct} onChange={e=>setF('discount_pct',e.target.value)}/>
+                    : <input type="number" min="0" step="0.001" className="form-control" value={form.discount_fixed||0} onChange={e=>setF('discount_fixed',e.target.value)} placeholder="0.000"/>
+                  }
+                </div>
+              </div>
             <div className="form-group"><label className="form-label">الضريبة %</label><input type="number" min="0" className="form-control" value={form.tax_pct} onChange={e=>setF('tax_pct',e.target.value)}/></div>
           </div>
 
@@ -1534,7 +1558,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
             <table style={{width:'100%',fontSize:12}}>
               <tbody>
                 <tr><td>Sub Total</td><td style={{textAlign:'left'}}>{subtotal.toFixed(3)}</td></tr>
-                <tr><td>Discount ({form.discount_pct}%)</td><td style={{textAlign:'left',color:'var(--danger)'}}>{disc_amt.toFixed(3)}</td></tr>
+                <tr><td>Discount {form.discount_type==='amt'?`(${form.currency})`:`(${form.discount_pct}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{disc_amt.toFixed(3)}</td></tr>
                 <tr><td>Sales Tax ({form.tax_pct}%)</td><td style={{textAlign:'left'}}>{tax_amt.toFixed(3)}</td></tr>
                 <tr style={{borderTop:'2px solid var(--primary)'}}><td style={{fontWeight:800,color:'var(--primary)'}}>Nett Price</td><td style={{textAlign:'left',fontWeight:800,color:'var(--primary)'}}>{nett.toFixed(3)} {form.currency}</td></tr>
               </tbody>
