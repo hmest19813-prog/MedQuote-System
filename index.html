@@ -1784,6 +1784,19 @@ const printDoc = (containerId) => {
 };
 
 /* ===================== CUSTOMERS ===================== */
+function ErpField({label, value, onChange, type, placeholder, span}) {
+  return (
+    <div className="erp-field" style={span?{gridColumn:'1/-1'}:{}}>
+      <label>{label}</label>
+      {type==='textarea' ? (
+        <textarea className="erp-input" rows="2" value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder||''}/>
+      ) : (
+        <input className="erp-input" type={type||'text'} value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder||''}/>
+      )}
+    </div>
+  );
+}
+
 function CustomerForm({ customer, profiles, user, onSave, onClose }) {
   const empty = {
     name:'', customer_code:'', phone:'', fax:'', mobile:'', email:'', alt_phone:'',
@@ -1831,93 +1844,76 @@ function CustomerForm({ customer, profiles, user, onSave, onClose }) {
     finally { setLoading(false); }
   };
 
-  const F = ({label, k, type='text', placeholder='', span}) => (
-    <div className="erp-field" style={span?{gridColumn:'1/-1'}:{}}>
-      <label>{label}</label>
-      {type==='textarea' ? (
-        <textarea className="erp-input" rows="2" value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder}/>
-      ) : (
-        <input className="erp-input" type={type} value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder}/>
-      )}
-    </div>
-  );
-
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header" style={{background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',borderRadius:'12px 12px 0 0',position:'sticky',top:0,zIndex:10}}>
-          <span className="modal-title" style={{color:'white'}}>{customer ? '✏️ تعديل بيانات العميل' : '➕ إضافة عميل جديد'}</span>
-          <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>✕</button>
+          <span className="modal-title" style={{color:'white'}}>{customer ? 'تعديل بيانات العميل' : 'اضافة عميل جديد'}</span>
+          <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>X</button>
         </div>
         <div style={{background:'#f0f4f8',padding:'20px'}}>
           <div style={{display:'grid',gridTemplateColumns:'1.35fr 1fr 1fr',gap:14,marginBottom:14}}>
-
-            {/* Company Panel */}
             <div className="erp-card main-card">
-              <div className="erp-section-header">🏢 معلومات الشركة / العميل</div>
+              <div className="erp-section-header">بيانات الشركة / العميل</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <F label="رقم العميل" k="customer_code" placeholder="C-001"/>
+                <ErpField label="رقم العميل" value={form.customer_code} onChange={v=>setF('customer_code',v)} placeholder="C-001"/>
                 <div className="erp-field">
                   <label>المندوب المسؤول</label>
                   <select className="erp-input" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
-                    <option value="">— اختر —</option>
+                    <option value="">اختر</option>
                     {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
                   </select>
                 </div>
               </div>
-              <F label="اسم الشركة / العميل *" k="name" placeholder="اسم الشركة أو الجهة"/>
+              <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة او الجهة"/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <F label="هاتف" k="phone" placeholder="+962-6-..."/>
-                <F label="فاكس" k="fax" placeholder="+962-6-..."/>
+                <ErpField label="هاتف" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-6-..."/>
+                <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+962-6-..."/>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <F label="موبايل" k="mobile" placeholder="+962-7-..."/>
-                <F label="هاتف بديل" k="alt_phone" placeholder="+962-7-..."/>
+                <ErpField label="موبايل" value={form.mobile} onChange={v=>setF('mobile',v)} placeholder="+962-7-..."/>
+                <ErpField label="هاتف بديل" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-7-..."/>
               </div>
-              <F label="البريد الإلكتروني" k="email" type="email" placeholder="info@company.com"/>
-              <F label="الموقع الإلكتروني" k="website" placeholder="www.company.com"/>
+              <ErpField label="البريد الالكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
+              <ErpField label="الموقع الالكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <F label="المدينة / المنطقة" k="city" placeholder="عمّان"/>
-                <F label="التصنيف" k="category" placeholder="مستشفى / صيدلية"/>
+                <ErpField label="المدينة / المنطقة" value={form.city} onChange={v=>setF('city',v)} placeholder="عمان"/>
+                <ErpField label="التصنيف" value={form.category} onChange={v=>setF('category',v)} placeholder="مستشفى / صيدلية"/>
               </div>
-              <F label="Tags / وسوم" k="tags" placeholder="VIP, طبي, حكومي"/>
-              <F label="العنوان التفصيلي" k="address" placeholder="الشارع، المبنى، المنطقة"/>
-              <F label="ملاحظات عامة" k="notes" type="textarea" placeholder="ملاحظات عن العميل..."/>
+              <ErpField label="Tags / وسوم" value={form.tags} onChange={v=>setF('tags',v)} placeholder="VIP, طبي, حكومي"/>
+              <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، المنطقة"/>
+              <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..."/>
             </div>
-
-            {/* Contact 1 */}
             <div className="erp-card contact-card">
-              <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الأول</div>
-              <F label="الاسم الكامل" k="contact1_name" placeholder="الاسم"/>
-              <F label="المسمى الوظيفي" k="contact1_title" placeholder="مدير المشتريات"/>
-              <F label="رقم الهاتف" k="contact1_phone" placeholder="+962-6-..."/>
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الاول</div>
+              <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم"/>
+              <ErpField label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} placeholder="مدير المشتريات"/>
+              <ErpField label="رقم الهاتف" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-6-..."/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <F label="الموبايل" k="contact1_mobile" placeholder="+962-7-..."/>
-                <F label="تحويلة EXT" k="contact1_ext" placeholder="123"/>
+                <ErpField label="الموبايل" value={form.contact1_mobile} onChange={v=>setF('contact1_mobile',v)} placeholder="+962-7-..."/>
+                <ErpField label="تحويلة EXT" value={form.contact1_ext} onChange={v=>setF('contact1_ext',v)} placeholder="123"/>
               </div>
-              <F label="البريد الإلكتروني" k="contact1_email" type="email" placeholder="name@co.com"/>
-              <F label="ملاحظات" k="contact1_notes" type="textarea" placeholder=""/>
+              <ErpField label="البريد الالكتروني" value={form.contact1_email} onChange={v=>setF('contact1_email',v)} type="email" placeholder="name@co.com"/>
+              <ErpField label="ملاحظات" value={form.contact1_notes} onChange={v=>setF('contact1_notes',v)} type="textarea" placeholder=""/>
             </div>
-
-            {/* Contact 2 */}
             <div className="erp-card contact-card">
-              <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الثاني</div>
-              <F label="الاسم الكامل" k="contact2_name" placeholder="الاسم"/>
-              <F label="المسمى الوظيفي" k="contact2_title" placeholder="المحاسب / المشرف"/>
-              <F label="رقم الهاتف" k="contact2_phone" placeholder="+962-6-..."/>
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
+              <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم"/>
+              <ErpField label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} placeholder="المحاسب / المشرف"/>
+              <ErpField label="رقم الهاتف" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-6-..."/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <F label="الموبايل" k="contact2_mobile" placeholder="+962-7-..."/>
-                <F label="تحويلة EXT" k="contact2_ext" placeholder="456"/>
+                <ErpField label="الموبايل" value={form.contact2_mobile} onChange={v=>setF('contact2_mobile',v)} placeholder="+962-7-..."/>
+                <ErpField label="تحويلة EXT" value={form.contact2_ext} onChange={v=>setF('contact2_ext',v)} placeholder="456"/>
               </div>
-              <F label="البريد الإلكتروني" k="contact2_email" type="email" placeholder="name@co.com"/>
-              <F label="ملاحظات" k="contact2_notes" type="textarea" placeholder=""/>
+              <ErpField label="البريد الالكتروني" value={form.contact2_email} onChange={v=>setF('contact2_email',v)} type="email" placeholder="name@co.com"/>
+              <ErpField label="ملاحظات" value={form.contact2_notes} onChange={v=>setF('contact2_notes',v)} type="textarea" placeholder=""/>
             </div>
           </div>
         </div>
         <div className="modal-footer" style={{borderTop:'2px solid var(--primary-light)',position:'sticky',bottom:0,background:'#fff'}}>
-          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>إلغاء</button>
+          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>الغاء</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={loading} style={{minWidth:130}}>
-            {loading ? '...' : '💾 حفظ البيانات'}
+            {loading ? '...' : 'حفظ البيانات'}
           </button>
         </div>
       </div>
