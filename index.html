@@ -1095,21 +1095,20 @@ function QuotesList({ user, quotes, onReload }) {
   const [dateTo, setDateTo] = useState('');
   const [profiles, setProfiles] = useState({});
   const [editing, setEditing] = useState(null);
+  const [orderingQ, setOrderingQ] = useState(null);
+  const [previewing, setPreviewQ] = useState(null);
+  const [previewItems, setPreviewItems] = useState([]);
+  const [showForm, setShowForm] = useState(false);
 
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
   useEffect(() => {
-    if (!isAdmin) return;
     sb.from('profiles').select('id,full_name').then(({data}) => {
       const map = {};
       (data||[]).forEach(p => { map[p.id] = p.full_name; });
       setProfiles(map);
     });
   }, []);
-  const [orderingQ, setOrderingQ] = useState(null);
-  const [previewing, setPreviewQ] = useState(null);
-  const [previewItems, setPreviewItems] = useState([]);
-  const [showForm, setShowForm] = useState(false);
 
   const active = quotes.filter(q => !q.archived);
   const filtered = active.filter(q => {
