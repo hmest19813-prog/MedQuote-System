@@ -1164,8 +1164,12 @@ function QuotesList({ user, quotes, onReload }) {
   const deleteQ = async (q) => {
     if (!confirm(`حذف العرض "${q.number}" نهائياً مع جميع بنوده؟`)) return;
     try {
+      // فك ربط الطلبات المرتبطة (تعيين quotation_id = null)
+      await sb.from('orders').update({ quotation_id: null }).eq('quotation_id', q.id);
+      // حذف البنود أولاً
       const {error: e1} = await sb.from('quotation_items').delete().eq('quotation_id', q.id);
       if (e1) throw e1;
+      // حذف العرض
       const {error: e2} = await sb.from('quotations').delete().eq('id', q.id);
       if (e2) throw e2;
       toast('تم الحذف', 'success'); onReload();
