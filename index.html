@@ -1134,7 +1134,7 @@ function QuotesList({ user, quotes, onReload }) {
 
   const convertToOrder = async (q) => {
     if (!confirm('تحويل لطلب؟')) return;
-    const { error } = await sb.from('orders').insert({ quotation_id:q.id, quotation_number:q.number, customer_name:q.customer_name, currency:q.currency, total_amount:q.nett_price, status:'pending' });
+    const { error } = await sb.from('orders').insert({ quotation_id:q.id, quotation_number:q.number, customer_name:q.customer_name, currency:q.currency, total_amount:q.nett_price, status:'pending', created_by: user?.id||null });
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
     await sb.from('quotations').update({ status:'converted' }).eq('id', q.id);
     toast('تم التحويل لطلب', 'success'); onReload();
