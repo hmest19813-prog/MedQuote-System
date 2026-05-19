@@ -795,6 +795,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
               <div className="field-row"><label>المرجع:</label> <strong>{doc.reference||'—'}</strong></div>
               <div className="field-row"><label>هاتف:</label> {doc.phone||'—'}</div>
               <div className="field-row"><label>التاريخ:</label> {doc.date}</div>
+              {doc.valid_until && <div className="field-row"><label>صالح حتى:</label> <strong style={{color: new Date(doc.valid_until) < new Date() ? '#dc2626' : '#16a34a'}}>{doc.valid_until}</strong></div>}
               {docType==='invoice' && <div className="field-row" style={{gridColumn:'1/-1'}}><label>رقم التسجيل الضريبي:</label> <strong style={{color:'var(--primary)'}}>{COMPANY.tax_no}</strong></div>}
             </div>
           </div>
@@ -881,7 +882,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const [form, setForm] = useState({
     customer_name:'', attention:'', phone:'', address:'',
     date: today(), reference:'', currency:'JOD',
-    delivery:'PROMPT', notes:'', terms:'',
+    delivery:'PROMPT', notes:'', terms:'', valid_until:'',
     discount_pct: 5, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
     ...(editQuote || {})
   });
@@ -1074,6 +1075,15 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
               <label className="form-label">المرجع</label>
               <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder="دمى المحاكاة"/>
             </div>
+          </div>
+          <div className="form-row mb-4" style={{alignItems:'center'}}>
+            <div className="form-group" style={{maxWidth:220}}>
+              <label className="form-label">صالح حتى <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11}}>(اختياري)</span></label>
+              <input type="date" className="form-control" value={form.valid_until||''} onChange={e=>setF('valid_until',e.target.value)}/>
+            </div>
+            {form.valid_until && (
+              <button type="button" onClick={()=>setF('valid_until','')} style={{alignSelf:'flex-end',marginBottom:2,background:'none',border:'none',color:'var(--gray-400)',cursor:'pointer',fontSize:12}}>✕ إزالة</button>
+            )}
           </div>
           <div className="form-row mb-4">
             <div className="form-group">
@@ -1282,7 +1292,13 @@ function QuotesList({ user, quotes, onReload }) {
                 <tr key={q.id}>
                   <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
                   <td>{q.customer_name}</td>
-                  <td className="text-sm text-muted">{q.date}</td>
+                  <td className="text-sm text-muted">
+                    {q.date}
+                    {q.valid_until && (() => {
+                      const expired = new Date(q.valid_until) < new Date();
+                      return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
+                    })()}
+                  </td>
                   <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
                   <td><SBadge status={q.status}/></td>
                   {isAdmin && <td className="text-sm text-muted">{profiles[q.created_by] || '—'}</td>}
