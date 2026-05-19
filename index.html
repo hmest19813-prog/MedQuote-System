@@ -998,6 +998,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       delete payload.grand_total;
       delete payload.number;
       delete payload.total_price;
+      if (!payload.valid_until) payload.valid_until = null;
       if (!editQuote?.id) { payload.created_by = user?.id || null; }
       else { delete payload.created_by; }
 
