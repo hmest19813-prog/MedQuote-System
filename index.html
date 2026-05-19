@@ -371,6 +371,16 @@ tr:hover td { background: var(--gray-50); }
 .cat-picker-price { font-size:13px; font-weight:700; color:var(--primary); }
 .cat-picker-meta { font-size:11px; color:var(--gray-400); }
 
+/* PAYMENTS */
+.pay-badge-paid    { background:#dcfce7; color:#16a34a; border:1.5px solid #bbf7d0; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.pay-badge-partial { background:#fef9c3; color:#b45309; border:1.5px solid #fde68a; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.pay-badge-pending { background:#fee2e2; color:#dc2626; border:1.5px solid #fecaca; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.pay-row { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid #f0f4f8; font-size:13px; }
+.pay-row:last-child { border-bottom:none; }
+.pay-amount { font-weight:800; color:var(--primary); font-size:15px; min-width:90px; }
+.pay-progress { height:7px; border-radius:10px; background:#e5e7eb; overflow:hidden; margin-top:4px; }
+.pay-progress-bar { height:100%; border-radius:10px; background:linear-gradient(90deg,#16a34a,#4ade80); transition:width .4s; }
+
 /* UTILS */
 .text-muted { color: var(--gray-400); }
 .text-sm { font-size: 12px; }
@@ -1658,20 +1668,181 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
 }
 
 /* ===================== INVOICES PAGE ===================== */
+/* ===================== PAYMENT MODAL ===================== */
+function PaymentModal({ user, invoice, onClose, onSaved }) {
+  const [payments, setPayments] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
+  const [form, setForm] = React.useState({ amount:'', payment_date: new Date().toISOString().slice(0,10), method:'تحويل بنكي', reference_no:'', notes:'' });
+  const isAdmin = user?.role==='admin' || user?.role==='manager';
+  const total = parseFloat(invoice.nett_price||0);
+
+  const load = async () => {
+    const { data } = await sb.from('payments').select('*').eq('quotation_id', invoice.id).order('payment_date', {ascending:false});
+    setPayments(data||[]);
+    setLoading(false);
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const totalPaid = payments.reduce((s,p) => s + parseFloat(p.amount||0), 0);
+  const remaining = total - totalPaid;
+  const pct = total > 0 ? Math.min(100, (totalPaid/total)*100) : 0;
+
+  const handleAdd = async () => {
+    const amt = parseFloat(form.amount);
+    if (!amt || amt <= 0) { toast('أدخل مبلغاً صحيحاً','error'); return; }
+    if (amt > remaining + 0.001) { toast(`المبلغ أكبر من المتبقي (${remaining.toFixed(3)})`, 'error'); return; }
+    setSaving(true);
+    const { error } = await sb.from('payments').insert({ quotation_id: invoice.id, amount: amt, payment_date: form.payment_date, method: form.method, reference_no: form.reference_no||null, notes: form.notes||null, created_by: user.id });
+    setSaving(false);
+    if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
+    toast('تم تسجيل الدفعة ✓','success');
+    setForm(f => ({...f, amount:'', reference_no:'', notes:''}));
+    load();
+    onSaved();
+  };
+
+  const handleDelete = async (p) => {
+    if (!confirm('حذف هذه الدفعة؟')) return;
+    await sb.from('payments').delete().eq('id', p.id);
+    toast('تم الحذف','success');
+    load(); onSaved();
+  };
+
+  const statusLabel = totalPaid <= 0 ? 'معلق' : remaining <= 0.001 ? 'مدفوع بالكامل' : 'مدفوع جزئياً';
+  const statusClass = totalPaid <= 0 ? 'pay-badge-pending' : remaining <= 0.001 ? 'pay-badge-paid' : 'pay-badge-partial';
+  const METHODS = ['تحويل بنكي','نقد','شيك','بطاقة ائتمان','حوالة'];
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:560}}>
+        <div className="modal-header">
+          <span>💰 دفعات الفاتورة — {invoice.number}</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body" style={{padding:0}}>
+
+          {/* ملخص */}
+          <div style={{padding:'16px 20px', background:'#f8fafc', borderBottom:'1px solid #eef2f7'}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10}}>
+              <div>
+                <div style={{fontSize:12, color:'var(--gray-500)'}}>العميل</div>
+                <div style={{fontWeight:700}}>{invoice.customer_name}</div>
+              </div>
+              <span className={statusClass}>{statusLabel}</span>
+            </div>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10}}>
+              <div style={{textAlign:'center', background:'#fff', borderRadius:8, padding:'8px 4px', border:'1px solid #e5e7eb'}}>
+                <div style={{fontSize:10, color:'var(--gray-400)'}}>إجمالي الفاتورة</div>
+                <div style={{fontWeight:800, fontSize:14}}>{total.toFixed(3)}</div>
+              </div>
+              <div style={{textAlign:'center', background:'#dcfce7', borderRadius:8, padding:'8px 4px', border:'1px solid #bbf7d0'}}>
+                <div style={{fontSize:10, color:'#166534'}}>المدفوع</div>
+                <div style={{fontWeight:800, fontSize:14, color:'#16a34a'}}>{totalPaid.toFixed(3)}</div>
+              </div>
+              <div style={{textAlign:'center', background: remaining<=0.001?'#f0fdf4':'#fff7ed', borderRadius:8, padding:'8px 4px', border:`1px solid ${remaining<=0.001?'#bbf7d0':'#fed7aa'}`}}>
+                <div style={{fontSize:10, color: remaining<=0.001?'#166534':'#92400e'}}>المتبقي</div>
+                <div style={{fontWeight:800, fontSize:14, color: remaining<=0.001?'#16a34a':'#b45309'}}>{Math.max(0,remaining).toFixed(3)}</div>
+              </div>
+            </div>
+            <div className="pay-progress">
+              <div className="pay-progress-bar" style={{width:`${pct}%`}}/>
+            </div>
+            <div style={{fontSize:11, color:'var(--gray-400)', textAlign:'left', marginTop:3}}>{pct.toFixed(0)}%</div>
+          </div>
+
+          {/* سجل الدفعات */}
+          <div style={{maxHeight:200, overflowY:'auto'}}>
+            {loading ? <div style={{padding:20,textAlign:'center',color:'var(--gray-400)'}}>جارٍ التحميل...</div>
+            : payments.length===0 ? <div style={{padding:20,textAlign:'center',color:'var(--gray-400)',fontSize:13}}>لا توجد دفعات مسجّلة بعد</div>
+            : payments.map(p => (
+              <div key={p.id} className="pay-row">
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700}}>{p.method} {p.reference_no ? <span style={{fontSize:11,color:'var(--gray-400)'}}>— {p.reference_no}</span> : ''}</div>
+                  <div style={{fontSize:11,color:'var(--gray-400)'}}>{p.payment_date}{p.notes ? ` · ${p.notes}` : ''}</div>
+                </div>
+                <div className="pay-amount">+{parseFloat(p.amount).toFixed(3)}</div>
+                {isAdmin && <button onClick={()=>handleDelete(p)} style={{background:'none',border:'none',color:'#dc2626',cursor:'pointer',fontSize:16,padding:'0 4px'}}>×</button>}
+              </div>
+            ))}
+          </div>
+
+          {/* إضافة دفعة جديدة */}
+          {remaining > 0.001 && (
+            <div style={{padding:'14px 20px', borderTop:'2px solid #eef2f7', background:'#fafcff'}}>
+              <div style={{fontWeight:700, fontSize:13, marginBottom:10, color:'var(--primary)'}}>+ إضافة دفعة</div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10}}>
+                <div className="form-group">
+                  <label className="form-label">المبلغ *</label>
+                  <input className="form-control" type="number" min="0.001" step="0.001" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder={`الحد الأقصى ${remaining.toFixed(3)}`}/>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">التاريخ</label>
+                  <input className="form-control" type="date" value={form.payment_date} onChange={e=>setForm(f=>({...f,payment_date:e.target.value}))}/>
+                </div>
+              </div>
+              <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12}}>
+                <div className="form-group">
+                  <label className="form-label">طريقة الدفع</label>
+                  <select className="form-control" value={form.method} onChange={e=>setForm(f=>({...f,method:e.target.value}))}>
+                    {METHODS.map(m=><option key={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">رقم المرجع / الإيصال</label>
+                  <input className="form-control" value={form.reference_no} onChange={e=>setForm(f=>({...f,reference_no:e.target.value}))} placeholder="اختياري"/>
+                </div>
+              </div>
+              <div className="form-group" style={{marginBottom:12}}>
+                <label className="form-label">ملاحظات</label>
+                <input className="form-control" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="اختياري"/>
+              </div>
+              <button className="btn btn-primary" style={{width:'100%'}} onClick={handleAdd} disabled={saving}>{saving?'جارٍ الحفظ...':'تسجيل الدفعة'}</button>
+            </div>
+          )}
+          {remaining <= 0.001 && (
+            <div style={{padding:16, textAlign:'center', color:'#16a34a', fontWeight:700, fontSize:14}}>✅ تم سداد الفاتورة بالكامل</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InvoicesPage({ user, quotes, onReload }) {
   const invoiced = quotes.filter(q => q.status==='invoiced' && !q.archived);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [payingInvoice, setPayingInvoice] = useState(null);
+  const [paySummary, setPaySummary] = useState({});
+
+  const loadPaySummary = async () => {
+    if (!invoiced.length) return;
+    const ids = invoiced.map(q=>q.id);
+    const { data } = await sb.from('payments').select('quotation_id, amount').in('quotation_id', ids);
+    const map = {};
+    (data||[]).forEach(p => { map[p.quotation_id] = (map[p.quotation_id]||0) + parseFloat(p.amount||0); });
+    setPaySummary(map);
+  };
+
+  useEffect(() => { loadPaySummary(); }, [quotes]);
 
   const openPreview = async (q) => {
     try {
       const { data } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
       setPreviewItems(data||[]);
-    } catch(e) {
-      setPreviewItems([]);
-    }
+    } catch(e) { setPreviewItems([]); }
     setPreviewQ(q);
+  };
+
+  const getPayBadge = (q) => {
+    const total = parseFloat(q.nett_price||0);
+    const paid = paySummary[q.id]||0;
+    if (paid <= 0)           return <span className="pay-badge-pending">معلق</span>;
+    if (paid >= total-0.001) return <span className="pay-badge-paid">مدفوع ✓</span>;
+    return <span className="pay-badge-partial">جزئي</span>;
   };
 
   return (
@@ -1683,30 +1854,40 @@ function InvoicesPage({ user, quotes, onReload }) {
       <div className="card">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>العملة</th><th>إجراءات</th></tr></thead>
+            <thead><tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>المدفوع</th><th>الحالة</th><th>إجراءات</th></tr></thead>
             <tbody>
-              {invoiced.map(q => (
-                <tr key={q.id}>
-                  <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
-                  <td>{q.customer_name}</td>
-                  <td className="text-sm text-muted">{q.date}</td>
-                  <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
-                  <td>{q.currency}</td>
-                  <td>
-                    <div className="flex gap-2">
-                      <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>🧾 عرض الفاتورة</button>
-                      <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {invoiced.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>لا توجد فواتير بعد</p><small>قم بتحويل عرض سعر مُعتمد لفاتورة</small></div></td></tr>}
+              {invoiced.map(q => {
+                const total = parseFloat(q.nett_price||0);
+                const paid  = paySummary[q.id]||0;
+                return (
+                  <tr key={q.id}>
+                    <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
+                    <td>{q.customer_name}</td>
+                    <td className="text-sm text-muted">{q.date}</td>
+                    <td className="font-bold">{total.toFixed(3)} <span style={{fontSize:11,color:'var(--gray-400)'}}>{q.currency}</span></td>
+                    <td>
+                      <div style={{fontSize:13,fontWeight:700,color:'#16a34a'}}>{paid.toFixed(3)}</div>
+                      {paid>0 && paid<total && <div style={{fontSize:11,color:'#b45309'}}>متبقي: {(total-paid).toFixed(3)}</div>}
+                    </td>
+                    <td>{getPayBadge(q)}</td>
+                    <td>
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setPayingInvoice(q)}>💰 دفعات</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>🧾 عرض</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {invoiced.length===0 && <tr><td colSpan="7"><div className="empty-state"><p>لا توجد فواتير بعد</p><small>قم بتحويل عرض سعر مُعتمد لفاتورة</small></div></td></tr>}
             </tbody>
           </table>
         </div>
       </div>
       {previewing && <DocPreview doc={previewing} items={previewItems} docType="invoice" onClose={()=>setPreviewQ(null)}/>}
       {editing && <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>}
+      {payingInvoice && <PaymentModal user={user} invoice={payingInvoice} onClose={()=>setPayingInvoice(null)} onSaved={loadPaySummary}/>}
     </div>
   );
 }
