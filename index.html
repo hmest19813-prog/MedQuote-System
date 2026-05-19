@@ -948,6 +948,25 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     setCatalogPicker(null);
   };
 
+  const saveCustomerFromQuote = async () => {
+    if (!form.customer_name?.trim()) { toast('أدخل اسم العميل أولاً','error'); return; }
+    const { data: existing } = await sb.from('customers').select('id').ilike('name', form.customer_name.trim()).maybeSingle();
+    if (existing) { toast('هذا العميل موجود مسبقاً في القائمة','info'); setF('customer_id', existing.id); return; }
+    const { data, error } = await sb.from('customers').insert({ name: form.customer_name.trim(), phone: form.phone||null, created_by: user.id }).select('id').single();
+    if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
+    setF('customer_id', data.id);
+    toast('تم حفظ العميل في قائمة العملاء ✓','success');
+  };
+
+  const saveItemToCatalog = async (item) => {
+    if (!item.item_name?.trim()) { toast('أدخل اسم المنتج أولاً','error'); return; }
+    const { data: existing } = await sb.from('catalog_items').select('id').ilike('name', item.item_name.trim()).maybeSingle();
+    if (existing) { toast('هذا الصنف موجود في الكتالوج مسبقاً','info'); return; }
+    const { error } = await sb.from('catalog_items').insert({ name: item.item_name.trim(), description: item.description||null, unit: item.unit||'EACH', unit_price: parseFloat(item.unit_price)||0, origin: item.origin||'CHINA', delivery: item.delivery||'PROMPT', created_by: user.id });
+    if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
+    toast('تم حفظ الصنف في الكتالوج ✓','success');
+  };
+
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
@@ -1032,7 +1051,10 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           <div className="form-row mb-4">
             <div className="form-group">
               <label className="form-label">اسم العميل *</label>
-              <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)} placeholder="اسم الجهة / الشركة"/>
+              <div style={{display:'flex',gap:6}}>
+                <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)} placeholder="اسم الجهة / الشركة" style={{flex:1}}/>
+                <button type="button" onClick={saveCustomerFromQuote} title="حفظ في قائمة العملاء" style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:7,padding:'0 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>💾 حفظ</button>
+              </div>
             </div>
             <div className="form-group">
               <label className="form-label">عناية</label>
@@ -1078,7 +1100,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                   <th style={{width:60}}>الكمية</th>
                   <th style={{width:85}}>سعر الوحدة</th>
                   <th style={{width:85}}>الإجمالي</th>
-                  <th style={{width:70}}>المنشأ</th>
+                  <th style={{minWidth:110}}>المنشأ</th>
                   <th style={{width:85}}>التوصيل</th>
                   <th style={{width:28}}></th>
                 </tr>
@@ -1089,7 +1111,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                   return (
                     <tr key={i}>
                       <td>{i+1}</td>
-                      <td><div style={{display:'flex',gap:3,alignItems:'center'}}><input value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)} placeholder="اسم المنتج" style={{flex:1}}/><button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>🗂️</button></div></td>
+                      <td><div style={{display:'flex',gap:3,alignItems:'center'}}><input value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)} placeholder="اسم المنتج" style={{flex:1}}/><button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>🗂️</button><button type="button" title="حفظ في الكتالوج" onClick={()=>saveItemToCatalog(item)} style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>💾</button></div></td>
                       <td><input value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} placeholder="EACH"/></td>
                       <td><input type="number" min="0" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
