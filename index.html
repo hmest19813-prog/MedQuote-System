@@ -1530,7 +1530,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
     setSaving(true);
     try {
       // تحديث بيانات العرض الأصلي
-      await sb.from('quotations').update({
+      const updatePayload = {
         customer_name: form.customer_name,
         attention: form.attention || null,
         phone: form.phone || null,
@@ -1538,8 +1538,6 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         reference: form.reference || null,
         currency: form.currency,
         discount_pct: parseFloat(form.discount_pct) || 0,
-        discount_type: form.discount_type || 'pct',
-        discount_fixed: parseFloat(form.discount_fixed||0),
         tax_pct: parseFloat(form.tax_pct) || 16,
         notes: form.notes || null,
         subtotal: subtotal.toFixed(3),
@@ -1547,10 +1545,20 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         tax_amt: tax_amt.toFixed(3),
         nett_price: nett.toFixed(3),
         status: 'invoiced',
-      }).eq('id', quote.id);
+        updated_at: new Date().toISOString(),
+      };
+
+      // أضف حقول الخصم فقط لو الأعمدة موجودة
+      try { updatePayload.discount_type = form.discount_type || 'pct'; } catch(_){}
+      try { updatePayload.discount_fixed = parseFloat(form.discount_fixed||0); } catch(_){}
+
+      const { error: updateErr } = await sb.from('quotations').update(updatePayload).eq('id', quote.id);
+      if (updateErr) throw new Error('فشل تحديث العرض: ' + updateErr.message);
 
       // تحديث الأصناف
-      await sb.from('quotation_items').delete().eq('quotation_id', quote.id);
+      const { error: delErr } = await sb.from('quotation_items').delete().eq('quotation_id', quote.id);
+      if (delErr) throw new Error('فشل حذف الأصناف القديمة: ' + delErr.message);
+
       const itemRows = items.filter(i=>i.item_name?.trim()).map((i,idx) => ({
         quotation_id: quote.id, sort_order: idx,
         item_name: i.item_name, description: i.description||'',
@@ -1558,11 +1566,12 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         unit_price: parseFloat(i.unit_price)||0,
         origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT', notes: i.notes||''
       }));
-      await sb.from('quotation_items').insert(itemRows);
+      if (itemRows.length) {
+        const { error: insErr } = await sb.from('quotation_items').insert(itemRows);
+        if (insErr) throw new Error('فشل إدراج الأصناف: ' + insErr.message);
+      }
 
-      // log skipped
-
-      toast('تم إصدار الفاتورة بنجاح', 'success');
+      toast('تم إصدار الفاتورة بنجاح ✓', 'success');
       onSave();
     } catch (err) {
       toast('خطأ: ' + err.message, 'error');
