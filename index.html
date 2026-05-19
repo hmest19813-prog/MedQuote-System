@@ -762,7 +762,7 @@ function Dashboard({ quotes, orders, logs, user }) {
 
 /* ===================== QUOTE / INVOICE PREVIEW ===================== */
 function DocPreview({ doc, items, docType='quote', onClose }) {
-  const title = docType === 'invoice' ? 'فاتورة ضريبية' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
+  const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   return (
     <div className="modal-overlay">
@@ -793,7 +793,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
           {/* عنوان الوثيقة */}
           <div className="print-doc-title">
-            {docType === 'invoice' ? 'فاتورة ضريبية — TAX INVOICE' : docType === 'order' ? 'طلبية — PURCHASE ORDER' : 'عرض أسعار — OFFER'}
+            {docType === 'invoice' ? 'فاتورة — TAX INVOICE' : docType === 'order' ? 'طلبية — PURCHASE ORDER' : 'عرض أسعار — OFFER'}
           </div>
 
           {/* بيانات العميل + بيانات العرض */}
