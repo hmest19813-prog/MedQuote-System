@@ -765,6 +765,47 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
 
+  const sendViaOutlook = () => {
+    // بعد ما يُغلق مربع الطباعة نفتح Outlook
+    const handleAfterPrint = () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      setTimeout(() => {
+        const grandTotal = (parseFloat(doc.subtotal||0) - parseFloat(doc.discount_amt||0)).toFixed(2);
+        const nett      = parseFloat(doc.nett_price||0).toFixed(3);
+        const currency  = doc.currency || 'JOD';
+        const docLabel  = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
+
+        const subject = encodeURIComponent(`${docLabel} رقم ${doc.number} - ${doc.customer_name || ''}`);
+
+        const bodyLines = [
+          `السادة ${doc.customer_name || ''}`,
+          doc.attention ? `عناية: ${doc.attention}` : '',
+          '',
+          'تحية طيبة وبعد،',
+          '',
+          `يسعدنا أن نتقدم إليكم بـ${docLabel} رقم (${doc.number}) بتاريخ ${doc.date}.`,
+          '',
+          `المبلغ الإجمالي (قبل الضريبة): ${grandTotal} ${currency}`,
+          `السعر الصافي (شامل الضريبة):   ${nett} ${currency}`,
+          '',
+          'نأمل أن يلقى عرضنا قبولكم، ونحن رهن إشارتكم لأي استفسار.',
+          '',
+          'مع التقدير،',
+          'مؤسسة الحياة العلمية الطبية الكيماوية',
+          `هاتف: ${COMPANY.tel}`,
+          `بريد: ${COMPANY.email}`,
+          `موقع: ${COMPANY.website}`,
+        ].filter(l => l !== null);
+
+        const body = encodeURIComponent(bodyLines.join('\r\n'));
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+      }, 150);
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    printDoc('print-content');
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920}}>
@@ -772,6 +813,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           <span className="modal-title">{title} — {doc.number}</span>
           <div className="flex gap-2">
             <button className="btn btn-primary btn-sm" onClick={()=>printDoc('print-content')}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
