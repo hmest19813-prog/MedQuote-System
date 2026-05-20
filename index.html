@@ -2649,11 +2649,12 @@ function CatalogPicker({ onSelect, onClose }) {
 }
 
 function CatalogPage({ user }) {
-  const [items, setItems] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-  const [search, setSearch] = React.useState('');
+  const [items,    setItems]    = React.useState([]);
+  const [loading,  setLoading]  = React.useState(true);
+  const [search,   setSearch]   = React.useState('');
+  const [catFilter,setCatFilter]= React.useState('all');
   const [showForm, setShowForm] = React.useState(false);
-  const [editing, setEditing] = React.useState(null);
+  const [editing,  setEditing]  = React.useState(null);
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
   const load = async () => {
@@ -2662,15 +2663,13 @@ function CatalogPage({ user }) {
     setItems(data||[]);
     setLoading(false);
   };
-
   React.useEffect(() => { load(); }, []);
 
   const deleteItem = async (it) => {
-    if (!window.confirm(`حذف "${it.name}"؟`)) return;
+    if (!window.confirm('حذف "' + it.name + '"؟')) return;
     const { error } = await sb.from('catalog_items').delete().eq('id', it.id);
     if (error) { toast('فشل الحذف: '+error.message,'error'); return; }
-    toast('تم حذف الصنف','success');
-    load();
+    toast('تم حذف الصنف','success'); load();
   };
 
   const toggleActive = async (it) => {
@@ -2678,66 +2677,152 @@ function CatalogPage({ user }) {
     load();
   };
 
-  const filtered = items.filter(it =>
-    !search ||
-    it.name.toLowerCase().includes(search.toLowerCase()) ||
-    (it.category||'').toLowerCase().includes(search.toLowerCase()) ||
-    (it.origin||'').toLowerCase().includes(search.toLowerCase())
-  );
+  const categories = ['all', ...new Set(items.map(i=>i.category).filter(Boolean))];
 
-  const categories = [...new Set(items.map(i=>i.category).filter(Boolean))];
+  const filtered = items.filter(it => {
+    const ms = !search ||
+      it.name.toLowerCase().includes(search.toLowerCase()) ||
+      (it.category||'').toLowerCase().includes(search.toLowerCase()) ||
+      (it.origin||'').toLowerCase().includes(search.toLowerCase()) ||
+      (it.description||'').toLowerCase().includes(search.toLowerCase());
+    const mc = catFilter === 'all' || it.category === catFilter;
+    return ms && mc;
+  });
 
   return (
-    <div style={{height:'100%',display:'flex',flexDirection:'column',overflow:'hidden'}}>
-      {showForm && <CatalogForm user={user} item={editing} onSave={()=>{setShowForm(false);setEditing(null);load();}} onClose={()=>{setShowForm(false);setEditing(null);}}/>}
+    <div>
+      {showForm && <CatalogForm user={user} item={editing}
+        onSave={()=>{ setShowForm(false); setEditing(null); load(); }}
+        onClose={()=>{ setShowForm(false); setEditing(null); }}/>}
 
-      {/* Toolbar */}
-      <div className="cat-toolbar">
-        <input className="search-input" placeholder="ابحث باسم الصنف أو الفئة أو المنشأ..." value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1,minWidth:200}}/>
-        <span style={{fontSize:12,color:'var(--gray-400)',whiteSpace:'nowrap'}}>{filtered.length} صنف</span>
-        <button className="btn btn-primary btn-sm" onClick={()=>{setEditing(null);setShowForm(true);}}>+ إضافة صنف</button>
+      <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
+        <h2 style={{fontSize:20,fontWeight:800}}>كتالوج الأصناف</h2>
+        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة صنف</button>
       </div>
 
-      {/* Stats strip */}
-      {categories.length > 0 && (
-        <div style={{display:'flex',gap:8,padding:'8px 20px',flexWrap:'wrap',borderBottom:'1px solid #eef2f7'}}>
-          {categories.map(cat => (
-            <span key={cat} className="erp-badge erp-badge-primary" style={{cursor:'pointer'}} onClick={()=>setSearch(cat)}>{cat}</span>
-          ))}
+      <div className="card">
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث باسم الصنف أو الفئة أو المنشأ..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <select className="form-control" style={{width:'auto'}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+            {categories.map(c => <option key={c} value={c}>{c==='all'?'كل الفئات':c}</option>)}
+          </select>
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} صنف</span>
         </div>
-      )}
 
-      {loading ? <div style={{textAlign:'center',padding:40,color:'var(--gray-400)'}}>جارٍ التحميل...</div>
-      : filtered.length === 0 ? (
-        <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
-          <div style={{fontSize:48,marginBottom:12}}>🗂️</div>
-          <div style={{fontSize:16,fontWeight:600}}>الكتالوج فارغ</div>
-          <div style={{fontSize:13,marginTop:4}}>ابدأ بإضافة أصنافك ومنتجاتك</div>
-          <button className="btn btn-primary" style={{marginTop:16}} onClick={()=>{setEditing(null);setShowForm(true);}}>+ إضافة أول صنف</button>
-        </div>
-      ) : (
-        <div className="cat-grid" style={{flex:1,overflowY:'auto'}}>
-          {filtered.map(it => (
-            <div key={it.id} className="cat-card" style={{opacity: it.is_active ? 1 : 0.55}}>
-              {it.category && <div className="cat-card-cat">{it.category}</div>}
-              <div className="cat-card-name">{it.name}</div>
-              {it.description && <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:4}}>{it.description}</div>}
-              <div className="cat-card-price">{parseFloat(it.unit_price||0).toFixed(3)} JOD</div>
-              <div className="cat-card-meta">
-                {it.unit && <span>📦 {it.unit}</span>}
-                {it.origin && <span>🌐 {it.origin}</span>}
-                {it.delivery && <span>🚚 {it.delivery}</span>}
-              </div>
-              {!it.is_active && <div style={{fontSize:11,color:'var(--danger)',marginTop:6,fontWeight:600}}>● غير نشط</div>}
-              <div className="cat-card-actions">
-                <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontSize:12}} onClick={e=>{e.stopPropagation();setEditing(it);setShowForm(true);}}>✏️</button>
-                {isAdmin && <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontSize:12}} onClick={e=>{e.stopPropagation();toggleActive(it);}} title={it.is_active?'إخفاء':'إظهار'}>{it.is_active?'🚫':'✅'}</button>}
-                {isAdmin && <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontSize:12,color:'var(--danger)'}} onClick={e=>{e.stopPropagation();deleteItem(it);}}>🗑️</button>}
-              </div>
+        {loading
+          ? <div style={{textAlign:'center',padding:40,color:'var(--gray-400)'}}>جارٍ التحميل...</div>
+          : filtered.length === 0
+          ? (
+            <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
+              <div style={{fontSize:48,marginBottom:12}}>🗂️</div>
+              <div style={{fontSize:16,fontWeight:600}}>لا توجد أصناف</div>
+              <div style={{fontSize:13,marginTop:4}}>ابدأ بإضافة أصنافك ومنتجاتك</div>
+              <button className="btn btn-primary" style={{marginTop:16}} onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة أول صنف</button>
             </div>
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>اسم الصنف</th>
+                    <th>الفئة</th>
+                    <th>الوحدة</th>
+                    <th>السعر</th>
+                    <th>المنشأ</th>
+                    <th>التوريد</th>
+                    <th>الحالة</th>
+                    <th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((it, idx) => (
+                    <tr key={it.id} style={{opacity: it.is_active ? 1 : 0.5}}>
+                      <td className="text-muted text-sm">{idx+1}</td>
+                      <td>
+                        <div style={{fontWeight:700,color:'var(--gray-800)'}}>{it.name}</div>
+                        {it.description && <div style={{fontSize:11,color:'var(--gray-400)',marginTop:2}}>{it.description}</div>}
+                      </td>
+                      <td>
+                        {it.category
+                          ? <span className="erp-badge erp-badge-primary">{it.category}</span>
+                          : <span className="text-muted">—</span>}
+                      </td>
+                      <td className="text-sm">{it.unit || '—'}</td>
+                      <td className="font-bold" style={{color:'var(--primary)'}}>{parseFloat(it.unit_price||0).toFixed(3)}</td>
+                      <td className="text-sm">{it.origin || '—'}</td>
+                      <td className="text-sm">{it.delivery || '—'}</td>
+                      <td>
+                        {it.is_active
+                          ? <span className="badge badge-success">نشط</span>
+                          : <span className="badge badge-danger">غير نشط</span>}
+                      </td>
+                      <td>
+                        <div className="flex gap-1">
+                          <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
+                            onClick={()=>{ setEditing(it); setShowForm(true); }} title="تعديل">✏️</button>
+                          {isAdmin && (
+                            <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
+                              onClick={()=>toggleActive(it)} title={it.is_active?'إيقاف':'تفعيل'}>
+                              {it.is_active ? '🔴' : '🟢'}
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',color:'var(--danger)'}}
+                              onClick={()=>deleteItem(it)} title="حذف">🗑️</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+      </div>
+    </div>
+  );
+}
+                      </td>
+                      <td>
+                        {it.category
+                          ? <span className=erp-badge erp-badge-primary>{it.category}</span>
+                          : <span className=text-muted>—</span>}
+                      </td>
+                      <td className=text-sm>{it.unit || '—'}</td>
+                      <td className=font-bold style={{color:'var(--primary)'}}>{parseFloat(it.unit_price||0).toFixed(3)}</td>
+                      <td className=text-sm>{it.origin || '—'}</td>
+                      <td className=text-sm>{it.delivery || '—'}</td>
+                      <td>
+                        {it.is_active
+                          ? <span className=badge badge-success>نشط</span>
+                          : <span className=badge badge-danger>غير نشط</span>}
+                      </td>
+                      <td>
+                        <div className=flex gap-1>
+                          <button className=btn btn-ghost btn-sm style={{padding:'3px 8px'}}
+                            onClick={()=>{ setEditing(it); setShowForm(true); }} title=تعديل>✏️</button>
+                          {isAdmin && (
+                            <button className=btn btn-ghost btn-sm style={{padding:'3px 8px'}}
+                              onClick={()=>toggleActive(it)} title={it.is_active?'إيقاف':'تفعيل'}>
+                              {it.is_active ? '🔴' : '🟢'}
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button className=btn btn-ghost btn-sm style={{padding:'3px 8px',color:'var(--danger)'}}
+                              onClick={()=>deleteItem(it)} title=حذف>🗑️</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+      </div>
     </div>
   );
 }
