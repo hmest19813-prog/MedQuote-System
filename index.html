@@ -198,6 +198,8 @@ tr:hover td { background: var(--gray-50); }
 .badge-rejected { background: var(--danger-light); color: var(--danger); }
 .badge-converted { background: #ede9fe; color: #7c3aed; }
 .badge-invoiced { background: #fef3c7; color: #92400e; }
+.badge-cancelled { background: #fee2e2; color: #991b1b; }
+.badge-expired { background: #f3f4f6; color: #374151; }
 .badge-pending { background: var(--warning-light); color: var(--warning); }
 .badge-confirmed { background: var(--info-light); color: var(--info); }
 .badge-processing { background: #ede9fe; color: #7c3aed; }
@@ -452,8 +454,9 @@ const ago = (ts) => {
 };
 
 const SL = {
-  draft: 'مسودة', sent: 'مُرسل', approved: 'مُعتمد',
-  rejected: 'مرفوض', converted: 'محوّل لطلب', invoiced: 'تم إصدار فاتورة'
+  draft: 'مسودة', sent: 'قيد الدراسة', approved: 'مُعتمد',
+  rejected: 'مرفوض', converted: 'محوّل لطلب', invoiced: 'تم إصدار فاتورة',
+  cancelled: 'ملغي', expired: 'منتهي'
 };
 const OL = {
   pending: 'معلق', confirmed: 'مؤكد', processing: 'قيد التنفيذ',
@@ -706,7 +709,7 @@ function Dashboard({ quotes, orders, logs, user }) {
 
   const donutItems = [
     { l:'مسودة', v: active.filter(q=>q.status==='draft').length },
-    { l:'مُرسل', v: active.filter(q=>q.status==='sent').length },
+    { l:'قيد الدراسة', v: active.filter(q=>q.status==='sent').length },
     { l:'مُعتمد', v: active.filter(q=>q.status==='approved').length },
     { l:'مرفوض', v: active.filter(q=>q.status==='rejected').length },
   ].filter(i=>i.v>0);
@@ -1320,7 +1323,7 @@ function QuotesList({ user, quotes, onReload }) {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
     const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
-    const mi = !searchIssuer || (profiles[q.created_by]||'').toLowerCase().includes(searchIssuer.toLowerCase());
+    const mi = !searchIssuer || q.created_by === searchIssuer;
     return ms && mf && md && mi;
   });
 
@@ -1379,7 +1382,12 @@ function QuotesList({ user, quotes, onReload }) {
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
-          {isAdmin && <input className="search-input" placeholder="🔍 بحث بالمُصدِر..." value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)} style={{maxWidth:180}}/>}
+          {isAdmin && (
+            <select className="form-control" style={{width:'auto',maxWidth:190}} value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)}>
+              <option value="">👤 كل المُصدِرين</option>
+              {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          )}
           <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
             <option value="all">كل الحالات</option>
             {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
