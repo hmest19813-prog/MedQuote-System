@@ -770,14 +770,23 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
     const filename = `${doc.number || title}_${doc.customer_name || ''}`.replace(/\s+/g,'_');
 
-    // جمع كل styles من الصفحة الحالية (تضمن نفس الخطوط والألوان)
+    // نحذف أي iframe قديم
+    const old = document.getElementById('_pdf_iframe');
+    if (old) old.remove();
+
+    // جمع كل CSS من الصفحة الحالية
     const linkTags  = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l=>l.outerHTML).join('\n');
     const styleTags = Array.from(document.querySelectorAll('style')).map(s=>`<style>${s.textContent}</style>`).join('\n');
 
-    const printWin = window.open('', '_blank', 'width=960,height=700');
-    if (!printWin) { toast('يرجى السماح بالنوافذ المنبثقة في المتصفح', 'error'); return; }
+    // iframe مخفي — لا يحتاج أي إذن من المتصفح
+    const iframe = document.createElement('iframe');
+    iframe.id = '_pdf_iframe';
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0;opacity:0;';
+    document.body.appendChild(iframe);
 
-    printWin.document.write(`<!DOCTYPE html>
+    const ifrDoc = iframe.contentWindow.document;
+    ifrDoc.open();
+    ifrDoc.write(`<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
@@ -785,7 +794,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 ${linkTags}
 ${styleTags}
 <style>
-  /* إلغاء قواعد printDoc التي تُخفي كل شيء */
+  /* نُلغي قواعد printDoc التي تُخفي كل شيء لأننا في iframe مستقل */
   @media print {
     body > * { display: block !important; }
     body > *:not(#temp-print-div) { display: block !important; }
@@ -802,19 +811,23 @@ ${styleTags}
 <div class="print-container" style="max-width:900px;margin:0 auto;padding:14px 36px 28px;background:white;">
 ${el.innerHTML}
 </div>
-<script>
-  // انتظر تحميل الخطوط ثم اطبع
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(function() {
-      setTimeout(function() { window.print(); }, 300);
-    });
-  } else {
-    setTimeout(function() { window.print(); }, 800);
-  }
-<\/script>
 </body>
 </html>`);
-    printWin.document.close();
+    ifrDoc.close();
+
+    // انتظر الخطوط ثم اطبع من داخل الـ iframe
+    const win = iframe.contentWindow;
+    const doPrint = () => {
+      win.focus();
+      win.print();
+      setTimeout(() => { if (iframe.parentNode) iframe.remove(); }, 2000);
+    };
+
+    if (win.document.fonts && win.document.fonts.ready) {
+      win.document.fonts.ready.then(() => setTimeout(doPrint, 250));
+    } else {
+      setTimeout(doPrint, 900);
+    }
   };
 
   return (
