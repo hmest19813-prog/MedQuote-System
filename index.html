@@ -4,16 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MedQuote Pro — مؤسسة الحياة العلمية الطبية الكيماوية</title>
+<!-- المكتبات محفوظة محلياً — لا اعتماد على CDN خارجي -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="/lib/supabase.js"></script>
+<script src="/lib/react.min.js"></script>
+<script src="/lib/react-dom.min.js"></script>
 <script>
-// تهيئة Babel قبل تحميله لتسريع الـ transform
 window.BABEL_OPTIONS = { presets: ['react'], sourceMaps: false };
 </script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="/lib/babel.min.js"></script>
 <style>
 :root {
   --primary: #2B8FC4;
