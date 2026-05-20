@@ -650,6 +650,11 @@ function Sidebar({ user, page, setPage, onLogout }) {
             <span>{item.icon}</span>{item.label}
           </div>
         ))}
+        {(user?.role === 'admin' || user?.role === 'manager') && (
+          <div className={`nav-item ${page==='deleted-quotes'?'active':''}`} onClick={() => setPage('deleted-quotes')}>
+            <span>🗑️</span>عروض محذوفة
+          </div>
+        )}
         {user?.role === 'admin' && (
           <div className={`nav-item ${page==='users'?'active':''}`} onClick={() => setPage('users')}>
             <span>👥</span>إدارة المستخدمين
@@ -1339,6 +1344,119 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   );
 }
 
+/* ===================== DELETE REASON MODAL ===================== */
+function DeleteReasonModal({ quote, onConfirm, onClose }) {
+  const [reason,  setReason]  = useState('');
+  const [loading, setLoading] = useState(false);
+  return (
+    <div className="modal-overlay" style={{zIndex:1100}}>
+      <div className="modal" style={{maxWidth:460}}>
+        <div className="modal-header">
+          <span className="modal-title">🗑️ حذف العرض {quote.number}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:'20px 22px'}}>
+          <div style={{background:'#fef2f2',border:'1.5px solid #fecaca',borderRadius:10,padding:'12px 16px',marginBottom:18,fontSize:13}}>
+            ⚠️ سيبقى العرض مرئياً للمدير في <strong>صفحة المحذوفات</strong> مع سبب الحذف — ويمكن استعادته لاحقاً.
+          </div>
+          <div style={{marginBottom:14,fontSize:13}}>
+            <strong>العميل:</strong> {quote.customer_name} &nbsp;|&nbsp; <strong>القيمة:</strong> {parseFloat(quote.nett_price||0).toFixed(3)} {quote.currency}
+          </div>
+          <label style={{display:'block',marginBottom:6,fontWeight:700,fontSize:13}}>
+            سبب الحذف <span style={{color:'var(--danger)'}}>*</span>
+          </label>
+          <textarea className="erp-input" rows={3} autoFocus
+            value={reason} onChange={e=>setReason(e.target.value)}
+            placeholder="مثال: خطأ في البيانات، تكرار، طلب العميل الإلغاء..."
+            style={{width:'100%',resize:'vertical'}}/>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-danger" disabled={!reason.trim()||loading}
+            onClick={async()=>{ setLoading(true); await onConfirm(reason.trim()); setLoading(false); }}>
+            {loading ? '...' : '🗑️ تأكيد الحذف'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== DELETED QUOTES PAGE ===================== */
+function DeletedQuotesPage({ user, quotes, onReload }) {
+  const deleted  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
+  const [profiles, setProfiles] = useState({});
+
+  useEffect(()=>{
+    sb.from('profiles').select('id,full_name').then(({data})=>{
+      const m={}; (data||[]).forEach(p=>{ m[p.id]=p.full_name; }); setProfiles(m);
+    });
+  },[]);
+
+  const restoreQ = async (q) => {
+    if (!confirm('استعادة العرض ' + q.number + '؟')) return;
+    const {error} = await sb.from('quotations').update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq('id', q.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast('تم استعادة العرض ✓','success'); onReload();
+  };
+
+  const hardDelete = async (q) => {
+    if (!confirm('حذف نهائي لـ ' + q.number + '؟ لا يمكن التراجع')) return;
+    await sb.from('orders').update({ quotation_id: null }).eq('quotation_id', q.id);
+    await sb.from('quotation_items').delete().eq('quotation_id', q.id);
+    const {error} = await sb.from('quotations').delete().eq('id', q.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast('تم الحذف النهائي','success'); onReload();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
+        <h2 style={{fontSize:20,fontWeight:800}}>🗑️ عروض الأسعار المحذوفة</h2>
+        <span style={{fontSize:13,color:'var(--gray-400)'}}>{deleted.length} عرض محذوف</span>
+      </div>
+      <div className="card">
+        {deleted.length === 0 ? (
+          <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
+            <div style={{fontSize:48,marginBottom:12}}>✅</div>
+            <div style={{fontWeight:600}}>لا توجد عروض محذوفة</div>
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th>
+                  <th>تاريخ الحذف</th><th>المُصدِر</th><th>سبب الحذف</th><th>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deleted.map(q=>(
+                  <tr key={q.id}>
+                    <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{q.number}</td>
+                    <td>{q.customer_name}</td>
+                    <td className="text-sm text-muted">{q.date}</td>
+                    <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                    <td className="text-sm text-muted">{q.deleted_at?.slice(0,10)}</td>
+                    <td className="text-sm">{profiles[q.created_by]||'—'}</td>
+                    <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>{q.delete_reason||'—'}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)} title="استعادة">↩️</button>
+                        {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDelete(q)} title="حذف نهائي">🗑️</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ===================== QUOTES LIST ===================== */
 function QuotesList({ user, quotes, onReload }) {
   const [search, setSearch] = useState('');
@@ -1363,7 +1481,9 @@ function QuotesList({ user, quotes, onReload }) {
   }, []);
 
   const [searchIssuer, setSearchIssuer] = useState('');
-  const active = quotes.filter(q => !q.archived);
+  const [deleteTarget, setDeleteTarget] = useState(null); // العرض المراد حذفه (يفتح مودال السبب)
+
+  const active = quotes.filter(q => !q.archived && !q.deleted_at);
   const filtered = active.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
@@ -1400,18 +1520,20 @@ function QuotesList({ user, quotes, onReload }) {
     toast('تم الأرشفة', 'success'); onReload();
   };
 
-  const deleteQ = async (q) => {
-    if (!confirm(`حذف العرض "${q.number}" نهائياً مع جميع بنوده؟`)) return;
+  // الحذف الناعم: يحفظ العرض مع سبب الحذف بدل حذفه نهائياً
+  const deleteQ = async (reason) => {
+    if (!deleteTarget) return;
+    const q = deleteTarget;
     try {
-      // فك ربط الطلبات المرتبطة (تعيين quotation_id = null)
-      await sb.from('orders').update({ quotation_id: null }).eq('quotation_id', q.id);
-      // حذف البنود أولاً
-      const {error: e1} = await sb.from('quotation_items').delete().eq('quotation_id', q.id);
-      if (e1) throw e1;
-      // حذف العرض
-      const {error: e2} = await sb.from('quotations').delete().eq('id', q.id);
-      if (e2) throw e2;
-      toast('تم الحذف', 'success'); onReload();
+      const {error} = await sb.from('quotations').update({
+        deleted_at:    new Date().toISOString(),
+        deleted_by:    user?.id || null,
+        delete_reason: reason,
+      }).eq('id', q.id);
+      if (error) throw error;
+      toast('تم نقل العرض إلى المحذوفات', 'success');
+      setDeleteTarget(null);
+      onReload();
     } catch(e) { toast('فشل الحذف: ' + e.message, 'error'); }
   };
 
@@ -1429,6 +1551,13 @@ function QuotesList({ user, quotes, onReload }) {
 
   return (
     <div>
+      {deleteTarget && (
+        <DeleteReasonModal
+          quote={deleteTarget}
+          onConfirm={deleteQ}
+          onClose={()=>setDeleteTarget(null)}
+        />
+      )}
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>عروض الأسعار</h2>
         <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ عرض جديد</button>
@@ -1488,7 +1617,7 @@ function QuotesList({ user, quotes, onReload }) {
                         <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveQ(q)} title="أرشفة">🗄️</button>
-                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>deleteQ(q)} title="حذف نهائي">🗑 حذف</button>}
+                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️ حذف</button>}
                     </div>
                   </td>
                 </tr>
@@ -3243,6 +3372,7 @@ function App() {
           {page==='catalog' && <CatalogPage user={user}/>}
           {page==='archive' && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && <ActivityPage logs={logs}/>}
+          {page==='deleted-quotes' && (user.role==='admin'||user.role==='manager') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage/>}
         </div>
       </div>
