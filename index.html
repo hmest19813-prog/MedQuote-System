@@ -2784,48 +2784,6 @@ function CatalogPage({ user }) {
     </div>
   );
 }
-                      </td>
-                      <td>
-                        {it.category
-                          ? <span className=erp-badge erp-badge-primary>{it.category}</span>
-                          : <span className=text-muted>—</span>}
-                      </td>
-                      <td className=text-sm>{it.unit || '—'}</td>
-                      <td className=font-bold style={{color:'var(--primary)'}}>{parseFloat(it.unit_price||0).toFixed(3)}</td>
-                      <td className=text-sm>{it.origin || '—'}</td>
-                      <td className=text-sm>{it.delivery || '—'}</td>
-                      <td>
-                        {it.is_active
-                          ? <span className=badge badge-success>نشط</span>
-                          : <span className=badge badge-danger>غير نشط</span>}
-                      </td>
-                      <td>
-                        <div className=flex gap-1>
-                          <button className=btn btn-ghost btn-sm style={{padding:'3px 8px'}}
-                            onClick={()=>{ setEditing(it); setShowForm(true); }} title=تعديل>✏️</button>
-                          {isAdmin && (
-                            <button className=btn btn-ghost btn-sm style={{padding:'3px 8px'}}
-                              onClick={()=>toggleActive(it)} title={it.is_active?'إيقاف':'تفعيل'}>
-                              {it.is_active ? '🔴' : '🟢'}
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <button className=btn btn-ghost btn-sm style={{padding:'3px 8px',color:'var(--danger)'}}
-                              onClick={()=>deleteItem(it)} title=حذف>🗑️</button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
-      </div>
-    </div>
-  );
-}
 
 function CustomersPage({ user }) {
   const [customers, setCustomers] = useState([]);
