@@ -513,13 +513,23 @@ const SBadge = ({ status, type='q' }) => {
 };
 
 /* ===================== LOADING ===================== */
-const LoadingScreen = ({ msg = 'جاري التحميل...' }) => (
-  <div className="loading-screen">
-    <img src={LOGO_SRC} style={{width:80,height:80,objectFit:'contain',marginBottom:8,filter:'drop-shadow(0 4px 8px rgba(43,143,196,.3))'}} />
-    <div className="spinner"></div>
-    <p style={{color:'var(--gray-500)', fontWeight:600}}>{msg}</p>
-  </div>
-);
+const LoadingScreen = ({ msg = 'جاري التحميل...' }) => {
+  const [slow, setSlow] = React.useState(false);
+  React.useEffect(() => { const t = setTimeout(()=>setSlow(true), 5000); return ()=>clearTimeout(t); }, []);
+  return (
+    <div className="loading-screen">
+      <img src={LOGO_SRC} style={{width:80,height:80,objectFit:'contain',marginBottom:8,filter:'drop-shadow(0 4px 8px rgba(43,143,196,.3))'}} />
+      <div className="spinner"></div>
+      <p style={{color:'var(--gray-500)', fontWeight:600}}>{msg}</p>
+      {slow && (
+        <div style={{textAlign:'center',marginTop:8}}>
+          <p style={{color:'var(--gray-400)',fontSize:12,marginBottom:8}}>يبدو أن التحميل يأخذ وقتاً أطول من المعتاد</p>
+          <button className="btn btn-primary btn-sm" onClick={()=>window.location.reload()}>🔄 إعادة المحاولة</button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /* ===================== AUTH PAGE ===================== */
 function AuthPage({ onLogin }) {
@@ -3072,7 +3082,7 @@ function App() {
   const setUserSafe = (u) => { userRef.current = u; setUser(u); };
 
   useEffect(() => {
-    const safetyTimer = setTimeout(() => { setLoading(false); }, 8000);
+    const safetyTimer = setTimeout(() => { setLoading(false); }, 5000);
 
     sb.auth.getSession().then(async ({ data: { session }, error }) => {
       clearTimeout(safetyTimer);
@@ -3182,6 +3192,31 @@ function App() {
     toast('تم تسجيل الخروج بنجاح', 'info');
   };
   const reload = () => user && loadData(user.id, user.role);
+
+  // ── Realtime: تحديث فوري عند أي تغيير من أي موظف ──────────────
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const qCh = sb.channel('rt_quotations')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quotations' },
+        p => setQuotes(prev => prev.find(q=>q.id===p.new.id) ? prev : [p.new, ...prev]))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'quotations' },
+        p => setQuotes(prev => prev.map(q => q.id===p.new.id ? p.new : q)))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'quotations' },
+        p => setQuotes(prev => prev.filter(q => q.id!==p.old.id)))
+      .subscribe();
+
+    const oCh = sb.channel('rt_orders')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
+        p => setOrders(prev => prev.find(o=>o.id===p.new.id) ? prev : [p.new, ...prev]))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
+        p => setOrders(prev => prev.map(o => o.id===p.new.id ? p.new : o)))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'orders' },
+        p => setOrders(prev => prev.filter(o => o.id!==p.old.id)))
+      .subscribe();
+
+    return () => { sb.removeChannel(qCh); sb.removeChannel(oCh); };
+  }, [user?.id]);
 
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
