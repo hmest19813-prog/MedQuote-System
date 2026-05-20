@@ -2213,16 +2213,42 @@ function ErpField({label, value, onChange, type, placeholder, span}) {
   );
 }
 
-function CustomerForm({ customer, profiles, user, onSave, onClose }) {
+function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose }) {
+  const JORDAN_CITIES = ['عمان','الزرقاء','إربد','العقبة','السلط','مادبا','الكرك','جرش','معان','الطفيلة','عجلون','المفرق','الرمثا','الرصيفة','وادي السير','تلاع العلي','ضاحية الحسين','الجبيهة','شفا بدران','صويلح','ماركا','الضليل','الأزرق','حسبان','نعور','الموقر','الهاشمية','البقعة'];
+  const CATEGORIES = ['مستشفى خاص','مستشفى حكومي','مستوصف','مركز طبي','عيادة خاصة','صيدلية','مختبر طبي','مركز أشعة','شركة توزيع طبي','جهة حكومية','جامعة / كلية','دار رعاية','جمعية خيرية','أخرى'];
+  const TAGS_LIST = ['VIP','عميل رئيسي','حكومي','خاص','طبي','صيدلاني','جديد','نشط','مؤجل','غير نشط'];
+  const JOB_TITLES = ['مدير المشتريات','مسؤول المشتريات','مدير مالي','محاسب','مدير عام','مدير طبي','صيدلاني','مشرف','مدير إداري','سكرتير','مدير المستودع','ممرض/ة','فني','أخرى'];
+
   const empty = {
-    name:'', customer_code:'', phone:'', fax:'', mobile:'', email:'', alt_phone:'',
-    address:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'',
-    contact1_name:'', contact1_title:'', contact1_phone:'', contact1_mobile:'', contact1_email:'', contact1_ext:'', contact1_notes:'',
-    contact2_name:'', contact2_title:'', contact2_phone:'', contact2_mobile:'', contact2_email:'', contact2_ext:'', contact2_notes:'',
+    name:'', customer_code:'', phone:'', fax:'', alt_phone:'',
+    email:'', address:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'',
+    contact1_name:'', contact1_title:'', contact1_phone:'', contact1_email:'', contact1_ext:'', contact1_notes:'',
+    contact2_name:'', contact2_title:'', contact2_phone:'', contact2_email:'', contact2_ext:'', contact2_notes:'',
   };
   const [form, setForm] = useState({ ...empty, ...(customer||{}) });
   const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState(profilesProp||[]);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  // تحميل المندوبين إذا لم يُمرَّروا من الخارج
+  useEffect(() => {
+    if (!profilesProp?.length) {
+      sb.from('profiles').select('id,full_name').eq('is_active',true).order('full_name')
+        .then(({data})=>setProfiles(data||[]));
+    }
+  }, []);
+
+  // رقم عميل تسلسلي تلقائي عند الإنشاء
+  useEffect(() => {
+    if (!customer?.id && !form.customer_code) {
+      sb.from('customers').select('customer_code').not('customer_code','is',null).order('created_at',{ascending:false}).limit(20)
+        .then(({data})=>{
+          const nums = (data||[]).map(r=>parseInt((r.customer_code||'').replace(/\D/g,''))||0).filter(n=>n>0);
+          const next = nums.length ? Math.max(...nums)+1 : 1;
+          setF('customer_code', 'C-' + String(next).padStart(3,'0'));
+        });
+    }
+  }, []);
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
@@ -2230,18 +2256,18 @@ function CustomerForm({ customer, profiles, user, onSave, onClose }) {
     try {
       const payload = {
         name:form.name, customer_code:form.customer_code||null,
-        phone:form.phone||null, fax:form.fax||null, mobile:form.mobile||null,
-        email:form.email||null, alt_phone:form.alt_phone||null,
+        phone:form.phone||null, fax:form.fax||null,
+        alt_phone:form.alt_phone||null, email:form.email||null,
         address:form.address||null, city:form.city||null,
         website:form.website||null, notes:form.notes||null,
         category:form.category||null, tags:form.tags||null,
         assigned_to:form.assigned_to||null,
         contact1_name:form.contact1_name||null, contact1_title:form.contact1_title||null,
-        contact1_phone:form.contact1_phone||null, contact1_mobile:form.contact1_mobile||null,
+        contact1_phone:form.contact1_phone||null,
         contact1_email:form.contact1_email||null, contact1_ext:form.contact1_ext||null,
         contact1_notes:form.contact1_notes||null,
         contact2_name:form.contact2_name||null, contact2_title:form.contact2_title||null,
-        contact2_phone:form.contact2_phone||null, contact2_mobile:form.contact2_mobile||null,
+        contact2_phone:form.contact2_phone||null,
         contact2_email:form.contact2_email||null, contact2_ext:form.contact2_ext||null,
         contact2_notes:form.contact2_notes||null,
         updated_at:new Date().toISOString()
@@ -2249,87 +2275,110 @@ function CustomerForm({ customer, profiles, user, onSave, onClose }) {
       if (customer?.id) {
         const {error} = await sb.from('customers').update(payload).eq('id', customer.id);
         if(error) throw error;
-        toast('تم التعديل', 'success');
+        toast('تم التعديل','success');
         onSave({ id: customer.id, name: form.name });
       } else {
         payload.created_by = user?.id || null;
         const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name').single();
         if(error) throw error;
-        toast('تمت الإضافة', 'success');
+        toast('تمت الإضافة','success');
         onSave(inserted);
       }
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
     finally { setLoading(false); }
   };
 
+  const EF = ({label, k, type, placeholder, span}) => (
+    <div className="erp-field" style={span?{gridColumn:'1/-1'}:{}}>
+      <label>{label}</label>
+      {type==='textarea'
+        ? <textarea className="erp-input" rows="2" value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder||''}/>
+        : <input className="erp-input" type={type||'text'} value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder||''}/>
+      }
+    </div>
+  );
+
+  const SelectF = ({label, k, options, placeholder}) => (
+    <div className="erp-field">
+      <label>{label}</label>
+      <select className="erp-input" value={form[k]||''} onChange={e=>setF(k,e.target.value)}>
+        <option value="">{placeholder||'اختر...'}</option>
+        {options.map(o=><option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+
+  const DatalistF = ({label, k, listId, options, placeholder}) => (
+    <div className="erp-field">
+      <label>{label}</label>
+      <input className="erp-input" list={listId} value={form[k]||''} onChange={e=>setF(k,e.target.value)} placeholder={placeholder||''}/>
+      <datalist id={listId}>{options.map(o=><option key={o} value={o}/>)}</datalist>
+    </div>
+  );
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header" style={{background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',borderRadius:'12px 12px 0 0',position:'sticky',top:0,zIndex:10}}>
-          <span className="modal-title" style={{color:'white'}}>{customer ? 'تعديل بيانات العميل' : 'اضافة عميل جديد'}</span>
-          <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>X</button>
+          <span className="modal-title" style={{color:'white'}}>{customer ? 'تعديل بيانات العميل' : 'إضافة عميل جديد'}</span>
+          <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>✕</button>
         </div>
         <div style={{background:'#f0f4f8',padding:'20px'}}>
           <div style={{display:'grid',gridTemplateColumns:'1.35fr 1fr 1fr',gap:14,marginBottom:14}}>
+
+            {/* العمود الأول — بيانات الشركة */}
             <div className="erp-card main-card">
               <div className="erp-section-header">بيانات الشركة / العميل</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="رقم العميل" value={form.customer_code} onChange={v=>setF('customer_code',v)} placeholder="C-001"/>
+                <EF label="رقم العميل" k="customer_code" placeholder="C-001"/>
                 <div className="erp-field">
                   <label>المندوب المسؤول</label>
                   <select className="erp-input" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
-                    <option value="">اختر</option>
+                    <option value="">— اختر —</option>
                     {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
                   </select>
                 </div>
               </div>
-              <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة او الجهة"/>
+              <EF label="اسم الشركة / العميل *" k="name" placeholder="اسم الشركة أو الجهة" span/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="هاتف" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-6-..."/>
-                <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+962-6-..."/>
+                <EF label="هاتف" k="phone" placeholder="+962-6-..."/>
+                <EF label="فاكس" k="fax" placeholder="+962-6-..."/>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="موبايل" value={form.mobile} onChange={v=>setF('mobile',v)} placeholder="+962-7-..."/>
-                <ErpField label="هاتف بديل" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-7-..."/>
-              </div>
-              <ErpField label="البريد الالكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
-              <ErpField label="الموقع الالكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="المدينة / المنطقة" value={form.city} onChange={v=>setF('city',v)} placeholder="عمان"/>
-                <ErpField label="التصنيف" value={form.category} onChange={v=>setF('category',v)} placeholder="مستشفى / صيدلية"/>
-              </div>
-              <ErpField label="Tags / وسوم" value={form.tags} onChange={v=>setF('tags',v)} placeholder="VIP, طبي, حكومي"/>
-              <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، المنطقة"/>
-              <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..."/>
+              <EF label="هاتف بديل" k="alt_phone" placeholder="+962-7-..."/>
+              <EF label="البريد الإلكتروني" k="email" type="email" placeholder="info@company.com"/>
+              <EF label="الموقع الإلكتروني" k="website" placeholder="www.company.com"/>
+              <SelectF label="المدينة / المنطقة" k="city" options={JORDAN_CITIES} placeholder="اختر المدينة"/>
+              <SelectF label="التصنيف" k="category" options={CATEGORIES} placeholder="اختر التصنيف"/>
+              <SelectF label="الوسم / Tag" k="tags" options={TAGS_LIST} placeholder="اختر وسماً"/>
+              <EF label="العنوان التفصيلي" k="address" placeholder="الشارع، المبنى، المنطقة" span/>
+              <EF label="ملاحظات عامة" k="notes" type="textarea" placeholder="ملاحظات عن العميل..." span/>
             </div>
+
+            {/* العمود الثاني — المسؤول الأول */}
             <div className="erp-card contact-card">
-              <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الاول</div>
-              <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم"/>
-              <ErpField label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} placeholder="مدير المشتريات"/>
-              <ErpField label="رقم الهاتف" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-6-..."/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="الموبايل" value={form.contact1_mobile} onChange={v=>setF('contact1_mobile',v)} placeholder="+962-7-..."/>
-                <ErpField label="تحويلة EXT" value={form.contact1_ext} onChange={v=>setF('contact1_ext',v)} placeholder="123"/>
-              </div>
-              <ErpField label="البريد الالكتروني" value={form.contact1_email} onChange={v=>setF('contact1_email',v)} type="email" placeholder="name@co.com"/>
-              <ErpField label="ملاحظات" value={form.contact1_notes} onChange={v=>setF('contact1_notes',v)} type="textarea" placeholder=""/>
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الأول</div>
+              <EF label="الاسم الكامل" k="contact1_name" placeholder="الاسم"/>
+              <DatalistF label="المسمى الوظيفي" k="contact1_title" listId="job-titles-1" options={JOB_TITLES} placeholder="مدير المشتريات"/>
+              <EF label="رقم الهاتف" k="contact1_phone" placeholder="+962-..."/>
+              <EF label="تحويلة EXT" k="contact1_ext" placeholder="123"/>
+              <EF label="البريد الإلكتروني" k="contact1_email" type="email" placeholder="name@co.com"/>
+              <EF label="ملاحظات" k="contact1_notes" type="textarea" placeholder=""/>
             </div>
+
+            {/* العمود الثالث — المسؤول الثاني */}
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
-              <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم"/>
-              <ErpField label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} placeholder="المحاسب / المشرف"/>
-              <ErpField label="رقم الهاتف" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-6-..."/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="الموبايل" value={form.contact2_mobile} onChange={v=>setF('contact2_mobile',v)} placeholder="+962-7-..."/>
-                <ErpField label="تحويلة EXT" value={form.contact2_ext} onChange={v=>setF('contact2_ext',v)} placeholder="456"/>
-              </div>
-              <ErpField label="البريد الالكتروني" value={form.contact2_email} onChange={v=>setF('contact2_email',v)} type="email" placeholder="name@co.com"/>
-              <ErpField label="ملاحظات" value={form.contact2_notes} onChange={v=>setF('contact2_notes',v)} type="textarea" placeholder=""/>
+              <EF label="الاسم الكامل" k="contact2_name" placeholder="الاسم"/>
+              <DatalistF label="المسمى الوظيفي" k="contact2_title" listId="job-titles-2" options={JOB_TITLES} placeholder="المحاسب / المشرف"/>
+              <EF label="رقم الهاتف" k="contact2_phone" placeholder="+962-..."/>
+              <EF label="تحويلة EXT" k="contact2_ext" placeholder="456"/>
+              <EF label="البريد الإلكتروني" k="contact2_email" type="email" placeholder="name@co.com"/>
+              <EF label="ملاحظات" k="contact2_notes" type="textarea" placeholder=""/>
             </div>
           </div>
         </div>
         <div className="modal-footer" style={{borderTop:'2px solid var(--primary-light)',position:'sticky',bottom:0,background:'#fff'}}>
-          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>الغاء</button>
+          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>إلغاء</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={loading} style={{minWidth:130}}>
             {loading ? '...' : 'حفظ البيانات'}
           </button>
