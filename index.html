@@ -14,6 +14,7 @@
 window.BABEL_OPTIONS = { presets: ['react'], sourceMaps: false };
 </script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 :root {
   --primary: #2B8FC4;
@@ -764,13 +765,38 @@ function Dashboard({ quotes, orders, logs, user }) {
 function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
+  const [downloading, setDownloading] = React.useState(false);
+
+  const downloadPDF = async () => {
+    setDownloading(true);
+    const el = document.getElementById('print-content');
+    const filename = `${doc.number || title}_${doc.customer_name || ''}.pdf`.replace(/\s+/g,'_');
+    const opt = {
+      margin:       [6, 8, 6, 8],
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false, allowTaint: true },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak:    { mode: ['avoid-all', 'css'] }
+    };
+    try {
+      await html2pdf().set(opt).from(el).save();
+    } catch(e) {
+      toast('فشل التحميل: ' + e.message, 'error');
+    }
+    setDownloading(false);
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920}}>
         <div className="modal-header no-print">
           <span className="modal-title">{title} — {doc.number}</span>
           <div className="flex gap-2">
-            <button className="btn btn-primary btn-sm" onClick={()=>printDoc('print-content')}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={downloadPDF} disabled={downloading}>
+              {downloading ? '⏳ جارٍ التحميل...' : '⬇️ تحميل PDF'}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={()=>printDoc('print-content')}>🖨️ طباعة</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
