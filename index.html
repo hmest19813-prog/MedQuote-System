@@ -919,7 +919,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     customer_name:'', attention:'', phone:'', address:'',
     date: today(), reference:'', currency:'JOD',
     delivery:'PROMPT', notes:'', terms:'', valid_until:'',
-    discount_pct: 5, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
+    discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
     ...(editQuote || {})
   });
   const [items, setItems] = useState([
@@ -933,12 +933,25 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     sb.from('customers').select('id,name,phone').order('name').then(({data})=>setCustomers(data||[]));
   }, []);
 
-  const applyCustomer = (custId) => {
-    const c = customers.find(x=>x.id===custId);
-    if (!c) { setF('customer_id',''); return; }
+  const [custSuggest, setCustSuggest] = useState([]);
+  const [showCustSuggest, setShowCustSuggest] = useState(false);
+
+  const onCustomerNameChange = (val) => {
+    setF('customer_name', val);
+    if (val.trim().length >= 1) {
+      const matched = customers.filter(c => c.name.toLowerCase().includes(val.toLowerCase())).slice(0,6);
+      setCustSuggest(matched);
+      setShowCustSuggest(matched.length > 0);
+    } else {
+      setShowCustSuggest(false);
+    }
+  };
+
+  const pickCustomer = (c) => {
+    setF('customer_name', c.name);
     setF('customer_id', c.id);
-    if (!form.customer_name) setF('customer_name', c.name);
-    if (!form.phone) setF('phone', c.phone||'');
+    if (c.phone) setF('phone', c.phone);
+    setShowCustSuggest(false);
   };
 
   useEffect(() => {
@@ -1091,24 +1104,33 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          {/* ربط بعميل موجود */}
-          {customers.length > 0 && (
-            <div style={{background:'var(--gray-50)',border:'1.5px solid var(--gray-200)',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
-              <div className="form-label" style={{marginBottom:6}}>ربط بعميل موجود (اختياري — يملأ الحقول تلقائياً)</div>
-              <select className="form-control" value={form.customer_id||''} onChange={e=>applyCustomer(e.target.value)}>
-                <option value="">— اختر عميلاً —</option>
-                {customers.map(c=><option key={c.id} value={c.id}>{c.name}{c.phone?` — ${c.phone}`:''}</option>)}
-              </select>
-            </div>
-          )}
           {/* بيانات العميل */}
           <div className="section-title">بيانات العميل</div>
           <div className="form-row mb-4">
             <div className="form-group">
               <label className="form-label">اسم العميل *</label>
-              <div style={{display:'flex',gap:6}}>
-                <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)} placeholder="اسم الجهة / الشركة" style={{flex:1}}/>
-                <button type="button" onClick={saveCustomerFromQuote} title="حفظ في قائمة العملاء" style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:7,padding:'0 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>💾 حفظ</button>
+              <div style={{position:'relative'}}>
+                <div style={{display:'flex',gap:6}}>
+                  <input className="form-control" value={form.customer_name}
+                    onChange={e=>onCustomerNameChange(e.target.value)}
+                    onBlur={()=>setTimeout(()=>setShowCustSuggest(false),180)}
+                    onFocus={()=>form.customer_name&&onCustomerNameChange(form.customer_name)}
+                    placeholder="اسم الجهة / الشركة — ابدأ بالكتابة للبحث" style={{flex:1}}/>
+                  <button type="button" onClick={saveCustomerFromQuote} title="حفظ في قائمة العملاء" style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:7,padding:'0 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>💾 حفظ</button>
+                </div>
+                {showCustSuggest && (
+                  <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:2}}>
+                    {custSuggest.map(c=>(
+                      <div key={c.id} onMouseDown={()=>pickCustomer(c)}
+                        style={{padding:'8px 14px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between',alignItems:'center'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'}
+                        onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
+                        <span style={{fontWeight:600}}>{c.name}</span>
+                        {c.phone && <span style={{fontSize:11,color:'var(--gray-400)'}}>{c.phone}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="form-group">
@@ -1160,8 +1182,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                 <tr>
                   <th style={{width:28}}>#</th>
                   <th style={{minWidth:150}}>المنتج</th>
-                  <th style={{width:85}}>الوحدة</th>
-                  <th style={{width:60}}>الكمية</th>
+                  <th style={{width:90}}>الوحدة</th>
+                  <th style={{width:80}}>الكمية</th>
                   <th style={{width:85}}>سعر الوحدة</th>
                   <th style={{width:85}}>الإجمالي</th>
                   <th style={{minWidth:110}}>المنشأ</th>
@@ -1176,11 +1198,15 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                     <tr key={i}>
                       <td>{i+1}</td>
                       <td><div style={{display:'flex',gap:3,alignItems:'center'}}><input value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)} placeholder="اسم المنتج" style={{flex:1}}/><button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>🗂️</button><button type="button" title="حفظ في الكتالوج" onClick={()=>saveItemToCatalog(item)} style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0}}>💾</button></div></td>
-                      <td><input value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} placeholder="EACH"/></td>
-                      <td><input type="number" min="0" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
+                      <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} placeholder="EACH"/></td>
+                      <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       <td style={{fontWeight:700,color:'var(--primary)'}}>{tot}</td>
-                      <td><input value={item.origin} onChange={e=>setItem(i,'origin',e.target.value)} placeholder="CHINA"/></td>
+                      <td><select value={item.origin||'CHINA'} onChange={e=>setItem(i,'origin',e.target.value)} style={{width:'100%',padding:'5px 4px',fontSize:11,border:'1px solid var(--gray-200)',borderRadius:5,fontFamily:'inherit'}}>
+                        <option>CHINA</option><option>INDIA</option><option>USA</option><option>GERMANY</option>
+                        <option>JAPAN</option><option>KOREA</option><option>FRANCE</option><option>UK</option>
+                        <option>ITALY</option><option>TURKEY</option><option>UAE</option><option>OTHER</option>
+                      </select></td>
                       <td>{(()=>{const std=['PROMPT','2-4 WEEKS','4-6 WEEKS','8-12 WEEKS'];const isCust=!std.includes(item.delivery||'PROMPT');return(<><select value={isCust?'CUSTOM':(item.delivery||'PROMPT')} onChange={e=>{if(e.target.value==='CUSTOM')setItem(i,'delivery','');else setItem(i,'delivery',e.target.value);}}><option>PROMPT</option><option>2-4 WEEKS</option><option>4-6 WEEKS</option><option>8-12 WEEKS</option><option value="CUSTOM">مخصص...</option></select>{isCust&&<input value={item.delivery} onChange={e=>setItem(i,'delivery',e.target.value)} placeholder="مدة التوصيل" style={{marginTop:4,width:'100%',fontSize:11}}/>}</>);})()}</td>
                       <td><button onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'var(--danger)',fontSize:16,cursor:'pointer'}}>×</button></td>
                     </tr>
@@ -1189,6 +1215,13 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
               </tbody>
             </table>
           </div>
+          <datalist id="unit-opts">
+            <option value="EACH"/><option value="PCS"/><option value="SET"/><option value="BOX"/>
+            <option value="PACK"/><option value="PAIR"/><option value="ROLL"/><option value="KG"/>
+            <option value="G"/><option value="L"/><option value="ML"/><option value="M"/>
+            <option value="CM"/><option value="UNIT"/><option value="CARTON"/><option value="VIAL"/>
+            <option value="AMP"/><option value="BOTTLE"/><option value="TUBE"/>
+          </datalist>
           <button className="btn btn-ghost btn-sm" onClick={addItem}>+ إضافة صنف</button>
 
           {/* الإجماليات */}
