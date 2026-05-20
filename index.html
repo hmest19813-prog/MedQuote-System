@@ -584,8 +584,8 @@ function AuthPage({ onLogin }) {
 const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم', icon: '📊' },
   { id: 'quotes', label: 'عروض الأسعار', icon: '📋' },
-  { id: 'invoices', label: 'الفواتير', icon: '🧾' },
   { id: 'orders', label: 'الطلبات', icon: '📦' },
+  { id: 'invoices', label: 'الفواتير', icon: '🧾' },
   { id: 'customers', label: 'العملاء', icon: '🏢' },
   { id: 'catalog', label: 'الكتالوج', icon: '🗂️' },
   { id: 'archive', label: 'الأرشيف', icon: '🗄️' },
@@ -941,6 +941,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const nett = after_disc + tax_amt;
 
   const [catalogPicker, setCatalogPicker] = useState(null); // index of item row
+  const [showSaveCustomer, setShowSaveCustomer] = useState(false);
 
   const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:0, origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
@@ -959,14 +960,9 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     setCatalogPicker(null);
   };
 
-  const saveCustomerFromQuote = async () => {
+  const saveCustomerFromQuote = () => {
     if (!form.customer_name?.trim()) { toast('أدخل اسم العميل أولاً','error'); return; }
-    const { data: existing } = await sb.from('customers').select('id').ilike('name', form.customer_name.trim()).maybeSingle();
-    if (existing) { toast('هذا العميل موجود مسبقاً في القائمة','info'); setF('customer_id', existing.id); return; }
-    const { data, error } = await sb.from('customers').insert({ name: form.customer_name.trim(), phone: form.phone||null, created_by: user.id }).select('id').single();
-    if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
-    setF('customer_id', data.id);
-    toast('تم حفظ العميل في قائمة العملاء ✓','success');
+    setShowSaveCustomer(true);
   };
 
   const saveItemToCatalog = async (item) => {
@@ -1024,7 +1020,21 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       const { error: iErr } = await sb.from('quotation_items').insert(itemRows);
       if (iErr) throw iErr;
 
-      // activity log skipped
+      // حفظ تلقائي للمواد الجديدة في الكتالوج
+      const validItems = items.filter(i=>i.item_name?.trim());
+      if (validItems.length) {
+        const { data: existingCat } = await sb.from('catalog_items').select('name').in('name', validItems.map(i=>i.item_name.trim()));
+        const existingNames = new Set((existingCat||[]).map(c=>c.name.toLowerCase()));
+        const newItems = validItems.filter(i=>!existingNames.has(i.item_name.trim().toLowerCase()));
+        if (newItems.length) {
+          await sb.from('catalog_items').insert(newItems.map(i=>({
+            name: i.item_name.trim(), description: i.description||null,
+            unit: i.unit||'EACH', unit_price: parseFloat(i.unit_price)||0,
+            origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT',
+            created_by: user?.id||null
+          })));
+        }
+      }
 
       toast(editQuote ? 'تم التعديل بنجاح' : 'تم الإنشاء بنجاح', 'success');
       onSave();
@@ -1042,6 +1052,13 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   return (
     <div className="modal-overlay">
       {catalogPicker !== null && <CatalogPicker onSelect={cat=>applyCatalogItem(catalogPicker, cat)} onClose={()=>setCatalogPicker(null)}/>}
+      {showSaveCustomer && <CustomerForm
+        customer={{ name: form.customer_name, phone: form.phone||'' }}
+        profiles={[]}
+        user={user}
+        onSave={(saved)=>{ if(saved?.id) setF('customer_id', saved.id); if(saved?.name) setF('customer_name', saved.name); setShowSaveCustomer(false); toast('تم حفظ العميل ✓ يمكنك الآن إكمال العرض','success'); }}
+        onClose={()=>setShowSaveCustomer(false)}
+      />}
       <div className="modal" style={{maxWidth:950}}>
         <div className="modal-header">
           <span className="modal-title">{editQuote ? `تعديل ${modeLabel}` : `إنشاء ${modeLabel} جديد`}</span>
@@ -1221,12 +1238,14 @@ function QuotesList({ user, quotes, onReload }) {
     });
   }, []);
 
+  const [searchIssuer, setSearchIssuer] = useState('');
   const active = quotes.filter(q => !q.archived);
   const filtered = active.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
     const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
-    return ms && mf && md;
+    const mi = !searchIssuer || (profiles[q.created_by]||'').toLowerCase().includes(searchIssuer.toLowerCase());
+    return ms && mf && md && mi;
   });
 
   const openPreview = async (q) => {
@@ -1284,6 +1303,7 @@ function QuotesList({ user, quotes, onReload }) {
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          {isAdmin && <input className="search-input" placeholder="🔍 بحث بالمُصدِر..." value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)} style={{maxWidth:180}}/>}
           <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
             <option value="all">كل الحالات</option>
             {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
@@ -1827,6 +1847,20 @@ function InvoicesPage({ user, quotes, onReload }) {
   const [editing, setEditing] = useState(null);
   const [payingInvoice, setPayingInvoice] = useState(null);
   const [paySummary, setPaySummary] = useState({});
+  const isAdmin = user?.role==='admin' || user?.role==='manager';
+
+  const deleteInvoice = async (q) => {
+    if (!confirm(`حذف الفاتورة "${q.number}" نهائياً مع جميع دفعاتها وبنودها؟`)) return;
+    try {
+      await sb.from('payments').delete().eq('quotation_id', q.id);
+      await sb.from('orders').update({ quotation_id: null }).eq('quotation_id', q.id);
+      const {error: e1} = await sb.from('quotation_items').delete().eq('quotation_id', q.id);
+      if (e1) throw e1;
+      const {error: e2} = await sb.from('quotations').delete().eq('id', q.id);
+      if (e2) throw e2;
+      toast('تم الحذف','success'); onReload();
+    } catch(e) { toast('فشل الحذف: '+e.message,'error'); }
+  };
 
   const loadPaySummary = async () => {
     if (!invoiced.length) return;
@@ -1885,6 +1919,7 @@ function InvoicesPage({ user, quotes, onReload }) {
                         <button className="btn btn-ghost btn-sm" onClick={()=>setPayingInvoice(q)}>💰 دفعات</button>
                         <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>🧾 عرض</button>
                         <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️</button>
+                        {isAdmin && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>deleteInvoice(q)}>🗑️</button>}
                       </div>
                     </td>
                   </tr>
@@ -2155,13 +2190,15 @@ function CustomerForm({ customer, profiles, user, onSave, onClose }) {
       if (customer?.id) {
         const {error} = await sb.from('customers').update(payload).eq('id', customer.id);
         if(error) throw error;
+        toast('تم التعديل', 'success');
+        onSave({ id: customer.id, name: form.name });
       } else {
         payload.created_by = user?.id || null;
-        const {error} = await sb.from('customers').insert(payload);
+        const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name').single();
         if(error) throw error;
+        toast('تمت الإضافة', 'success');
+        onSave(inserted);
       }
-      toast(customer ? 'تم التعديل' : 'تمت الإضافة', 'success');
-      onSave();
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
     finally { setLoading(false); }
   };
