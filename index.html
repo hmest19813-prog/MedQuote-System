@@ -1074,7 +1074,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     if (!item.item_name?.trim()) { toast('أدخل اسم المنتج أولاً','error'); return; }
     const { data: existing } = await sb.from('catalog_items').select('id').ilike('name', item.item_name.trim()).maybeSingle();
     if (existing) { toast('هذا الصنف موجود في الكتالوج مسبقاً','info'); return; }
-    const { error } = await sb.from('catalog_items').insert({ name: item.item_name.trim(), description: item.description||null, unit: item.unit||'EACH', unit_price: parseFloat(item.unit_price)||0, origin: item.origin||'CHINA', delivery: item.delivery||'PROMPT', created_by: user.id });
+    const { error } = await sb.from('catalog_items').insert({ name: item.item_name.trim(), description: item.description||null, unit: item.unit||'EACH', unit_price: parseFloat(item.unit_price)||0, origin: (!item.origin||item.origin==='__custom__')?'CHINA':item.origin, delivery: (!item.delivery||item.delivery==='__custom__')?'PROMPT':item.delivery, created_by: user.id });
     if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
     toast('تم حفظ الصنف في الكتالوج ✓','success');
   };
@@ -1120,7 +1120,9 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
         item_name: i.item_name, description: i.description,
         unit: i.unit||'EACH', quantity: parseFloat(i.quantity)||1,
         unit_price: parseFloat(i.unit_price)||0,
-        origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT', notes: i.notes,
+        origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
+        delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
+        notes: i.notes,
       }));
       const { error: iErr } = await sb.from('quotation_items').insert(itemRows);
       if (iErr) throw iErr;
@@ -1135,7 +1137,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           await sb.from('catalog_items').insert(newItems.map(i=>({
             name: i.item_name.trim(), description: i.description||null,
             unit: i.unit||'EACH', unit_price: parseFloat(i.unit_price)||0,
-            origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT',
+            origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
+            delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
             created_by: user?.id||null
           })));
         }
@@ -1287,8 +1290,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                       <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       <td style={{fontWeight:700,color:'var(--primary)'}}>{tot}</td>
-                      <td><OriginSelect value={item.origin||'CHINA'} onChange={v=>setItem(i,'origin',v)}/></td>
-                      <td><DeliverySelect value={item.delivery||'PROMPT'} onChange={v=>setItem(i,'delivery',v)}/></td>
+                      <td><OriginSelect value={item.origin} onChange={v=>setItem(i,'origin',v)}/></td>
+                      <td><DeliverySelect value={item.delivery} onChange={v=>setItem(i,'delivery',v)}/></td>
                       <td><button onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'var(--danger)',fontSize:16,cursor:'pointer'}}>×</button></td>
                     </tr>
                   );
@@ -1863,7 +1866,9 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         item_name: i.item_name, description: i.description||'',
         unit: i.unit||'EACH', quantity: parseFloat(i.quantity)||1,
         unit_price: parseFloat(i.unit_price)||0,
-        origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT', notes: i.notes||''
+        origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
+        delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
+        notes: i.notes||''
       }));
       if (itemRows.length) {
         const { error: insErr } = await sb.from('quotation_items').insert(itemRows);
@@ -1940,8 +1945,8 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
                       <td><input type="number" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       <td style={{fontWeight:700,color:'var(--primary)'}}>{tot}</td>
-                      <td><OriginSelect value={item.origin||'CHINA'} onChange={v=>setItem(i,'origin',v)}/></td>
-                      <td><DeliverySelect value={item.delivery||'PROMPT'} onChange={v=>setItem(i,'delivery',v)}/></td>
+                      <td><OriginSelect value={item.origin} onChange={v=>setItem(i,'origin',v)}/></td>
+                      <td><DeliverySelect value={item.delivery} onChange={v=>setItem(i,'delivery',v)}/></td>
                       <td><button onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'var(--danger)',fontSize:16,cursor:'pointer'}}>×</button></td>
                     </tr>
                   );
@@ -2811,22 +2816,23 @@ function CatalogForm({ user, item: editItem, onSave, onClose }) {
 
 const STD_DELIVERIES = ['PROMPT','2-4 WEEKS','4-6 WEEKS','8-12 WEEKS'];
 function DeliverySelect({ value, onChange }) {
-  const initOther = !!value && !STD_DELIVERIES.includes(value);
-  const [isOther, setIsOther] = React.useState(initOther);
+  const isStd = !value || STD_DELIVERIES.includes(value);
+  const [isOther, setIsOther] = React.useState(!isStd);
+  const [customVal, setCustomVal] = React.useState(isStd ? '' : (value||''));
   const selStyle = { width:'100%', padding:'5px 4px', fontSize:11, border:'1px solid var(--gray-200)', borderRadius:5, fontFamily:'inherit' };
   return (
     <div>
       <select value={isOther ? '__other__' : (value || 'PROMPT')} style={selStyle}
         onChange={e => {
-          if (e.target.value === '__other__') { setIsOther(true); onChange(''); }
-          else { setIsOther(false); onChange(e.target.value); }
+          if (e.target.value === '__other__') { setIsOther(true); setCustomVal(''); onChange('__custom__'); }
+          else { setIsOther(false); setCustomVal(''); onChange(e.target.value); }
         }}>
         {STD_DELIVERIES.map(d => <option key={d}>{d}</option>)}
         <option value="__other__">مخصص...</option>
       </select>
       {isOther && (
-        <input value={value||''} autoFocus
-          onChange={e => onChange(e.target.value)}
+        <input value={customVal} autoFocus
+          onChange={e => { setCustomVal(e.target.value); onChange(e.target.value); }}
           placeholder="مدة التوصيل"
           style={{marginTop:4,width:'100%',fontSize:11,padding:'3px 6px',border:'1px solid var(--primary)',borderRadius:4,outline:'none',boxSizing:'border-box'}}/>
       )}
@@ -2836,22 +2842,23 @@ function DeliverySelect({ value, onChange }) {
 
 const STD_ORIGINS = ['CHINA','INDIA','JORDAN','HAYAT™','EUROPE','USA'];
 function OriginSelect({ value, onChange, style }) {
-  const initOther = !!value && !STD_ORIGINS.includes(value);
-  const [isOther, setIsOther] = React.useState(initOther);
+  const isStd = !value || STD_ORIGINS.includes(value);
+  const [isOther, setIsOther] = React.useState(!isStd);
+  const [customVal, setCustomVal] = React.useState(isStd ? '' : (value||''));
   const selStyle = { width:'100%', padding:'5px 4px', fontSize:11, border:'1px solid var(--gray-200)', borderRadius:5, fontFamily:'inherit', ...style };
   return (
     <div>
       <select value={isOther ? '__other__' : (value || 'CHINA')} style={selStyle}
         onChange={e => {
-          if (e.target.value === '__other__') { setIsOther(true); onChange(''); }
-          else { setIsOther(false); onChange(e.target.value); }
+          if (e.target.value === '__other__') { setIsOther(true); setCustomVal(''); onChange('__custom__'); }
+          else { setIsOther(false); setCustomVal(''); onChange(e.target.value); }
         }}>
         {STD_ORIGINS.map(o => <option key={o}>{o}</option>)}
         <option value="__other__">أخرى...</option>
       </select>
       {isOther && (
-        <input value={value||''} autoFocus
-          onChange={e => onChange(e.target.value.toUpperCase())}
+        <input value={customVal} autoFocus
+          onChange={e => { setCustomVal(e.target.value.toUpperCase()); onChange(e.target.value.toUpperCase()); }}
           placeholder="اكتب المنشأ"
           style={{marginTop:4,width:'100%',fontSize:11,padding:'3px 6px',border:'1px solid var(--primary)',borderRadius:4,outline:'none',boxSizing:'border-box'}}/>
       )}
