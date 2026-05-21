@@ -2485,16 +2485,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
     }
   }, []);
 
-  useEffect(() => {
-    if (!customer?.id && !form.customer_code) {
-      sb.from('customers').select('customer_code').not('customer_code','is',null).order('created_at',{ascending:false}).limit(20)
-        .then(({data})=>{
-          const nums = (data||[]).map(r=>parseInt((r.customer_code||'').replace(/\D/g,''))||0).filter(n=>n>0);
-          const next = nums.length ? Math.max(...nums)+1 : 1;
-          setF('customer_code', 'C-' + String(next).padStart(3,'0'));
-        });
-    }
-  }, []);
+  // رقم العميل يُولَّد تلقائياً من Supabase عند الحفظ — لا حاجة لتوليده هنا
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
@@ -2525,10 +2516,14 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         toast('تم التعديل','success');
         onSave({ id: customer.id, name: form.name });
       } else {
+        // توليد رقم العميل تلقائياً من Supabase
+        const { data: genCode, error: genErr } = await sb.rpc('generate_customer_number');
+        if (genErr) throw genErr;
+        payload.customer_code = genCode;
         payload.created_by = user?.id || null;
-        const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name').single();
+        const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name,customer_code').single();
         if(error) throw error;
-        toast('تمت الإضافة','success');
+        toast(`تمت الإضافة — رقم العميل: ${genCode}`,'success');
         onSave(inserted);
       }
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
@@ -2548,7 +2543,15 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
             <div className="erp-card main-card">
               <div className="erp-section-header">بيانات الشركة / العميل</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="رقم العميل" value={form.customer_code} onChange={v=>setF('customer_code',v)} placeholder="C-001"/>
+                <div className="erp-field">
+                  <label>رقم العميل</label>
+                  <div className="erp-input" style={{background:'#f0f4f8',color:'var(--gray-500)',display:'flex',alignItems:'center',gap:6,cursor:'default',userSelect:'none'}}>
+                    {customer?.id
+                      ? <><span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{form.customer_code||'—'}</span></>
+                      : <><span style={{fontSize:12}}>🔢</span><span style={{fontSize:12}}>يُولَّد تلقائياً عند الحفظ</span></>
+                    }
+                  </div>
+                </div>
                 <div className="erp-field">
                   <label>المندوب المسؤول</label>
                   <select className="erp-input" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
