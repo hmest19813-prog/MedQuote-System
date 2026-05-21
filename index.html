@@ -3025,12 +3025,16 @@ function CustomersPage({ user }) {
     toast('تم الحذف','success'); load();
   };
 
-  const filtered = customers.filter(c =>
-    !search || c.name?.toLowerCase().includes(search.toLowerCase())
+  const filtered = customers.filter(c => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return c.name?.toLowerCase().includes(q)
       || (c.phone||'').includes(search)
-      || (c.customer_code||'').toLowerCase().includes(search.toLowerCase())
-      || (c.city||'').includes(search)
-  );
+      || (c.customer_code||'').toLowerCase().includes(q)
+      || (c.city||'').toLowerCase().includes(q)
+      || (c.district||'').toLowerCase().includes(q)
+      || (c.address||'').toLowerCase().includes(q);
+  });
 
   const assignedName = (id) => profiles.find(p=>p.id===id)?.full_name || '—';
 
@@ -3048,7 +3052,7 @@ function CustomersPage({ user }) {
           </div>
         </div>
         <div style={{flex:1}}/>
-        <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:300}}/>
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة، المنطقة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:300}}/>
         <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>
       </div>
 
