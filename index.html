@@ -2358,32 +2358,239 @@ function ActivityPage({ logs }) {
 }
 
 /* ===================== USERS PAGE ===================== */
-function UsersPage() {
+const ROLE_LABELS = { admin:'مدير النظام', manager:'مدير', user:'موظف' };
+const ROLE_BADGE  = { admin:'badge-approved', manager:'badge-converted', user:'badge-sent' };
+
+function UserForm({ editUser, currentUser, onSave, onClose }) {
+  const isNew = !editUser;
+  const [form, setForm] = useState({
+    full_name: editUser?.full_name || '',
+    email:     editUser?.email     || '',
+    role:      editUser?.role      || 'user',
+    is_active: editUser?.is_active ?? true,
+    password:  '',
+    show_pass: false,
+  });
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const handleSave = async () => {
+    if (!form.full_name.trim()) { toast('يجب إدخال الاسم الكامل','error'); return; }
+    if (isNew && !form.email.trim()) { toast('يجب إدخال البريد الإلكتروني','error'); return; }
+    if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل','error'); return; }
+    setLoading(true);
+    try {
+      if (isNew) {
+        // احفظ الجلسة الحالية قبل إنشاء المستخدم
+        const { data: { session: currSess } } = await sb.auth.getSession();
+        const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          options: { data: { full_name: form.full_name.trim() } }
+        });
+        if (signUpErr) throw signUpErr;
+        // أعد جلسة المدير
+        if (currSess) await sb.auth.setSession({ access_token: currSess.access_token, refresh_token: currSess.refresh_token });
+        // حدّث أو أنشئ الـ profile
+        const { error: pErr } = await sb.from('profiles').upsert({
+          id: signUpData.user.id,
+          email: form.email.trim().toLowerCase(),
+          full_name: form.full_name.trim(),
+          role: form.role,
+          is_active: form.is_active,
+        });
+        if (pErr) throw pErr;
+        toast('✅ تم إنشاء المستخدم — أرسل له الإيميل وكلمة المرور','success');
+      } else {
+        const { error } = await sb.from('profiles').update({
+          full_name: form.full_name.trim(),
+          role: form.role,
+          is_active: form.is_active,
+          updated_at: new Date().toISOString(),
+        }).eq('id', editUser.id);
+        if (error) throw error;
+        toast('تم حفظ التعديلات ✓','success');
+      }
+      onSave();
+    } catch(e) { toast('خطأ: '+e.message,'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">{isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-group">
+            <label className="form-label">الاسم الكامل *</label>
+            <input className="form-control" value={form.full_name} onChange={e=>setF('full_name',e.target.value)} placeholder="محمد أحمد"/>
+          </div>
+          {isNew && <>
+            <div className="form-group">
+              <label className="form-label">البريد الإلكتروني *</label>
+              <input className="form-control" type="email" value={form.email} onChange={e=>setF('email',e.target.value)} placeholder="user@hayat.jo" dir="ltr"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">كلمة المرور المؤقتة *</label>
+              <div style={{display:'flex',gap:6}}>
+                <input className="form-control" type={form.show_pass?'text':'password'} value={form.password} onChange={e=>setF('password',e.target.value)} placeholder="6 أحرف على الأقل" dir="ltr" style={{flex:1}}/>
+                <button type="button" onClick={()=>setF('show_pass',!form.show_pass)} style={{background:'#f0f4f8',border:'1px solid var(--gray-200)',borderRadius:7,padding:'0 10px',cursor:'pointer',fontSize:14}}>
+                  {form.show_pass?'🙈':'👁'}
+                </button>
+              </div>
+              <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>سلّم كلمة المرور للموظف بشكل منفصل</div>
+            </div>
+          </>}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الصلاحية</label>
+              <select className="form-control" value={form.role} onChange={e=>setF('role',e.target.value)}>
+                <option value="admin">مدير النظام (Admin)</option>
+                <option value="manager">مدير (Manager)</option>
+                <option value="user">موظف (User)</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الحالة</label>
+              <select className="form-control" value={form.is_active?'1':'0'} onChange={e=>setF('is_active',e.target.value==='1')}
+                disabled={editUser?.id === currentUser?.id}>
+                <option value="1">✅ نشط</option>
+                <option value="0">🔴 غير نشط</option>
+              </select>
+              {editUser?.id===currentUser?.id && <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>لا يمكن تعطيل حسابك الخاص</div>}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+            {loading ? <><span className="spinner" style={{width:14,height:14,borderWidth:2,display:'inline-block',verticalAlign:'middle',marginLeft:6}}/> جاري...</> : isNew ? 'إنشاء المستخدم' : 'حفظ التعديلات'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UsersPage({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    sb.from('profiles').select('*').order('created_at').then(({data})=>{ setUsers(data||[]); setLoading(false); });
-  }, []);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const load = () => {
+    setLoading(true);
+    sb.from('profiles').select('*').order('created_at')
+      .then(({data})=>{ setUsers(data||[]); setLoading(false); });
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const toggleActive = async (u) => {
+    if (u.id===currentUser?.id) { toast('لا يمكنك تعطيل حسابك الخاص','error'); return; }
+    const { error } = await sb.from('profiles').update({ is_active: !u.is_active, updated_at: new Date().toISOString() }).eq('id',u.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast(u.is_active ? '🔴 تم إيقاف المستخدم' : '✅ تم تفعيل المستخدم','success');
+    load();
+  };
+
+  const deleteUser = async (u) => {
+    if (u.id===currentUser?.id) { toast('لا يمكنك حذف حسابك الخاص','error'); return; }
+    if (!confirm(`حذف المستخدم "${u.full_name}"؟\nلا يمكن التراجع عن هذا الإجراء.`)) return;
+    const { error } = await sb.from('profiles').delete().eq('id',u.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast('تم حذف المستخدم','success');
+    load();
+  };
+
+  const openEdit = (u) => { setEditing(u); setShowForm(true); };
+  const closeForm = () => { setShowForm(false); setEditing(null); };
+
+  const activeCount   = users.filter(u=>u.is_active).length;
+  const adminCount    = users.filter(u=>u.role==='admin').length;
+
   return (
     <div>
-      <h2 style={{fontSize:20,fontWeight:800,marginBottom:8}}>إدارة المستخدمين</h2>
-      <p style={{color:'var(--gray-500)',fontSize:13,marginBottom:16}}>لإضافة مستخدم: Supabase → Authentication → Users → Add User</p>
+      {showForm && <UserForm editUser={editing} currentUser={currentUser} onSave={()=>{ closeForm(); load(); }} onClose={closeForm}/>}
+
+      {/* Header */}
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:800,margin:0}}>إدارة المستخدمين</h2>
+          <p style={{color:'var(--gray-500)',fontSize:13,margin:'4px 0 0'}}>
+            {users.length} مستخدم إجمالاً — {activeCount} نشط — {adminCount} مدير
+          </p>
+        </div>
+        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ مستخدم جديد</button>
+      </div>
+
+      {/* Table */}
       <div className="card">
-        {loading?<div style={{padding:40,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div>
-        :<div className="table-wrap"><table>
-          <thead><tr><th>الاسم</th><th>الإيميل</th><th>الدور</th><th>الحالة</th><th>تاريخ التسجيل</th></tr></thead>
-          <tbody>
-            {users.map(u=>(
-              <tr key={u.id}>
-                <td className="font-bold">{u.full_name}</td>
-                <td className="text-muted">{u.email}</td>
-                <td><span className={`badge ${u.role==='admin'?'badge-approved':'badge-sent'}`}>{u.role==='admin'?'مدير':'موظف'}</span></td>
-                <td><span className={`badge ${u.is_active?'badge-approved':'badge-rejected'}`}>{u.is_active?'نشط':'غير نشط'}</span></td>
-                <td className="text-sm text-muted">{u.created_at?new Date(u.created_at).toLocaleDateString('ar'):'—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>}
+        {loading ? (
+          <div style={{padding:40,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div>
+        ) : users.length === 0 ? (
+          <div style={{padding:40,textAlign:'center',color:'var(--gray-400)'}}>لا يوجد مستخدمون</div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>المستخدم</th>
+                  <th>البريد الإلكتروني</th>
+                  <th>الصلاحية</th>
+                  <th>الحالة</th>
+                  <th>تاريخ الإضافة</th>
+                  <th style={{width:120}}>إجراءات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u=>(
+                  <tr key={u.id} style={{opacity: u.is_active ? 1 : 0.5, transition:'opacity .2s'}}>
+                    <td>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:15,flexShrink:0}}>
+                          {(u.full_name||u.email||'؟').charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{fontWeight:600,fontSize:13}}>{u.full_name||'—'}</div>
+                          {u.id===currentUser?.id && <div style={{fontSize:10,color:'var(--primary)',fontWeight:700}}>● حسابك الحالي</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="text-muted" style={{fontSize:13,direction:'ltr',textAlign:'right'}}>{u.email||'—'}</td>
+                    <td><span className={`badge ${ROLE_BADGE[u.role]||'badge-sent'}`}>{ROLE_LABELS[u.role]||u.role}</span></td>
+                    <td><span className={`badge ${u.is_active?'badge-approved':'badge-rejected'}`}>{u.is_active?'نشط':'غير نشط'}</span></td>
+                    <td className="text-sm text-muted">{u.created_at ? new Date(u.created_at).toLocaleDateString('ar-JO') : '—'}</td>
+                    <td>
+                      <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>openEdit(u)} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>toggleActive(u)} title={u.is_active?'إيقاف تسجيل الدخول':'تفعيل'}
+                          style={{padding:'3px 8px',color:u.is_active?'var(--warning)':'var(--success)'}}>
+                          {u.is_active?'⏸':'▶️'}
+                        </button>
+                        {u.id!==currentUser?.id && (
+                          <button className="btn btn-ghost btn-sm" onClick={()=>deleteUser(u)} title="حذف" style={{padding:'3px 8px',color:'var(--danger)'}}>🗑️</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Note */}
+      <div style={{marginTop:12,padding:'10px 14px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:8,fontSize:12,color:'#92400e',display:'flex',gap:8,alignItems:'flex-start'}}>
+        <span>⚠️</span>
+        <div>
+          <strong>إضافة مستخدم جديد:</strong> بعد الإنشاء سيصله إيميل لتأكيد الحساب. سلّم له الإيميل وكلمة المرور المؤقتة حتى يتمكن من تسجيل الدخول.
+          <br/>
+          <strong>حذف المستخدم:</strong> يحذف بيانات الملف الشخصي فقط — لإلغاء قدرته على تسجيل الدخول نهائياً استخدم زر <strong>إيقاف ⏸</strong> أو احذفه من Supabase → Authentication.
+        </div>
       </div>
     </div>
   );
@@ -3448,7 +3655,7 @@ function App() {
           {page==='archive' && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && <ActivityPage logs={logs}/>}
           {page==='deleted-quotes' && (user.role==='admin'||user.role==='manager') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
-          {page==='users' && user.role==='admin' && <UsersPage/>}
+          {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
         </div>
       </div>
       <Toasts/>
