@@ -667,7 +667,7 @@ function Sidebar({ user, page, setPage, onLogout }) {
           <div className="user-avatar">{(user?.full_name||user?.email||'U').charAt(0)}</div>
           <div>
             <div className="user-name">{user?.full_name || user?.email}</div>
-            <div className="user-role">{user?.role === 'admin' ? 'مدير النظام' : 'موظف'}</div>
+            <div className="user-role">{user?.role === 'admin' ? 'مدير النظام' : user?.role === 'manager' ? 'مدير' : 'موظف'}</div>
           </div>
         </div>
         <button className="logout-btn" onClick={onLogout}>تسجيل الخروج</button>
@@ -2376,7 +2376,13 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
 
   const handleSave = async () => {
     if (!form.full_name.trim()) { toast('يجب إدخال الاسم الكامل','error'); return; }
-    if (isNew && !form.email.trim()) { toast('يجب إدخال البريد الإلكتروني','error'); return; }
+    if (isNew) {
+      const emailVal = form.email.trim();
+      if (!emailVal) { toast('يجب إدخال البريد الإلكتروني','error'); return; }
+      if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(emailVal)) {
+        toast('صيغة البريد الإلكتروني غير صحيحة — مثال: user@example.com','error'); return;
+      }
+    }
     if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل','error'); return; }
     setLoading(true);
     try {
