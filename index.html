@@ -1241,7 +1241,10 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">عناية</label>
-              <input className="form-control" value={form.attention} onChange={e=>setF('attention',e.target.value)} placeholder="قسم المشتريات المحترمين"/>
+              <input className="form-control" list="attention-opts" value={form.attention} onChange={e=>setF('attention',e.target.value)} placeholder="ابدأ بالكتابة للاقتراحات..."/>
+              <datalist id="attention-opts">
+                {ATTENTION_SUGGESTIONS.map(s=><option key={s} value={s}/>)}
+              </datalist>
             </div>
           </div>
           <div className="form-row-3 mb-4">
@@ -1255,7 +1258,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">المرجع</label>
-              <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder="دمى المحاكاة"/>
+              <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder=""/>
             </div>
           </div>
           <div className="form-row mb-4" style={{alignItems:'center'}}>
@@ -2739,7 +2742,17 @@ const CATALOG_CATEGORIES = [
   'تجهيز عيادات','المستهلكات','إسعافات أولية','ملابس طبية ومخبرية','المشدات الطبية والتجميلية',
   'المجاهر','أدوات زجاجية','أدوات بلاستيكية','فحص المياه','الكروماتوغرافيا',
   'تجهيز مختبرات','مستهلكات مخبرية','الهيكل العظمي وأجزاءه','المجسمات التشريحية',
-  'الدمى والتدريس الطبي','المجسمات التعليمية','النباتات','اللوحات التعليمية',
+  'الدمى والتدريس الطبي','المجسمات التعليمية','النباتات','اللوحات التعليمية','غيرهم',
+];
+
+const ATTENTION_SUGGESTIONS = [
+  'قسم المشتريات المحترمين','مدير المشتريات','مسؤول المشتريات','إدارة المشتريات',
+  'لجنة المشتريات','قسم العطاءات','مسؤول العطاءات','فريق العطاءات',
+  'إدارة العطاءات والمناقصات','لجنة العطاءات','مسؤول المناقصات',
+  'المدير المالي','المدير العام','المدير الإداري','المدير الطبي',
+  'الصيدلاني المسؤول','مدير المختبر','مسؤول المستودع','مدير المستودع',
+  'رئيس قسم التمريض','المشرف الطبي','مدير الأشعة','مدير الطوارئ',
+  'قسم اللوجستيات','مسؤول التوريدات','مدير التوريد والمستودعات',
 ];
 const CUST_TITLES    = ['مدير المشتريات','مسؤول المشتريات','مدير مالي','محاسب','مدير عام','مدير طبي','صيدلاني','مشرف','مدير إداري','سكرتير','مدير المستودع','ممرض/ة','فني','أخرى'];
 
@@ -3017,6 +3030,7 @@ function CatalogForm({ user, item: editItem, onSave, onClose }) {
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast('اسم الصنف مطلوب','error'); return; }
+    if (!form.category?.trim()) { toast('الفئة مطلوبة — اختر فئة للمنتج','error'); return; }
     setSaving(true);
     const payload = { name:form.name.trim(), description:form.description, unit:form.unit||'EACH',
       unit_price:parseFloat(form.unit_price)||0, origin:form.origin, delivery:form.delivery,
@@ -3051,11 +3065,14 @@ function CatalogForm({ user, item: editItem, onSave, onClose }) {
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div className="form-group">
-              <label className="form-label">الفئة</label>
-              <select className="form-input" value={form.category||''} onChange={e=>setF('category',e.target.value)}>
-                <option value="">— بدون فئة —</option>
-                {CATALOG_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
-              </select>
+              <label className="form-label">الفئة <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-input" list="catalog-cats-opts"
+                value={form.category||''} onChange={e=>setF('category',e.target.value)}
+                placeholder="ابحث أو اختر الفئة..."
+                style={{borderColor: !form.category ? '#fca5a5' : ''}}/>
+              <datalist id="catalog-cats-opts">
+                {CATALOG_CATEGORIES.map(c=><option key={c} value={c}/>)}
+              </datalist>
             </div>
             <div className="form-group">
               <label className="form-label">الوحدة</label>
