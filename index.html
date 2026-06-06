@@ -2759,7 +2759,7 @@ const CUST_TITLES    = ['مدير المشتريات','مسؤول المشتري
 function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose }) {
   const empty = {
     name:'', customer_code:'', phone:'', fax:'', alt_phone:'',
-    email:'', address:'', district:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'',
+    email:'', address:'', district:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'', rep_name:'',
     contact1_name:'', contact1_title:'', contact1_phone:'', contact1_email:'', contact1_ext:'', contact1_notes:'',
     contact2_name:'', contact2_title:'', contact2_phone:'', contact2_email:'', contact2_ext:'', contact2_notes:'',
   };
@@ -2769,10 +2769,17 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   useEffect(() => {
-    if (!profilesProp?.length) {
+    const src = profilesProp?.length ? Promise.resolve(profilesProp) :
       sb.from('profiles').select('id,full_name').eq('is_active',true).order('full_name')
-        .then(({data})=>setProfiles(data||[]));
-    }
+        .then(({data})=>data||[]);
+    src.then(list => {
+      setProfiles(list);
+      // لو العميل عنده assigned_to UUID بس ما عنده rep_name، عبّي rep_name من اسم الموظف
+      if (customer?.assigned_to && !customer?.rep_name) {
+        const name = list.find(p=>p.id===customer.assigned_to)?.full_name;
+        if (name) setF('rep_name', name);
+      }
+    });
   }, []);
 
   const [previewCode, setPreviewCode] = useState('...');
@@ -2804,6 +2811,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         website:form.website||null, notes:form.notes||null,
         category:form.category||null, tags:form.tags||null,
         assigned_to:form.assigned_to||null,
+        rep_name:form.rep_name||null,
         contact1_name:form.contact1_name||null, contact1_title:form.contact1_title||null,
         contact1_phone:form.contact1_phone||null,
         contact1_email:form.contact1_email||null, contact1_ext:form.contact1_ext||null,
@@ -2858,10 +2866,18 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                 </div>
                 <div className="erp-field">
                   <label>المندوب المسؤول</label>
-                  <select className="erp-input" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
-                    <option value="">— اختر —</option>
-                    {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
-                  </select>
+                  <input className="erp-input" list="rep-list"
+                    value={form.rep_name||''}
+                    onChange={e=>{
+                      const val = e.target.value;
+                      setF('rep_name', val);
+                      const matched = profiles.find(p=>p.full_name===val);
+                      setF('assigned_to', matched ? matched.id : '');
+                    }}
+                    placeholder="اختر من النظام أو اكتب اسم المندوب"/>
+                  <datalist id="rep-list">
+                    {profiles.map(p=><option key={p.id} value={p.full_name}/>)}
+                  </datalist>
                 </div>
               </div>
               <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة أو الجهة" span/>
@@ -2922,7 +2938,7 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
     sb.from('quotations').select('*').eq('customer_id', customer.id).order('created_at',{ascending:false})
       .then(({data})=>{ setQuotes(data||[]); setLoadingQ(false); });
   }, [customer.id]);
-  const assignedName = profiles.find(p=>p.id===customer.assigned_to)?.full_name || '—';
+  const assignedName = customer.rep_name || profiles.find(p=>p.id===customer.assigned_to)?.full_name || '—';
 
   const Field = ({label, val}) => (
     <div className="erp-field">
@@ -3478,7 +3494,7 @@ function CustomersPage({ user }) {
       || (c.address||'').toLowerCase().includes(q);
   });
 
-  const assignedName = (id) => profiles.find(p=>p.id===id)?.full_name || '—';
+  const assignedName = (c) => c.rep_name || profiles.find(p=>p.id===c.assigned_to)?.full_name || '—';
 
   if (selected) return <CustomerDetail customer={selected} user={user} profiles={profiles} onBack={()=>{ setSelected(null); load(); }}/>;
 
@@ -3528,7 +3544,7 @@ function CustomersPage({ user }) {
                 {c.contact1_name ? <span>{c.contact1_name}{c.contact1_title && <span style={{color:'#9ca3af',fontWeight:400}}> — {c.contact1_title}</span>}</span> : '—'}
               </div>
               <div style={{fontSize:12,color:'#6b7280'}}>{c.city||'—'}</div>
-              <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c.assigned_to)}</div>
+              <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c)}</div>
               <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
                 <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
                 <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>
