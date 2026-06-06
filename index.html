@@ -2795,8 +2795,23 @@ function ErpDatalist({label, value, onChange, listId, options, placeholder, span
   );
 }
 
-const CUST_GOVS      = ['عمان','إربد','الزرقاء','السلط','المفرق','الكرك','مادبا','جرش','عجلون','العقبة','الطفيلة','معان'];
-const CUST_AMMAN     = ['وسط البلد','الشميساني','الجبيهة','وادي السير','تلاع العلي','ضاحية الحسين','الرابية','دابوق','صويلح','شفا بدران','طارق','النزهة','الروضة','الأشرفية','ماركا','أبو نصير','خلدا','الصويفية','مرج الحمام','حي الأمير حمزة','الرصيفة','الزهور','السواقة'];
+const CUST_GOVS = ['عمان','إربد','الزرقاء','البلقاء','المفرق','الكرك','مادبا','جرش','عجلون','العقبة','الطفيلة','معان'];
+
+const CUST_DISTRICTS = {
+  'عمان':    ['وسط البلد','الشميساني','الجبيهة','وادي السير','تلاع العلي','ضاحية الحسين','الرابية','دابوق','صويلح','شفا بدران','طارق','النزهة','الروضة','الأشرفية','ماركا','أبو نصير','خلدا','الصويفية','مرج الحمام','حي الأمير حمزة','الزهور','السواقة','أم أذينة','سحاب','القويسمة','ناعور','الجويدة'],
+  'إربد':    ['مركز إربد','الحصن','بيت راس','المزار الشمالي','الرمثا','بني كنانة','الكورة','الأغوار الشمالية','باعون','المغير','طبقة فحل','النعيمة','حي الجامعة','حي البتراوي','ريمون','الشيخ حسين','منشية بني حسن'],
+  'الزرقاء': ['مركز الزرقاء','الرصيفة','الهاشمية','الأزرق','ضليل','الزرقاء الجديدة','حي الأمير حسن','حي الإسكان','حي النزهة','خربة السمرا','بسيرا','حي اليرموك','حي الزواهرة'],
+  'البلقاء': ['السلط','ماحص','عين الباشا','دير علا','الشونة الجنوبية','الكرامة','عيرا','وادي شعيب','نادر','عمواس','عراق الأمير','ناعور (بلقاء)','الفحيص'],
+  'المفرق':  ['مركز المفرق','الرويشد','الزعتري','بديعة','الخالدية','الحمراء','أم الجمال','الصفاوي','رحاب','الخشيبة'],
+  'الكرك':   ['مركز الكرك','الغور الكركي','المزار الجنوبي','القصر','الربة','عي','فقوع','المؤتة','القطرانة','العراق','مؤتة','قصبة الكرك'],
+  'مادبا':   ['مركز مادبا','ذيبان','ليجون','جرف الدراويش','النصيب','المليح','طبان','قصبة مادبا','ام الرصاص'],
+  'جرش':     ['مركز جرش','برما','سوف','صخرة','كفر راجب','المصطبة','قصبة جرش'],
+  'عجلون':   ['مركز عجلون','كفرنجة','عنجرة','عرجان','راجب','حلاوة','سوفا','لستيب'],
+  'العقبة':  ['مركز العقبة','القويرة','رم','الشيدية','حي الورود','حي الشلالة','حي البلد','الخريبة','المدينة الصناعية','النبطية'],
+  'الطفيلة': ['مركز الطفيلة','بصيرا','الحسا','قادس','العين البيضا','صير','جنين الصفا','قصبة الطفيلة'],
+  'معان':    ['مركز معان','البتراء','وادي موسى','الشوبك','غران','الجفر','الحميمة','بئر الشديا','القاع','قصبة معان'],
+};
+const CUST_AMMAN = CUST_DISTRICTS['عمان'];
 const CUST_CATS      = ['مستشفى خاص','مستشفى حكومي','مستوصف','مركز طبي','عيادة خاصة','صيدلية','مختبر طبي','مركز أشعة','شركة توزيع طبي','جهة حكومية','جامعة / كلية','دار رعاية','جمعية خيرية','أخرى'];
 const CUST_TAGS      = ['VIP','عميل رئيسي','حكومي','خاص','طبي','صيدلاني','جديد','نشط','مؤجل','غير نشط'];
 const CATALOG_CATEGORIES = [
@@ -2864,7 +2879,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
     if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     setLoading(true);
     try {
-      const fullAddress = form.city==='عمان' && form.district ? `${form.district} - ${form.address||''}`.trim().replace(/\s*-\s*$/,'') : form.address||null;
+      const fullAddress = form.district ? `${form.district} - ${form.address||''}`.trim().replace(/\s*-\s*$/,'') : form.address||null;
       const payload = {
         name:form.name, customer_code:form.customer_code||null,
         phone:form.phone||null, fax:form.fax||null,
@@ -2950,9 +2965,9 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               <ErpField label="هاتف بديل" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-7-..."/>
               <ErpField label="البريد الإلكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
               <ErpField label="الموقع الإلكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
-              <ErpSelect label="المحافظة" value={form.city} onChange={v=>setF('city',v)} options={CUST_GOVS} placeholder="اختر المحافظة"/>
-              {form.city==='عمان' && (
-                <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="amman-districts" options={CUST_AMMAN} placeholder="اختر أو اكتب المنطقة"/>
+              <ErpSelect label="المحافظة" value={form.city} onChange={v=>{ setF('city',v); setF('district',''); }} options={CUST_GOVS} placeholder="اختر المحافظة"/>
+              {form.city && CUST_DISTRICTS[form.city] && (
+                <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="gov-districts" options={CUST_DISTRICTS[form.city]} placeholder="اختر أو اكتب المنطقة"/>
               )}
               <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={CUST_CATS} placeholder="اختر أو اكتب التصنيف"/>
               <ErpDatalist label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} listId="cust-tags-list" options={CUST_TAGS} placeholder="اختر أو اكتب وسماً"/>
