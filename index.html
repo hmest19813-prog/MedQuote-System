@@ -3104,10 +3104,10 @@ function CatalogForm({ user, item: editItem, onSave, onClose }) {
       unit_price:parseFloat(form.unit_price)||0, origin:form.origin, delivery:form.delivery,
       category:form.category, notes:form.notes };
     let err;
-    if (editItem) {
+    if (editItem?.id) {
       ({ error:err } = await sb.from('catalog_items').update({...payload, updated_at:new Date().toISOString()}).eq('id', editItem.id));
     } else {
-      ({ error:err } = await sb.from('catalog_items').insert({...payload, created_by: user.id}));
+      ({ error:err } = await sb.from('catalog_items').insert({...payload, created_by: user?.id||null}));
     }
     setSaving(false);
     if (err) { toast('خطأ: '+err.message,'error'); return; }
