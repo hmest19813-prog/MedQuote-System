@@ -2944,7 +2944,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               </div>
               <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة أو الجهة" span/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="هاتف" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-6-..."/>
+                <ErpField label="موبايل" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-7-..."/>
                 <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+962-6-..."/>
               </div>
               <ErpField label="هاتف بديل" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-7-..."/>
@@ -3052,10 +3052,9 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
         {/* Company Info */}
         <div className="erp-card main-card">
           <div className="erp-section-header">🏢 بيانات الشركة</div>
-          <Field label="الهاتف" val={customer.phone}/>
-          <Field label="فاكس" val={customer.fax}/>
-          <Field label="موبايل" val={customer.mobile}/>
+          <Field label="موبايل" val={customer.phone||customer.mobile}/>
           <Field label="هاتف بديل" val={customer.alt_phone}/>
+          <Field label="فاكس" val={customer.fax}/>
           <Field label="البريد الإلكتروني" val={customer.email}/>
           <Field label="الموقع الإلكتروني" val={customer.website}/>
           <Field label="المدينة / المنطقة" val={customer.city}/>
