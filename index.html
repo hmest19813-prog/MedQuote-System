@@ -2775,16 +2775,19 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
     }
   }, []);
 
-  const [previewCode, setPreviewCode] = useState('');
+  const [previewCode, setPreviewCode] = useState('...');
   useEffect(() => {
     if (!customer?.id) {
-      sb.from('number_sequences').select('current_value').eq('id','customer').single()
-        .then(({data}) => {
-          if (data != null) {
+      sb.from('number_sequences').select('current_value').eq('id','customer').maybeSingle()
+        .then(({data, error}) => {
+          if (data) {
             const next = (data.current_value || 0) + 1;
             setPreviewCode('C-' + String(next).padStart(4,'0'));
+          } else {
+            setPreviewCode('C-0001');
           }
-        });
+        })
+        .catch(() => setPreviewCode('C-0001'));
     }
   }, []);
 
@@ -2849,9 +2852,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                   <div className="erp-input" style={{background:'#f0f4f8',color:'var(--gray-500)',display:'flex',alignItems:'center',gap:6,cursor:'default',userSelect:'none'}}>
                     {customer?.id
                       ? <span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{form.customer_code||'—'}</span>
-                      : previewCode
-                        ? <><span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{previewCode}</span><span style={{fontSize:10,color:'var(--gray-400)',marginRight:6}}>(متوقع)</span></>
-                        : <><span style={{fontSize:12}}>🔢</span><span style={{fontSize:12}}>جاري التحميل...</span></>
+                      : <><span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{previewCode}</span><span style={{fontSize:10,color:'var(--gray-400)',marginRight:6}}>(متوقع)</span></>
                     }
                   </div>
                 </div>
