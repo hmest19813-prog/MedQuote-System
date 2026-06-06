@@ -944,6 +944,13 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           </div>
 
+          {/* الملاحظات */}
+          {doc.notes && (
+            <div className="print-notes">
+              <strong>ملاحظات: </strong>{doc.notes}
+            </div>
+          )}
+
           {/* الفوتر */}
           <div className="print-footer-bar">
             <div className="print-footer-right">
