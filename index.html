@@ -3090,7 +3090,14 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
 /* ==================== CATALOG ==================== */
 
-function CatalogForm({ user, item: editItem, onSave, onClose }) {
+function CatalogForm({ user, item: editItem, onSave, onClose, categories: propCats }) {
+  const [dynCats, setDynCats] = React.useState(propCats||CATALOG_CATEGORIES);
+  React.useEffect(() => {
+    if (!propCats) {
+      sb.from('catalog_categories').select('name').order('sort_order').order('name')
+        .then(({data})=>{ if(data?.length) setDynCats(data.map(c=>c.name)); });
+    }
+  }, []);
   const blank = { name:'', description:'', unit:'EACH', unit_price:0, origin:'CHINA', delivery:'PROMPT', category:'', notes:'' };
   const [form, setForm] = React.useState(editItem ? { ...blank, ...editItem } : blank);
   const [saving, setSaving] = React.useState(false);
@@ -3139,7 +3146,7 @@ function CatalogForm({ user, item: editItem, onSave, onClose }) {
                 placeholder="ابحث أو اختر الفئة..."
                 style={{borderColor: !form.category ? '#fca5a5' : ''}}/>
               <datalist id="catalog-cats-opts">
-                {CATALOG_CATEGORIES.map(c=><option key={c} value={c}/>)}
+                {dynCats.map(c=><option key={c} value={c}/>)}
               </datalist>
             </div>
             <div className="form-group">
@@ -3358,19 +3365,111 @@ function CatalogPicker({ onSelect, onClose }) {
   );
 }
 
+/* ---- CategoriesManager (admin only) ---- */
+function CategoriesManager({ user, categories, onRefresh, onClose }) {
+  const [newName, setNewName]   = React.useState('');
+  const [editing, setEditing]   = React.useState(null); // {id, name}
+  const [saving,  setSaving]    = React.useState(false);
+
+  const add = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    const { error } = await sb.from('catalog_categories')
+      .insert({ name: newName.trim(), sort_order: categories.length + 1, created_by: user.id });
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    setNewName(''); onRefresh();
+  };
+
+  const save = async () => {
+    if (!editing?.name?.trim()) return;
+    setSaving(true);
+    const { error } = await sb.from('catalog_categories')
+      .update({ name: editing.name.trim() }).eq('id', editing.id);
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    setEditing(null); onRefresh();
+  };
+
+  const del = async (cat) => {
+    if (!confirm(`حذف فئة "${cat.name}"؟`)) return;
+    const { error } = await sb.from('catalog_categories').delete().eq('id', cat.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    onRefresh();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">⚙️ إدارة فئات المنتجات</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{maxHeight:'60vh',overflowY:'auto'}}>
+          {/* إضافة فئة جديدة */}
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <input className="form-control" value={newName} onChange={e=>setNewName(e.target.value)}
+              placeholder="اسم الفئة الجديدة..." onKeyDown={e=>e.key==='Enter'&&add()}
+              style={{flex:1}}/>
+            <button className="btn btn-primary btn-sm" onClick={add} disabled={saving||!newName.trim()}>
+              ➕ إضافة
+            </button>
+          </div>
+          {/* قائمة الفئات */}
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {categories.map(cat=>(
+              <div key={cat.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',
+                background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8}}>
+                {editing?.id === cat.id ? (
+                  <>
+                    <input className="form-control" value={editing.name}
+                      onChange={e=>setEditing({...editing,name:e.target.value})}
+                      onKeyDown={e=>e.key==='Enter'&&save()}
+                      style={{flex:1,padding:'4px 8px',height:32}}/>
+                    <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>✓</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(null)}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{flex:1,fontSize:13,fontWeight:500}}>{cat.name}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setEditing({id:cat.id,name:cat.name})}>✏️</button>
+                    <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>del(cat)}>🗑️</button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إغلاق</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CatalogPage({ user }) {
   const [items,    setItems]    = React.useState([]);
   const [loading,  setLoading]  = React.useState(true);
   const [search,   setSearch]   = React.useState('');
   const [catFilter,setCatFilter]= React.useState('all');
   const [showForm, setShowForm] = React.useState(false);
-  const [editing,  setEditing]  = React.useState(null);
+  const [editing,       setEditing]       = React.useState(null);
+  const [dbCategories,  setDbCategories]  = React.useState([]);
+  const [showCatMgr,    setShowCatMgr]    = React.useState(false);
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+
+  const loadCats = async () => {
+    const { data } = await sb.from('catalog_categories').select('*').order('sort_order').order('name');
+    setDbCategories(data||[]);
+  };
 
   const load = async () => {
     setLoading(true);
-    const { data } = await sb.from('catalog_items').select('*').order('name');
-    setItems(data||[]);
+    await Promise.all([
+      sb.from('catalog_items').select('*').order('name').then(({data})=>setItems(data||[])),
+      loadCats(),
+    ]);
     setLoading(false);
   };
   React.useEffect(() => { load(); }, []);
@@ -3387,7 +3486,8 @@ function CatalogPage({ user }) {
     load();
   };
 
-  const categories = ['all', ...CATALOG_CATEGORIES];
+  const catNames = dbCategories.map(c=>c.name);
+  const categories = ['all', ...catNames];
 
   const filtered = items.filter(it => {
     const ms = !search ||
@@ -3401,13 +3501,20 @@ function CatalogPage({ user }) {
 
   return (
     <div>
-      {showForm && <CatalogForm user={user} item={editing}
+      {showForm && <CatalogForm user={user} item={editing} categories={catNames}
         onSave={()=>{ setShowForm(false); setEditing(null); load(); }}
         onClose={()=>{ setShowForm(false); setEditing(null); }}/>}
+      {showCatMgr && <CategoriesManager user={user} categories={dbCategories}
+        onRefresh={loadCats} onClose={()=>setShowCatMgr(false)}/>}
 
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>كتالوج الأصناف</h2>
-        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة صنف</button>
+        <div style={{display:'flex',gap:8}}>
+          {user?.role==='admin' && (
+            <button className="btn btn-ghost" onClick={()=>setShowCatMgr(true)}>⚙️ إدارة الفئات</button>
+          )}
+          <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة صنف</button>
+        </div>
       </div>
 
       <div className="card">
