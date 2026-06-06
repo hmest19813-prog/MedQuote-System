@@ -2775,7 +2775,18 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
     }
   }, []);
 
-  // رقم العميل يُولَّد تلقائياً من Supabase عند الحفظ — لا حاجة لتوليده هنا
+  const [previewCode, setPreviewCode] = useState('');
+  useEffect(() => {
+    if (!customer?.id) {
+      sb.from('number_sequences').select('current_value').eq('id','customer').single()
+        .then(({data}) => {
+          if (data != null) {
+            const next = (data.current_value || 0) + 1;
+            setPreviewCode('C-' + String(next).padStart(4,'0'));
+          }
+        });
+    }
+  }, []);
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
@@ -2837,8 +2848,10 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                   <label>رقم العميل</label>
                   <div className="erp-input" style={{background:'#f0f4f8',color:'var(--gray-500)',display:'flex',alignItems:'center',gap:6,cursor:'default',userSelect:'none'}}>
                     {customer?.id
-                      ? <><span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{form.customer_code||'—'}</span></>
-                      : <><span style={{fontSize:12}}>🔢</span><span style={{fontSize:12}}>يُولَّد تلقائياً عند الحفظ</span></>
+                      ? <span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{form.customer_code||'—'}</span>
+                      : previewCode
+                        ? <><span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{previewCode}</span><span style={{fontSize:10,color:'var(--gray-400)',marginRight:6}}>(متوقع)</span></>
+                        : <><span style={{fontSize:12}}>🔢</span><span style={{fontSize:12}}>جاري التحميل...</span></>
                     }
                   </div>
                 </div>
@@ -2862,7 +2875,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               {form.city==='عمان' && (
                 <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="amman-districts" options={CUST_AMMAN} placeholder="اختر أو اكتب المنطقة"/>
               )}
-              <ErpSelect label="التصنيف" value={form.category} onChange={v=>setF('category',v)} options={CUST_CATS} placeholder="اختر التصنيف"/>
+              <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={CUST_CATS} placeholder="اختر أو اكتب التصنيف"/>
               <ErpSelect label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} options={CUST_TAGS} placeholder="اختر وسماً"/>
               <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، الرقم" span/>
               <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..." span/>
