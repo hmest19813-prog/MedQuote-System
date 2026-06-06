@@ -1100,22 +1100,16 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     if (!item.item_name?.trim()) { toast('أدخل اسم المنتج أولاً','error'); return; }
     const { data: existing } = await sb.from('catalog_items').select('id').ilike('name', item.item_name.trim()).maybeSingle();
     if (existing) { toast('هذا الصنف موجود في الكتالوج مسبقاً','info'); return; }
-    // افتح modal اختيار الفئة
-    setPendingCatalogItem(item);
-  };
-
-  const confirmSaveItemToCatalog = async (category) => {
-    const item = pendingCatalogItem;
-    setPendingCatalogItem(null);
-    const { error } = await sb.from('catalog_items').insert({
-      name: item.item_name.trim(), description: item.description||null,
-      unit: item.unit||'EACH', unit_price: parseFloat(item.unit_price)||0,
-      origin: (!item.origin||item.origin==='__custom__')?'CHINA':item.origin,
-      delivery: (!item.delivery||item.delivery==='__custom__')?'PROMPT':item.delivery,
-      category, created_by: user.id
+    // افتح CatalogForm مع بيانات المنتج معبّأة
+    setPendingCatalogItem({
+      name: item.item_name.trim(),
+      description: item.description||'',
+      unit: item.unit||'EACH',
+      unit_price: parseFloat(item.unit_price)||0,
+      origin: (!item.origin||item.origin==='__custom__') ? 'CHINA' : (item.origin||'CHINA'),
+      delivery: (!item.delivery||item.delivery==='__custom__') ? 'PROMPT' : (item.delivery||'PROMPT'),
+      category: '',
     });
-    if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
-    toast('تم حفظ الصنف في الكتالوج ✓','success');
   };
 
   const handleSave = async (status='draft') => {
@@ -1214,7 +1208,9 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   return (
     <div className="modal-overlay">
       {catalogPicker !== null && <CatalogPicker onSelect={cat=>applyCatalogItem(catalogPicker, cat)} onClose={()=>setCatalogPicker(null)}/>}
-      {pendingCatalogItem && <CatalogCategoryModal itemName={pendingCatalogItem.item_name} onConfirm={confirmSaveItemToCatalog} onClose={()=>setPendingCatalogItem(null)}/>}
+      {pendingCatalogItem && <CatalogForm user={user} item={pendingCatalogItem}
+        onSave={()=>{ setPendingCatalogItem(null); toast('تم حفظ المنتج في الكتالوج ✓','success'); }}
+        onClose={()=>setPendingCatalogItem(null)}/>}
       {showSaveCustomer && <CustomerForm
         customer={{ name: form.customer_name, phone: form.phone||'' }}
         profiles={[]}
@@ -1414,40 +1410,6 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           <button className="btn btn-ghost" onClick={onClose} disabled={loading}>إلغاء</button>
           <button className="btn btn-ghost" onClick={()=>handleSave('draft')} disabled={loading}>{loading?'...1':'حفظ كمسودة'}</button>
           <button className="btn btn-primary" onClick={()=>handleSave('sent')} disabled={loading}>{loading?'...':' حفظ وإرسال'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ===================== CATALOG CATEGORY MODAL ===================== */
-function CatalogCategoryModal({ itemName, onConfirm, onClose }) {
-  const [category, setCategory] = useState('');
-  return (
-    <div className="modal-overlay" style={{zIndex:10000}}>
-      <div className="modal" style={{maxWidth:420}}>
-        <div className="modal-header">
-          <span className="modal-title">اختر فئة المنتج</span>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="modal-body">
-          <p style={{fontSize:13,marginBottom:12,color:'var(--gray-600)'}}>
-            لحفظ <strong>{itemName}</strong> في الكتالوج يجب تحديد الفئة:
-          </p>
-          <input className="form-control" list="cat-modal-opts"
-            value={category} onChange={e=>setCategory(e.target.value)}
-            placeholder="ابحث أو اختر الفئة..." autoFocus
-            style={{borderColor: !category?'#fca5a5':''}}/>
-          <datalist id="cat-modal-opts">
-            {CATALOG_CATEGORIES.map(c=><option key={c} value={c}/>)}
-          </datalist>
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" disabled={!category.trim()}
-            onClick={()=>onConfirm(category.trim())}>
-            💾 حفظ في الكتالوج
-          </button>
         </div>
       </div>
     </div>
