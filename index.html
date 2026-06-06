@@ -2876,7 +2876,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                 <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="amman-districts" options={CUST_AMMAN} placeholder="اختر أو اكتب المنطقة"/>
               )}
               <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={CUST_CATS} placeholder="اختر أو اكتب التصنيف"/>
-              <ErpSelect label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} options={CUST_TAGS} placeholder="اختر وسماً"/>
+              <ErpDatalist label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} listId="cust-tags-list" options={CUST_TAGS} placeholder="اختر أو اكتب وسماً"/>
               <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، الرقم" span/>
               <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..." span/>
             </div>
