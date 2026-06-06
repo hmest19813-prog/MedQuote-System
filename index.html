@@ -3807,6 +3807,18 @@ function App() {
   };
   const reload = () => user && loadData(user.id, user.role);
 
+  // ── تحديث البيانات عند الانتقال بين الصفحات ──────────────
+  const lastReloadRef = React.useRef(0);
+  useEffect(() => {
+    if (!user?.id) return;
+    const now = Date.now();
+    // إعادة تحميل فقط إذا مرّ أكثر من 30 ثانية على آخر تحميل (تجنب التكرار الزائد)
+    if (now - lastReloadRef.current > 30000) {
+      lastReloadRef.current = now;
+      loadData(user.id, user.role);
+    }
+  }, [page]);
+
   // ── Realtime: تحديث فوري عند أي تغيير من أي موظف ──────────────
   useEffect(() => {
     if (!user?.id) return;
