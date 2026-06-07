@@ -1166,20 +1166,20 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
         const { data: existingCat } = await sb.from('catalog_items').select('name').in('name', validItems.map(i=>i.item_name.trim()));
         const existingNames = new Set((existingCat||[]).map(c=>c.name.toLowerCase()));
         const newItems = validItems.filter(i=>!existingNames.has(i.item_name.trim().toLowerCase()));
-        const withCat = newItems.filter(i=>i.category?.trim());
-        const withoutCat = newItems.filter(i=>!i.category?.trim());
-        if (withCat.length) {
-          await sb.from('catalog_items').insert(withCat.map(i=>({
+        const withBoth    = newItems.filter(i=>i.category?.trim() && parseFloat(i.unit_price)>0);
+        const withoutReq  = newItems.filter(i=>!i.category?.trim() || !(parseFloat(i.unit_price)>0));
+        if (withBoth.length) {
+          await sb.from('catalog_items').insert(withBoth.map(i=>({
             name: i.item_name.trim(), description: i.description||null,
-            unit: i.unit||'EACH', unit_price: parseFloat(i.unit_price)||0,
+            unit: i.unit||'EACH', unit_price: parseFloat(i.unit_price),
             origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
             delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
             category: i.category,
             created_by: user?.id||null
           })));
         }
-        if (withoutCat.length) {
-          toast(`${withoutCat.length} منتج جديد لم يُضف للكتالوج — يرجى حفظهم يدوياً مع تحديد الفئة 📂`, 'info');
+        if (withoutReq.length) {
+          toast(`${withoutReq.length} منتج جديد لم يُضف للكتالوج — يرجى حفظهم يدوياً مع تحديد الفئة والسعر 📂`, 'info');
         }
       }
 
@@ -3118,6 +3118,7 @@ function CatalogForm({ user, item: editItem, onSave, onClose, categories: propCa
   const handleSave = async () => {
     if (!form.name.trim()) { toast('اسم الصنف مطلوب','error'); return; }
     if (!form.category?.trim()) { toast('الفئة مطلوبة — اختر فئة للمنتج','error'); return; }
+    if (!(parseFloat(form.unit_price) > 0)) { toast('سعر الوحدة مطلوب — أدخل سعراً أكبر من صفر','error'); return; }
     setSaving(true);
     const payload = { name:form.name.trim(), description:form.description, unit:form.unit||'EACH',
       unit_price:parseFloat(form.unit_price)||0, origin:form.origin, delivery:form.delivery,
@@ -3168,8 +3169,9 @@ function CatalogForm({ user, item: editItem, onSave, onClose, categories: propCa
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div className="form-group">
-              <label className="form-label">سعر الوحدة</label>
-              <input className="form-input" type="number" min="0" step="0.001" value={form.unit_price} onChange={e=>setF('unit_price',e.target.value)}/>
+              <label className="form-label">سعر الوحدة <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-input" type="number" min="0" step="0.001" value={form.unit_price} onChange={e=>setF('unit_price',e.target.value)}
+                style={{borderColor: !(parseFloat(form.unit_price)>0) ? '#fca5a5' : ''}}/>
             </div>
             <div className="form-group">
               <label className="form-label">المنشأ</label>
