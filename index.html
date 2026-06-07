@@ -2934,11 +2934,11 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                 </div>
               </div>
               <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة أو الجهة" span/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="موبايل" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-7-..."/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+                <ErpField label="هاتف" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-6-..."/>
                 <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+962-6-..."/>
+                <ErpField label="موبايل" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-7-..."/>
               </div>
-              <ErpField label="هاتف بديل" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-7-..."/>
               <ErpField label="البريد الإلكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
               <ErpField label="الموقع الإلكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
               <ErpSelect label="المحافظة" value={form.city} onChange={v=>{ setF('city',v); setF('district',''); }} options={CUST_GOVS} placeholder="اختر المحافظة"/>
