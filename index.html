@@ -2799,8 +2799,8 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   const empty = {
     name:'', customer_code:'', phone:'', fax:'', alt_phone:'',
     email:'', address:'', district:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'', rep_name:'',
-    contact1_name:'', contact1_title:'', contact1_phone:'', contact1_email:'', contact1_ext:'', contact1_notes:'',
-    contact2_name:'', contact2_title:'', contact2_phone:'', contact2_email:'', contact2_ext:'', contact2_notes:'',
+    contact1_name:'', contact1_last_name:'', contact1_title:'', contact1_phone:'', contact1_mobile2:'', contact1_ext:'', contact1_email:'', contact1_notes:'',
+    contact2_name:'', contact2_last_name:'', contact2_title:'', contact2_phone:'', contact2_mobile2:'', contact2_ext:'', contact2_email:'', contact2_notes:'',
   };
   const [form, setForm] = useState({ ...empty, ...(customer||{}) });
   const [loading, setLoading] = useState(false);
@@ -2863,12 +2863,14 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         category:form.category||null, tags:form.tags||null,
         assigned_to:form.assigned_to||null,
         rep_name:form.rep_name||null,
-        contact1_name:form.contact1_name||null, contact1_title:form.contact1_title||null,
-        contact1_phone:form.contact1_phone||null,
+        contact1_name:form.contact1_name||null, contact1_last_name:form.contact1_last_name||null,
+        contact1_title:form.contact1_title||null,
+        contact1_phone:form.contact1_phone||null, contact1_mobile2:form.contact1_mobile2||null,
         contact1_email:form.contact1_email||null, contact1_ext:form.contact1_ext||null,
         contact1_notes:form.contact1_notes||null,
-        contact2_name:form.contact2_name||null, contact2_title:form.contact2_title||null,
-        contact2_phone:form.contact2_phone||null,
+        contact2_name:form.contact2_name||null, contact2_last_name:form.contact2_last_name||null,
+        contact2_title:form.contact2_title||null,
+        contact2_phone:form.contact2_phone||null, contact2_mobile2:form.contact2_mobile2||null,
         contact2_email:form.contact2_email||null, contact2_ext:form.contact2_ext||null,
         contact2_notes:form.contact2_notes||null,
         updated_at:new Date().toISOString()
@@ -2951,9 +2953,13 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
 
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الأول</div>
-              <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم"/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم الأول"/>
+                <ErpField label="الكنية" value={form.contact1_last_name||''} onChange={v=>setF('contact1_last_name',v)} placeholder="اسم العائلة"/>
+              </div>
               <ErpDatalist label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} listId="job-t1" options={CUST_TITLES} placeholder="مدير المشتريات"/>
-              <ErpField label="رقم الهاتف" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-..."/>
+              <ErpField label="رقم موبايل أساسي" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-7-..."/>
+              <ErpField label="رقم موبايل ثانوي" value={form.contact1_mobile2||''} onChange={v=>setF('contact1_mobile2',v)} placeholder="+962-7-..."/>
               <ErpField label="تحويلة EXT" value={form.contact1_ext} onChange={v=>setF('contact1_ext',v)} placeholder="123"/>
               <ErpField label="البريد الإلكتروني" value={form.contact1_email} onChange={v=>setF('contact1_email',v)} type="email" placeholder="name@co.com"/>
               <ErpField label="ملاحظات" value={form.contact1_notes} onChange={v=>setF('contact1_notes',v)} type="textarea" placeholder=""/>
@@ -2961,9 +2967,13 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
 
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
-              <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم"/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم الأول"/>
+                <ErpField label="الكنية" value={form.contact2_last_name||''} onChange={v=>setF('contact2_last_name',v)} placeholder="اسم العائلة"/>
+              </div>
               <ErpDatalist label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} listId="job-t2" options={CUST_TITLES} placeholder="المحاسب / المشرف"/>
-              <ErpField label="رقم الهاتف" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-..."/>
+              <ErpField label="رقم موبايل أساسي" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-7-..."/>
+              <ErpField label="رقم موبايل ثانوي" value={form.contact2_mobile2||''} onChange={v=>setF('contact2_mobile2',v)} placeholder="+962-7-..."/>
               <ErpField label="تحويلة EXT" value={form.contact2_ext} onChange={v=>setF('contact2_ext',v)} placeholder="456"/>
               <ErpField label="البريد الإلكتروني" value={form.contact2_email} onChange={v=>setF('contact2_email',v)} type="email" placeholder="name@co.com"/>
               <ErpField label="ملاحظات" value={form.contact2_notes} onChange={v=>setF('contact2_notes',v)} type="textarea" placeholder=""/>
