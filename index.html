@@ -2711,40 +2711,82 @@ const printDoc = (containerId, title) => {
   const body = document.body;
   const allChildren = Array.from(body.children);
   const originalStyles = allChildren.map(child => child.style.cssText);
+  allChildren.forEach(child => { child.style.cssText = 'display:none !important;'; });
 
-  allChildren.forEach(child => {
-    child.style.cssText = 'display: none !important;';
-  });
-
-  // ننشئ الـ div بعرض A4 الكامل (210mm) — padding بدل page margin
+  // أنشئ الـ div بعرض A4 الكامل لقياس دقيق
   const printDiv = document.createElement('div');
   printDiv.id = 'temp-print-div';
   printDiv.style.cssText = 'position:absolute;top:0;left:0;width:210mm;padding:10mm;box-sizing:border-box;background:white;visibility:hidden;';
   printDiv.innerHTML = el.innerHTML;
   body.appendChild(printDiv);
 
-  // نقيس الارتفاع الفعلي بعرض الطباعة الحقيقي
-  const contentH = printDiv.scrollHeight;
+  const contentH  = printDiv.scrollHeight;
+  const A4_H      = Math.round(297 * 96 / 25.4); // ≈ 1122px
+  const zoom      = contentH > A4_H ? A4_H / contentH : 1;
+  const THRESHOLD = 0.70; // أقل من 70% نستخدم متعدد الصفحات
 
-  // A4 كامل = 297mm → بـ 96dpi = 297 × 96/25.4 ≈ 1122px
-  const A4_H = Math.round(297 * 96 / 25.4);
+  let multiPageStyle = null;
 
-  const zoom = contentH > A4_H ? (A4_H / contentH) : 1;
+  if (zoom >= THRESHOLD) {
+    // ── صفحة واحدة مع ضغط ──────────────────────────────────
+    printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom.toFixed(4)};`;
 
-  // نطبّق الـ zoom ونجعل الـ div مرئياً للطباعة
-  printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom};`;
+  } else {
+    // ── متعدد الصفحات: الهيدر والفوتر ثابتان في كل صفحة ────
+    printDiv.style.cssText = 'position:static;width:100%;background:white;';
 
-  // نضبط عنوان الصفحة كاسم الـ PDF
+    // نقيس ارتفاع الهيدر والفوتر
+    const headerEl  = printDiv.querySelector('.print-header');
+    const dividerEl = printDiv.querySelector('.print-divider');
+    const footerEl  = printDiv.querySelector('.print-footer-bar');
+
+    const headerPx = (headerEl  ? headerEl.offsetHeight  : 90)
+                   + (dividerEl ? dividerEl.offsetHeight : 4)
+                   + 8; // هامش إضافي
+    const footerPx = (footerEl  ? footerEl.offsetHeight  : 70) + 8;
+
+    // نحسب الـ margin بالـ mm
+    const px2mm = v => (v / 96 * 25.4).toFixed(1);
+
+    multiPageStyle = document.createElement('style');
+    multiPageStyle.textContent = `
+      @media print {
+        #temp-print-div {
+          padding: 0 10mm !important;
+          padding-top:    calc(${px2mm(headerPx)}mm + 10mm) !important;
+          padding-bottom: calc(${px2mm(footerPx)}mm + 10mm) !important;
+        }
+        #temp-print-div .print-header {
+          position: fixed !important;
+          top: 10mm !important; left: 10mm !important; right: 10mm !important;
+          background: white !important; z-index: 999 !important;
+        }
+        #temp-print-div .print-divider {
+          position: fixed !important;
+          top: calc(${px2mm(headerEl ? headerEl.offsetHeight : 90)}mm + 10mm) !important;
+          left: 10mm !important; right: 10mm !important;
+          z-index: 999 !important;
+        }
+        #temp-print-div .print-footer-bar {
+          position: fixed !important;
+          bottom: 10mm !important; left: 10mm !important; right: 10mm !important;
+          z-index: 999 !important;
+        }
+      }
+    `;
+    document.head.appendChild(multiPageStyle);
+  }
+
+  // اسم ملف الـ PDF
   const originalTitle = document.title;
   if (title) document.title = title;
 
   window.print();
 
   document.title = originalTitle;
+  if (multiPageStyle) document.head.removeChild(multiPageStyle);
   body.removeChild(printDiv);
-  allChildren.forEach((child, i) => {
-    child.style.cssText = originalStyles[i];
-  });
+  allChildren.forEach((child, i) => { child.style.cssText = originalStyles[i]; });
 };
 
 /* ===================== CUSTOMERS ===================== */
