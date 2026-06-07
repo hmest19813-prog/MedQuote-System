@@ -860,7 +860,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
     };
 
     window.addEventListener('afterprint', handleAfterPrint);
-    printDoc('print-content');
+    const pdfTitle = `${doc.customer_name || 'عميل'} - ${doc.number || ''}`.trim().replace(/\s+/g,' ');
+    printDoc('print-content', pdfTitle);
   };
 
   return (
@@ -869,7 +870,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
         <div className="modal-header no-print">
           <span className="modal-title">{title} — {doc.number}</span>
           <div className="flex gap-2">
-            <button className="btn btn-primary btn-sm" onClick={()=>printDoc('print-content')}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
@@ -2703,7 +2704,7 @@ function UsersPage({ currentUser }) {
 }
 
 /* ===================== PRINT FUNCTION ===================== */
-const printDoc = (containerId) => {
+const printDoc = (containerId, title) => {
   const el = document.getElementById(containerId);
   if (!el) return;
 
@@ -2733,8 +2734,13 @@ const printDoc = (containerId) => {
   // نطبّق الـ zoom ونجعل الـ div مرئياً للطباعة
   printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom};`;
 
+  // نضبط عنوان الصفحة كاسم الـ PDF
+  const originalTitle = document.title;
+  if (title) document.title = title;
+
   window.print();
 
+  document.title = originalTitle;
   body.removeChild(printDiv);
   allChildren.forEach((child, i) => {
     child.style.cssText = originalStyles[i];
