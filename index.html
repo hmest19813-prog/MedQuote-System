@@ -321,7 +321,8 @@ tr:hover td { background: var(--gray-50); }
   
   body { margin: 0 !important; background: white !important; }
 
-  @page { margin: 10mm; size: A4 portrait; }
+  /* margin: 0 يحذف header/footer المتصفح (الوقت والتاريخ واسم الصفحة) */
+  @page { margin: 0; size: A4 portrait; }
 
   /* منع الفوتر من الانتقال لصفحة ثانية */
   .print-footer-bar {
@@ -2714,23 +2715,23 @@ const printDoc = (containerId) => {
     child.style.cssText = 'display: none !important;';
   });
 
-  // ننشئ الـ div بعرض A4 الفعلي (190mm = 210mm - هامشين 10mm) لقياس دقيق
+  // ننشئ الـ div بعرض A4 الكامل (210mm) — padding بدل page margin
   const printDiv = document.createElement('div');
   printDiv.id = 'temp-print-div';
-  printDiv.style.cssText = 'position:absolute;top:0;left:0;width:190mm;background:white;visibility:hidden;';
+  printDiv.style.cssText = 'position:absolute;top:0;left:0;width:210mm;padding:10mm;box-sizing:border-box;background:white;visibility:hidden;';
   printDiv.innerHTML = el.innerHTML;
   body.appendChild(printDiv);
 
   // نقيس الارتفاع الفعلي بعرض الطباعة الحقيقي
   const contentH = printDiv.scrollHeight;
 
-  // A4 بهامش 10mm من كل جانب = 277mm → بـ 96dpi = 277 × 96/25.4 ≈ 1047px
-  const A4_H = Math.round(277 * 96 / 25.4);
+  // A4 كامل = 297mm → بـ 96dpi = 297 × 96/25.4 ≈ 1122px
+  const A4_H = Math.round(297 * 96 / 25.4);
 
   const zoom = contentH > A4_H ? (A4_H / contentH) : 1;
 
   // نطبّق الـ zoom ونجعل الـ div مرئياً للطباعة
-  printDiv.style.cssText = `position:static;width:100%;background:white;zoom:${zoom};`;
+  printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom};`;
 
   window.print();
 
