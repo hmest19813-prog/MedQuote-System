@@ -2805,6 +2805,8 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   const [form, setForm] = useState({ ...empty, ...(customer||{}) });
   const [loading, setLoading] = useState(false);
   const [profiles, setProfiles] = useState(profilesProp||[]);
+  const [dbCats, setDbCats] = useState(CUST_CATS);
+  const [dbDistricts, setDbDistricts] = useState(CUST_DISTRICTS);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   useEffect(() => {
@@ -2813,12 +2815,22 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         .then(({data})=>data||[]);
     src.then(list => {
       setProfiles(list);
-      // لو العميل عنده assigned_to UUID بس ما عنده rep_name، عبّي rep_name من اسم الموظف
       if (customer?.assigned_to && !customer?.rep_name) {
         const name = list.find(p=>p.id===customer.assigned_to)?.full_name;
         if (name) setF('rep_name', name);
       }
     });
+    // تحميل التصنيفات والمناطق من DB
+    sb.from('customer_categories').select('name').order('sort_order').order('name')
+      .then(({data})=>{ if(data?.length) setDbCats(data.map(c=>c.name)); });
+    sb.from('customer_districts').select('governorate,name').order('sort_order').order('name')
+      .then(({data})=>{
+        if (data?.length) {
+          const map = {};
+          data.forEach(d=>{ if(!map[d.governorate]) map[d.governorate]=[]; map[d.governorate].push(d.name); });
+          setDbDistricts(map);
+        }
+      });
   }, []);
 
   const [previewCode, setPreviewCode] = useState('...');
@@ -2928,10 +2940,10 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               <ErpField label="البريد الإلكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
               <ErpField label="الموقع الإلكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
               <ErpSelect label="المحافظة" value={form.city} onChange={v=>{ setF('city',v); setF('district',''); }} options={CUST_GOVS} placeholder="اختر المحافظة"/>
-              {form.city && CUST_DISTRICTS[form.city] && (
-                <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="gov-districts" options={CUST_DISTRICTS[form.city]} placeholder="اختر أو اكتب المنطقة"/>
+              {form.city && (dbDistricts[form.city]||CUST_DISTRICTS[form.city]) && (
+                <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="gov-districts" options={dbDistricts[form.city]||CUST_DISTRICTS[form.city]} placeholder="اختر أو اكتب المنطقة"/>
               )}
-              <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={CUST_CATS} placeholder="اختر أو اكتب التصنيف"/>
+              <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={dbCats} placeholder="اختر أو اكتب التصنيف"/>
               <ErpDatalist label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} listId="cust-tags-list" options={CUST_TAGS} placeholder="اختر أو اكتب وسماً"/>
               <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، الرقم" span/>
               <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..." span/>
@@ -3365,6 +3377,121 @@ function CatalogPicker({ onSelect, onClose }) {
   );
 }
 
+/* ---- CustomerListsManager (admin only) — تصنيفات العملاء + مناطق المحافظات ---- */
+function CustomerListsManager({ user, onClose }) {
+  const [tab, setTab] = React.useState('cats'); // 'cats' | 'districts'
+  const [cats, setCats] = React.useState([]);
+  const [districts, setDistricts] = React.useState([]);
+  const [selGov, setSelGov] = React.useState('عمان');
+  const [newName, setNewName] = React.useState('');
+  const [editing, setEditing] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+
+  const loadCats = () => sb.from('customer_categories').select('*').order('sort_order').order('name').then(({data})=>setCats(data||[]));
+  const loadDist = (gov) => sb.from('customer_districts').select('*').eq('governorate',gov||selGov).order('sort_order').order('name').then(({data})=>setDistricts(data||[]));
+
+  React.useEffect(()=>{ loadCats(); loadDist('عمان'); },[]);
+  React.useEffect(()=>{ loadDist(selGov); setNewName(''); setEditing(null); },[selGov]);
+
+  const table = tab==='cats' ? 'customer_categories' : 'customer_districts';
+  const list  = tab==='cats' ? cats : districts;
+  const reload = tab==='cats' ? loadCats : ()=>loadDist(selGov);
+
+  const add = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    const payload = tab==='cats'
+      ? { name:newName.trim(), sort_order:list.length+1 }
+      : { governorate:selGov, name:newName.trim(), sort_order:list.length+1 };
+    const {error} = await sb.from(table).insert(payload);
+    setSaving(false);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    setNewName(''); reload();
+  };
+
+  const save = async () => {
+    if (!editing?.name?.trim()) return;
+    setSaving(true);
+    const {error} = await sb.from(table).update({name:editing.name.trim()}).eq('id',editing.id);
+    setSaving(false);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    setEditing(null); reload();
+  };
+
+  const del = async (item) => {
+    if (!confirm(`حذف "${item.name}"؟`)) return;
+    const {error} = await sb.from(table).delete().eq('id',item.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    reload();
+  };
+
+  const tabStyle = (t) => ({
+    padding:'8px 18px', borderRadius:8, border:'none', cursor:'pointer', fontWeight:600, fontSize:13,
+    background: tab===t ? 'var(--primary)' : '#f0f4f8',
+    color: tab===t ? '#fff' : 'var(--gray-600)',
+  });
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:520}}>
+        <div className="modal-header">
+          <span className="modal-title">⚙️ إدارة قوائم العملاء</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {/* Tabs */}
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <button style={tabStyle('cats')} onClick={()=>{setTab('cats');setNewName('');setEditing(null);}}>🏷️ تصنيفات العملاء</button>
+            <button style={tabStyle('districts')} onClick={()=>{setTab('districts');setNewName('');setEditing(null);}}>📍 مناطق المحافظات</button>
+          </div>
+
+          {/* محافظة selector للمناطق */}
+          {tab==='districts' && (
+            <select className="form-control" value={selGov} onChange={e=>setSelGov(e.target.value)} style={{marginBottom:12}}>
+              {['عمان','إربد','الزرقاء','البلقاء','المفرق','الكرك','مادبا','جرش','عجلون','العقبة','الطفيلة','معان'].map(g=><option key={g}>{g}</option>)}
+            </select>
+          )}
+
+          {/* إضافة جديد */}
+          <div style={{display:'flex',gap:8,marginBottom:14}}>
+            <input className="form-control" value={newName} onChange={e=>setNewName(e.target.value)}
+              placeholder={tab==='cats' ? 'تصنيف جديد...' : `منطقة جديدة في ${selGov}...`}
+              onKeyDown={e=>e.key==='Enter'&&add()} style={{flex:1}}/>
+            <button className="btn btn-primary btn-sm" onClick={add} disabled={saving||!newName.trim()}>➕ إضافة</button>
+          </div>
+
+          {/* القائمة */}
+          <div style={{maxHeight:'45vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:6}}>
+            {list.length===0 && <div style={{textAlign:'center',color:'var(--gray-400)',padding:20,fontSize:13}}>لا توجد بيانات</div>}
+            {list.map(item=>(
+              <div key={item.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8}}>
+                {editing?.id===item.id ? (
+                  <>
+                    <input className="form-control" value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}
+                      onKeyDown={e=>e.key==='Enter'&&save()} style={{flex:1,padding:'4px 8px',height:32}}/>
+                    <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>✓</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(null)}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{flex:1,fontSize:13,fontWeight:500}}>{item.name}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setEditing({id:item.id,name:item.name})}>✏️</button>
+                    <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>del(item)}>🗑️</button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <span style={{fontSize:12,color:'var(--gray-400)'}}>{list.length} عنصر</span>
+          <button className="btn btn-ghost" onClick={onClose}>إغلاق</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---- CategoriesManager (admin only) ---- */
 function CategoriesManager({ user, categories, onRefresh, onClose }) {
   const [newName, setNewName]   = React.useState('');
@@ -3604,12 +3731,13 @@ function CatalogPage({ user }) {
 
 function CustomersPage({ user }) {
   const [customers, setCustomers] = useState([]);
-  const [profiles, setProfiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const [profiles,  setProfiles]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [search,    setSearch]    = useState('');
+  const [showForm,  setShowForm]  = useState(false);
+  const [editing,   setEditing]   = useState(null);
+  const [selected,  setSelected]  = useState(null);
+  const [showListMgr, setShowListMgr] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -3656,6 +3784,9 @@ function CustomersPage({ user }) {
         </div>
         <div style={{flex:1}}/>
         <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة، المنطقة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:300}}/>
+        {user?.role==='admin' && (
+          <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>
+        )}
         <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>
       </div>
 
@@ -3700,6 +3831,7 @@ function CustomersPage({ user }) {
         </div>
       )}
       {showForm && <CustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
+      {showListMgr && <CustomerListsManager user={user} onClose={()=>setShowListMgr(false)}/>}
     </div>
   );
 }
