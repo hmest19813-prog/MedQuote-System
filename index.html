@@ -2836,14 +2836,14 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   const [previewCode, setPreviewCode] = useState('...');
   useEffect(() => {
     if (!customer?.id) {
-      sb.from('number_sequences').select('current_value').eq('id','customer').maybeSingle()
-        .then(({data, error}) => {
-          if (data) {
-            const next = (data.current_value || 0) + 1;
-            setPreviewCode('C-' + String(next).padStart(4,'0'));
-          } else {
-            setPreviewCode('C-0001');
-          }
+      // نقرأ أعلى رقم عميل موجود ونضيف 1 — أموثق من قراءة number_sequences مباشرة
+      sb.from('customers').select('customer_code').not('customer_code','is',null)
+        .then(({data}) => {
+          const nums = (data||[])
+            .map(r => parseInt((r.customer_code||'').replace(/\D/g,''))||0)
+            .filter(n => n > 0);
+          const next = nums.length ? Math.max(...nums) + 1 : 1;
+          setPreviewCode('C-' + String(next).padStart(4,'0'));
         })
         .catch(() => setPreviewCode('C-0001'));
     }
@@ -3754,7 +3754,7 @@ function CustomersPage({ user }) {
   const load = async () => {
     setLoading(true);
     const [{ data: c }, { data: p }] = await Promise.all([
-      sb.from('customers').select('*').order('name'),
+      sb.from('customers').select('*').order('customer_code', {ascending: true, nullsFirst: false}),
       sb.from('profiles').select('id,full_name,role').eq('is_active',true).order('full_name'),
     ]);
     setCustomers(c||[]); setProfiles(p||[]); setLoading(false);
