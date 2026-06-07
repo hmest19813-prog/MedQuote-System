@@ -991,7 +991,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     ...(editQuote || {})
   });
   const [items, setItems] = useState([
-    { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:0, origin:'CHINA', delivery:'PROMPT', notes:'' }
+    { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', origin:'CHINA', delivery:'PROMPT', notes:'' }
   ]);
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(!!editQuote);
@@ -1064,7 +1064,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const [showSaveCustomer, setShowSaveCustomer] = useState(false);
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null); // item ينتظر اختيار الفئة
 
-  const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:0, origin:'CHINA', delivery:'PROMPT', notes:'' }]);
+  const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
   const setItem = (idx, k, v) => setItems(i => i.map((it,j) => j===idx ? {...it,[k]:v} : it));
 
