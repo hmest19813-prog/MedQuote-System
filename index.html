@@ -2714,34 +2714,23 @@ const printDoc = (containerId) => {
     child.style.cssText = 'display: none !important;';
   });
 
+  // ننشئ الـ div بعرض A4 الفعلي (190mm = 210mm - هامشين 10mm) لقياس دقيق
   const printDiv = document.createElement('div');
   printDiv.id = 'temp-print-div';
-  printDiv.style.cssText = 'position: static; width: 100%; background: white;';
+  printDiv.style.cssText = 'position:absolute;top:0;left:0;width:190mm;background:white;visibility:hidden;';
   printDiv.innerHTML = el.innerHTML;
   body.appendChild(printDiv);
 
-  // A4 بـ margin 10mm من كل جانب = 277mm ≈ 1047px CSS
-  const A4_USABLE = 1047;
+  // نقيس الارتفاع الفعلي بعرض الطباعة الحقيقي
+  const contentH = printDiv.scrollHeight;
 
-  const beforePrint = () => {
-    const pd = document.getElementById('temp-print-div');
-    if (!pd) return;
-    const h = pd.scrollHeight;
-    if (h > A4_USABLE) {
-      const scale = (A4_USABLE / h).toFixed(4);
-      pd.style.zoom = scale;
-    }
-  };
+  // A4 بهامش 10mm من كل جانب = 277mm → بـ 96dpi = 277 × 96/25.4 ≈ 1047px
+  const A4_H = Math.round(277 * 96 / 25.4);
 
-  const afterPrint = () => {
-    window.removeEventListener('beforeprint', beforePrint);
-    window.removeEventListener('afterprint', afterPrint);
-    const pd = document.getElementById('temp-print-div');
-    if (pd) pd.style.zoom = '';
-  };
+  const zoom = contentH > A4_H ? (A4_H / contentH) : 1;
 
-  window.addEventListener('beforeprint', beforePrint);
-  window.addEventListener('afterprint', afterPrint);
+  // نطبّق الـ zoom ونجعل الـ div مرئياً للطباعة
+  printDiv.style.cssText = `position:static;width:100%;background:white;zoom:${zoom};`;
 
   window.print();
 
