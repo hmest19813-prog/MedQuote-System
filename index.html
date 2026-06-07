@@ -998,7 +998,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const [customers, setCustomers] = useState([]);
 
   useEffect(() => {
-    sb.from('customers').select('id,name,phone').order('name').then(({data})=>setCustomers(data||[]));
+    sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2').order('name').then(({data})=>setCustomers(data||[]));
   }, []);
 
   const [catalogItems, setCatalogItems] = useState([]);
@@ -1028,7 +1028,9 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const pickCustomer = (c) => {
     setF('customer_name', c.name);
     setF('customer_id', c.id);
-    if (c.phone) setF('phone', c.phone);
+    // أولوية رقم الهاتف: هاتف ← موبايل أساسي ← موبايل ثانوي
+    const phoneVal = c.alt_phone || c.phone || c.contact1_phone || c.contact1_mobile2 || '';
+    if (phoneVal) setF('phone', phoneVal);
     setShowCustSuggest(false);
     setIsNewCustomer(false);
   };
