@@ -2955,7 +2955,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الأول</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                 <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم الأول"/>
-                <ErpField label="الكنية" value={form.contact1_last_name||''} onChange={v=>setF('contact1_last_name',v)} placeholder="اسم العائلة"/>
+                <ErpField label="الكنية" value={form.contact1_last_name||''} onChange={v=>setF('contact1_last_name',v)} placeholder="اختياري"/>
               </div>
               <ErpDatalist label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} listId="job-t1" options={CUST_TITLES} placeholder="مدير المشتريات"/>
               <ErpField label="رقم موبايل أساسي" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-7-..."/>
@@ -2969,7 +2969,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                 <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم الأول"/>
-                <ErpField label="الكنية" value={form.contact2_last_name||''} onChange={v=>setF('contact2_last_name',v)} placeholder="اسم العائلة"/>
+                <ErpField label="الكنية" value={form.contact2_last_name||''} onChange={v=>setF('contact2_last_name',v)} placeholder="اختياري"/>
               </div>
               <ErpDatalist label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} listId="job-t2" options={CUST_TITLES} placeholder="المحاسب / المشرف"/>
               <ErpField label="رقم موبايل أساسي" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-7-..."/>
