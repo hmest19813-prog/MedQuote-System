@@ -211,10 +211,11 @@ a { text-decoration: none; color: inherit; }
 /* ===================== TABLE ===================== */
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-th { background: var(--gray-50); padding: 9px 12px; text-align: right; font-size: 11px; font-weight: 700; color: var(--gray-500); letter-spacing: .04em; text-transform: uppercase; border-bottom: 1px solid var(--gray-200); }
-td { padding: 11px 12px; border-bottom: 1px solid var(--gray-100); font-size: 13px; color: var(--gray-700); }
+th { background: var(--gray-50); padding: 9px 12px; text-align: center; font-size: 11px; font-weight: 700; color: var(--gray-500); letter-spacing: .04em; text-transform: uppercase; border-bottom: 1px solid var(--gray-200); border-left: 1px solid var(--gray-200); }
+td { padding: 11px 12px; border-bottom: 1px solid var(--gray-100); font-size: 13px; color: var(--gray-700); border-left: 1px solid var(--gray-200); }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--gray-50); }
+th:last-child, td:last-child { border-left: none; }
 
 /* ===================== BADGES ===================== */
 .badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
@@ -227,6 +228,9 @@ tr:hover td { background: var(--gray-50); }
 .badge-cancelled { background: #fee2e2; color: #991b1b; }
 .badge-expired { background: #f3f4f6; color: #374151; }
 .badge-pending { background: var(--warning-light); color: var(--warning); }
+.badge-partial_referral { background: #e0f2fe; color: #0369a1; }
+.badge-type-quote { background: #ede9fe; color: #6d28d9; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
+.badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .badge-confirmed { background: var(--info-light); color: var(--info); }
 .badge-processing { background: #ede9fe; color: #7c3aed; }
 .badge-delivered { background: var(--success-light); color: var(--success); }
@@ -494,9 +498,11 @@ const ago = (ts) => {
 
 const SL = {
   draft: 'مسودة', sent: 'قيد الدراسة', approved: 'مُعتمد',
+  partial_referral: 'إحالة جزئية',
   rejected: 'مرفوض', converted: 'محوّل لطلب', invoiced: 'تم إصدار فاتورة',
   cancelled: 'ملغي', expired: 'منتهي'
 };
+const QT = { quote: 'عرض سعر', tender: 'عطاء محلي' };
 const OL = {
   pending: 'معلق', confirmed: 'مؤكد', processing: 'قيد التنفيذ',
   delivered: 'مُسلَّم', cancelled: 'ملغي'
@@ -1002,6 +1008,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     date: today(), reference:'', currency:'JOD',
     delivery:'PROMPT', notes:'', terms:'', valid_until:'',
     discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
+    quote_type: 'quote',
     ...(editQuote || {})
   });
   const [items, setItems] = useState([
@@ -1310,11 +1317,18 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
               <button type="button" onClick={()=>setF('valid_until','')} style={{alignSelf:'flex-end',marginBottom:2,background:'none',border:'none',color:'var(--gray-400)',cursor:'pointer',fontSize:12}}>✕ إزالة</button>
             )}
           </div>
-          <div className="form-row mb-4">
+          <div className="form-row-3 mb-4">
             <div className="form-group">
               <label className="form-label">العملة</label>
               <select className="form-control" value={form.currency} onChange={e=>setF('currency',e.target.value)}>
                 <option>JOD</option><option>USD</option><option>EUR</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">النوع</label>
+              <select className="form-control" value={form.quote_type||'quote'} onChange={e=>setF('quote_type',e.target.value)}>
+                <option value="quote">عرض سعر</option>
+                <option value="tender">عطاء محلي</option>
               </select>
             </div>
             <div className="form-group">
@@ -1671,24 +1685,28 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th>{isAdmin && <th>المُصدِر</th>}<th>تغيير الحالة</th><th>إجراءات</th></tr>
+              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{isAdmin && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
                 <tr key={q.id}>
                   <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
                   <td>{q.customer_name}</td>
-                  <td className="text-sm text-muted">
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>
                     {q.date}
                     {q.valid_until && (() => {
                       const expired = new Date(q.valid_until) < new Date();
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
-                  <td><SBadge status={q.status}/></td>
-                  {isAdmin && <td className="text-sm text-muted">{profiles[q.created_by] || '—'}</td>}
-                  <td>
+                  <td className="font-bold" style={{textAlign:'center'}}>{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                  <td style={{textAlign:'center'}}>
+                    <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
+                      {QT[q.quote_type] || 'عرض سعر'}
+                    </span>
+                  </td>
+                  <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
+                  <td style={{textAlign:'center'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
                       {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
@@ -1708,9 +1726,10 @@ function QuotesList({ user, quotes, onReload }) {
                       {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️ حذف</button>}
                     </div>
                   </td>
+                  {isAdmin && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={isAdmin?8:7}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={isAdmin?9:8}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
             </tbody>
           </table>
         </div>
