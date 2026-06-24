@@ -2535,29 +2535,15 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
     setLoading(true);
     try {
       if (isNew) {
-        // احفظ الجلسة الحالية قبل إنشاء المستخدم
-        const { data: { session: currSess } } = await sb.auth.getSession();
-        const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-          email: form.email.trim().toLowerCase(),
-          password: form.password,
-          options: { data: { full_name: form.full_name.trim() } }
+        const { data: newId, error: rpcErr } = await sb.rpc('create_user_with_profile', {
+          p_email: form.email.trim().toLowerCase(),
+          p_password: form.password,
+          p_full_name: form.full_name.trim(),
+          p_role: form.role,
+          p_is_active: form.is_active,
         });
-        if (signUpErr) throw signUpErr;
-        const userId = signUpData?.user?.id;
-        if (!userId) throw new Error('فشل إنشاء الحساب — احذف المستخدم من Supabase → Authentication وأعد المحاولة');
-        const isExisting = signUpData.user.identities?.length === 0;
-        // أعد جلسة المدير
-        if (currSess) await sb.auth.setSession({ access_token: currSess.access_token, refresh_token: currSess.refresh_token });
-        // حدّث أو أنشئ الـ profile
-        const { error: pErr } = await sb.from('profiles').upsert({
-          id: userId,
-          email: form.email.trim().toLowerCase(),
-          full_name: form.full_name.trim(),
-          role: form.role,
-          is_active: form.is_active,
-        });
-        if (pErr) throw pErr;
-        toast(isExisting ? '✅ تم ربط المستخدم الموجود بالنظام' : '✅ تم إنشاء المستخدم — أرسل له الإيميل وكلمة المرور','success');
+        if (rpcErr) throw rpcErr;
+        toast('✅ تم إنشاء المستخدم — سلّمه الإيميل وكلمة المرور','success');
       } else {
         const { error } = await sb.from('profiles').update({
           full_name: form.full_name.trim(),
