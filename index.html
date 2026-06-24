@@ -232,7 +232,7 @@ th:last-child, td:last-child { border-left: none; }
 .badge-type-quote { background: #ede9fe; color: #6d28d9; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
-.letter-info-table td { padding: 9px 22px; border: 1.5px solid #bbb; }
+.letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
 .letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; direction: rtl; }
 .letter-preprinted-spacer-top { height: 52mm; }
@@ -248,11 +248,13 @@ th:last-child, td:last-child { border-left: none; }
 .letter-sig .sig-title { font-weight: 700; text-decoration: underline; }
 .letter-sig .sig-name { margin-top: 8px; font-weight: 600; }
 .badge-cat { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-.badge-cat-correspondence { background: #e0f2fe; color: #0369a1; }
-.badge-cat-communication { background: #ede9fe; color: #6d28d9; }
-.badge-cat-decision { background: #fce7f3; color: #be185d; }
 .badge-cat-circular { background: #fef9c3; color: #854d0e; }
+.badge-cat-decision { background: #fce7f3; color: #be185d; }
+.badge-cat-agreement { background: #ede9fe; color: #6d28d9; }
 .badge-cat-tenders { background: #d1fae5; color: #065f46; }
+.badge-cat-clearance { background: #e0f2fe; color: #0369a1; }
+.badge-cat-templates { background: #f3f4f6; color: #374151; }
+.badge-cat-other { background: #fff7ed; color: #c2410c; }
 .badge-confirmed { background: var(--info-light); color: var(--info); }
 .badge-processing { background: #ede9fe; color: #7c3aed; }
 .badge-delivered { background: var(--success-light); color: var(--success); }
@@ -282,6 +284,9 @@ th:last-child, td:last-child { border-left: none; }
 
 /* ===================== QUOTE/INVOICE PRINT ===================== */
 .print-container { background: white; padding: 14px 36px 28px; max-width: 900px; margin: 0 auto; }
+.letter-print-wrap { display:flex; flex-direction:column; min-height:calc(297mm - 20mm); padding:0 36px; background:white; max-width:900px; margin:0 auto; }
+.letter-print-wrap .letter-content { flex:1; }
+.letter-print-wrap .letter-footer-anchor { margin-top:auto; }
 .print-header { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
 .print-center { text-align: center; display: flex; justify-content: center; align-items: center; transform: translateX(-20px); }
 .print-center .hayat-logo { width: 178px; height: 178px; object-fit: contain; display: block; margin: 0 auto; }
@@ -4070,11 +4075,13 @@ function NotificationBell({ userId }) {
 
 /* ===================== OFFICIAL LETTERS — الكتب الرسمية ===================== */
 const LETTER_CATS = [
-  { id:'correspondence', label:'تراسل' },
-  { id:'communication', label:'تخاطب' },
-  { id:'decision', label:'قرار' },
   { id:'circular', label:'تعميم' },
+  { id:'decision', label:'قرار' },
+  { id:'agreement', label:'اتفاقية' },
   { id:'tenders', label:'عطاءات' },
+  { id:'clearance', label:'مخالصة' },
+  { id:'templates', label:'نماذج جاهزة' },
+  { id:'other', label:'أخرى' },
 ];
 
 const LETTER_ATT_OPTS = [
@@ -4406,6 +4413,60 @@ function LetterPrint({ letter, onClose }) {
     return parts.length===3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : d;
   };
 
+  const downloadWord = () => {
+    const headerHtml = withHeader ? `
+      <table width="100%" style="margin-bottom:8px;">
+        <tr>
+          <td style="text-align:right;font-size:17px;font-weight:bold;color:#111;">${COMPANY.name_ar}</td>
+          <td style="text-align:center;width:180px;"><img src="${window.HAYAT_LOGO_SRC}" width="120" height="120"/></td>
+          <td style="text-align:left;"><span style="font-size:28px;font-weight:bold;color:#2B8FC4;letter-spacing:2px;">HAYAT</span><br/><span style="font-size:9px;color:#6B7A8B;">HAYAT Scientific Medical &amp; Chemical Corp.</span></td>
+        </tr>
+      </table>
+      <hr style="border:2px solid #2B8FC4;"/>` : '<div style="height:52mm;"></div>';
+
+    const footerHtml = withHeader ? `
+      <table width="100%" style="background:#2B8FC4;color:white;padding:10px;border-radius:6px;font-size:10px;margin-top:30px;">
+        <tr>
+          <td style="text-align:left;">Amman - King Hussein Street, Building 22<br/>P.O Box 927817, Zip 11190</td>
+          <td style="text-align:center;">${COMPANY.website}<br/>${COMPANY.email}</td>
+          <td style="text-align:right;">Tel: ${COMPANY.tel}<br/>Fax: ${COMPANY.fax}<br/>Mobile: ${COMPANY.mobile}</td>
+        </tr>
+      </table>` : '<div style="height:28mm;"></div>';
+
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"/><style>
+  @page { size:A4; margin:10mm; }
+  body { font-family:'Traditional Arabic','Arial',sans-serif; direction:rtl; font-size:14px; }
+  table { border-collapse:collapse; }
+  .info-table td { padding:8px 20px; border:1.5px solid #999; }
+  .info-label { background:#f4f6f8; font-weight:bold; min-width:100px; }
+</style></head>
+<body>
+  ${headerHtml}
+  <table class="info-table" style="margin:20px 0 0 auto;">
+    <tr><td class="info-label">السادة</td><td style="min-width:200px;">${letter.recipient}</td></tr>
+    <tr><td class="info-label">عناية</td><td>${letter.attention||'—'}</td></tr>
+    <tr><td class="info-label">التاريخ</td><td>${fmtD(letter.date)}</td></tr>
+    <tr><td class="info-label">الموضوع</td><td><b>${letter.subject}</b></td></tr>
+    <tr><td class="info-label">كتابنا رقم</td><td><b>${letter.number}</b></td></tr>
+  </table>
+  <div style="margin-top:28px;line-height:2.2;font-size:15px;text-align:justify;">${letter.body}</div>
+  <div style="margin-top:50px;">
+    ${letter.signer_title ? '<div style="font-weight:bold;text-decoration:underline;">'+letter.signer_title+'</div>' : ''}
+    ${letter.signer_name ? '<div style="margin-top:6px;font-weight:600;">'+letter.signer_name+'</div>' : ''}
+  </div>
+  ${footerHtml}
+</body></html>`;
+
+    const blob = new Blob(['﻿'+html], {type:'application/msword'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `كتاب رسمي ${letter.number} - ${letter.recipient}.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:850}}>
@@ -4413,69 +4474,74 @@ function LetterPrint({ letter, onClose }) {
           <span className="modal-title">كتاب رسمي — {letter.number}</span>
           <div className="flex gap-2">
             <button className="btn btn-primary btn-sm" onClick={handlePrint}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-success btn-sm" onClick={downloadWord}>📄 تحميل Word</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="modal-body print-container" id="letter-print-content">
-          {withHeader ? (
-            <>
-              <div className="print-header">
-                <div className="print-company-right">
-                  <div className="co-name-ar">{COMPANY.name_ar}</div>
+        <div className="modal-body letter-print-wrap" id="letter-print-content">
+          <div className="letter-content">
+            {withHeader ? (
+              <>
+                <div className="print-header">
+                  <div className="print-company-right">
+                    <div className="co-name-ar">{COMPANY.name_ar}</div>
+                  </div>
+                  <div className="print-center">
+                    <img src={LOGO_SRC} className="hayat-logo" alt="Logo"/>
+                  </div>
+                  <div className="print-company-left">
+                    <div className="co-name-hayat" dir="ltr">HAYAT</div>
+                    <div className="co-name-en" dir="ltr">HAYAT Scientific Medical &amp; Chemical Corp.</div>
+                  </div>
                 </div>
-                <div className="print-center">
-                  <img src={LOGO_SRC} className="hayat-logo" alt="Logo"/>
-                </div>
-                <div className="print-company-left">
-                  <div className="co-name-hayat" dir="ltr">HAYAT</div>
-                  <div className="co-name-en" dir="ltr">HAYAT Scientific Medical &amp; Chemical Corp.</div>
-                </div>
-              </div>
-              <hr className="print-divider"/>
-            </>
-          ) : (
-            <div className="letter-preprinted-spacer-top"/>
-          )}
+                <hr className="print-divider"/>
+              </>
+            ) : (
+              <div className="letter-preprinted-spacer-top"/>
+            )}
 
-          <table className="letter-info-table">
-            <tbody>
-              <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
-              <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
-              <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
-              <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
-              <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
-            </tbody>
-          </table>
+            <table className="letter-info-table">
+              <tbody>
+                <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
+                <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
+                <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
+                <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
+                <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
+              </tbody>
+            </table>
 
-          <div className="letter-body" dangerouslySetInnerHTML={{__html: letter.body}}/>
+            <div className="letter-body" dangerouslySetInnerHTML={{__html: letter.body}}/>
 
-          <div className="letter-sig">
-            {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
-            {letter.signer_name && <div className="sig-name">{letter.signer_name}</div>}
+            <div className="letter-sig">
+              {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
+              {letter.signer_name && <div className="sig-name">{letter.signer_name}</div>}
+            </div>
           </div>
 
-          {withHeader ? (
-            <div className="print-footer-bar" style={{marginTop:40}}>
-              <div className="print-footer-right">
-                <div className="print-footer-label"></div>
-                <div>Amman - King Hussein Street, Building 22</div>
-                <div>P.O Box 927817, Zip 11190, Jordan</div>
+          <div className="letter-footer-anchor">
+            {withHeader ? (
+              <div className="print-footer-bar">
+                <div className="print-footer-right">
+                  <div className="print-footer-label"></div>
+                  <div>Amman - King Hussein Street, Building 22</div>
+                  <div>P.O Box 927817, Zip 11190, Jordan</div>
+                </div>
+                <div className="print-footer-center">
+                  <div className="print-footer-label">تواصل معنا</div>
+                  <div>{COMPANY.website}</div>
+                  <div>{COMPANY.email}</div>
+                </div>
+                <div className="print-footer-left">
+                  <div className="print-footer-label"></div>
+                  <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
+                  <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
+                  <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
+                </div>
               </div>
-              <div className="print-footer-center">
-                <div className="print-footer-label">تواصل معنا</div>
-                <div>{COMPANY.website}</div>
-                <div>{COMPANY.email}</div>
-              </div>
-              <div className="print-footer-left">
-                <div className="print-footer-label"></div>
-                <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
-                <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
-                <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
-              </div>
-            </div>
-          ) : (
-            <div className="letter-preprinted-spacer-bottom"/>
-          )}
+            ) : (
+              <div className="letter-preprinted-spacer-bottom"/>
+            )}
+          </div>
         </div>
       </div>
     </div>
