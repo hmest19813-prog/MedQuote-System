@@ -231,6 +231,19 @@ th:last-child, td:last-child { border-left: none; }
 .badge-partial_referral { background: #e0f2fe; color: #0369a1; }
 .badge-type-quote { background: #ede9fe; color: #6d28d9; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
+.letter-info-table { width: auto; margin: 24px auto 0; border-collapse: collapse; font-size: 14px; direction: rtl; }
+.letter-info-table td { padding: 9px 22px; border: 1.5px solid #bbb; }
+.letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
+.letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; white-space: pre-wrap; direction: rtl; }
+.letter-sig { margin-top: 60px; }
+.letter-sig .sig-title { font-weight: 700; text-decoration: underline; }
+.letter-sig .sig-name { margin-top: 8px; font-weight: 600; }
+.badge-cat { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+.badge-cat-correspondence { background: #e0f2fe; color: #0369a1; }
+.badge-cat-communication { background: #ede9fe; color: #6d28d9; }
+.badge-cat-decision { background: #fce7f3; color: #be185d; }
+.badge-cat-circular { background: #fef9c3; color: #854d0e; }
+.badge-cat-tenders { background: #d1fae5; color: #065f46; }
 .badge-confirmed { background: var(--info-light); color: var(--info); }
 .badge-processing { background: #ede9fe; color: #7c3aed; }
 .badge-delivered { background: var(--success-light); color: var(--success); }
@@ -646,6 +659,7 @@ const NAV = [
   { id: 'invoices', label: 'الفواتير', icon: '🧾' },
   { id: 'customers', label: 'العملاء', icon: '🏢' },
   { id: 'catalog', label: 'الكتالوج', icon: '🗂️' },
+  { id: 'letters', label: 'الكتب الرسمية', icon: '📝' },
   { id: 'archive', label: 'الأرشيف', icon: '🗄️' },
   { id: 'activity', label: 'سجل النشاط', icon: '🕐' },
 ];
@@ -4045,6 +4059,351 @@ function NotificationBell({ userId }) {
   );
 }
 
+/* ===================== OFFICIAL LETTERS — الكتب الرسمية ===================== */
+const LETTER_CATS = [
+  { id:'correspondence', label:'تراسل' },
+  { id:'communication', label:'تخاطب' },
+  { id:'decision', label:'قرار' },
+  { id:'circular', label:'تعميم' },
+  { id:'tenders', label:'عطاءات' },
+];
+
+const LETTER_ATT_OPTS = [
+  'لمن يهمه الأمر','المدير العام','قسم المشتريات','مدير المشتريات',
+  'المدير المالي','مدير الموارد البشرية','القسم المعني','السيد المحترم',
+];
+
+function LettersPage({ user }) {
+  const [letters, setLetters] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState('');
+  const [catFilter, setCatFilter] = useState('all');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing]   = useState(null);
+  const [previewing, setPreviewing] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const c = () => setIsMobile(window.innerWidth < 768);
+    c(); window.addEventListener('resize', c);
+    return () => window.removeEventListener('resize', c);
+  }, []);
+
+  const load = async () => {
+    const [{ data: l }, { data: c }] = await Promise.all([
+      sb.from('official_letters').select('*').order('number', { ascending: false }),
+      sb.from('letter_contacts').select('*').order('name'),
+    ]);
+    setLetters(l || []);
+    setContacts(c || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+
+  const filtered = letters.filter(l => {
+    const ms = !search || l.recipient?.toLowerCase().includes(search.toLowerCase()) || l.subject?.toLowerCase().includes(search.toLowerCase()) || String(l.number).includes(search);
+    const mc = catFilter === 'all' || l.category === catFilter;
+    return ms && mc;
+  });
+
+  const deleteLetter = async (l) => {
+    if (!confirm(`حذف الكتاب رقم ${l.number}؟`)) return;
+    const { error } = await sb.from('official_letters').delete().eq('id', l.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحذف', 'success');
+    load();
+  };
+
+  const catLabel = (id) => LETTER_CATS.find(c => c.id === id)?.label || id || '—';
+
+  if (loading) return <LoadingScreen msg="جاري تحميل الكتب..."/>;
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:10}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:900,color:'var(--gray-800)',margin:'0 0 4px'}}>الكتب الرسمية</h2>
+          <p style={{fontSize:13,color:'var(--gray-500)',margin:0}}>{letters.length} كتاب</p>
+        </div>
+        <button className="btn btn-primary" onClick={()=>{setEditing(null);setShowForm(true);}}>✉️ كتاب جديد</button>
+      </div>
+
+      <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
+        <input className="form-control" style={{maxWidth:300}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالرقم أو السادة أو الموضوع..."/>
+        {isAdmin && (
+          <select className="form-control" style={{width:'auto'}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+            <option value="all">كل التصنيفات</option>
+            {LETTER_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        )}
+        <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} كتاب</span>
+      </div>
+
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>الرقم</th><th>السادة</th><th>الموضوع</th><th>التاريخ</th>
+                {isAdmin && <th>التصنيف</th>}
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(l => (
+                <tr key={l.id}>
+                  <td className="font-bold" style={{color:'var(--primary)',textAlign:'center'}}>{l.number}</td>
+                  <td>{l.recipient}</td>
+                  <td>{l.subject}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>{l.date}</td>
+                  {isAdmin && <td style={{textAlign:'center'}}><span className={`badge-cat badge-cat-${l.category||'correspondence'}`}>{catLabel(l.category)}</span></td>}
+                  <td>
+                    <div className="flex gap-2">
+                      <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewing(l)} title="معاينة وطباعة">👁</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>{setEditing(l);setShowForm(true);}} title="تعديل">✏️</button>
+                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>deleteLetter(l)} title="حذف">🗑️</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length===0 && <tr><td colSpan={isAdmin?6:5}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
+      {previewing && <LetterPrint letter={previewing} onClose={()=>setPreviewing(null)}/>}
+    </div>
+  );
+}
+
+function LetterForm({ user, letter, contacts, onSave, onClose }) {
+  const [form, setForm] = useState({
+    recipient:'', attention:'', date: today(), subject:'',
+    category:'correspondence', body:'',
+    signer_name:'الدكتور محمد عقاب الجوابرة', signer_title:'الادارة',
+    use_letterhead: true,
+    ...(letter || {})
+  });
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const isAdmin = user?.role==='admin' || user?.role==='manager';
+
+  const recipientList = contacts.filter(c=>c.contact_type==='recipient');
+  const attentionList = contacts.filter(c=>c.contact_type==='attention');
+
+  const saveContact = async (name, type) => {
+    if (!name?.trim()) return;
+    const exists = contacts.find(c=>c.name.trim()===name.trim() && c.contact_type===type);
+    if (exists) { toast('موجود مسبقاً','info'); return; }
+    const { error } = await sb.from('letter_contacts').insert({name:name.trim(), contact_type:type});
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast('تم حفظ الاسم ✓','success');
+  };
+
+  const handleSave = async () => {
+    if (!form.recipient.trim()) { toast('يجب إدخال السادة','error'); return; }
+    if (!form.subject.trim()) { toast('يجب إدخال الموضوع','error'); return; }
+    if (!form.body.trim()) { toast('يجب إدخال نص الكتاب','error'); return; }
+    setLoading(true);
+    try {
+      const payload = {...form};
+      delete payload.id; delete payload.created_at; delete payload.updated_at;
+      if (!isAdmin) delete payload.category;
+
+      if (letter?.id) {
+        delete payload.number; delete payload.created_by;
+        const { error } = await sb.from('official_letters').update(payload).eq('id', letter.id);
+        if (error) throw error;
+      } else {
+        const { data: maxRow } = await sb.from('official_letters').select('number').order('number',{ascending:false}).limit(1);
+        payload.number = (maxRow?.[0]?.number || 0) + 1;
+        payload.created_by = user?.id || null;
+        const { error } = await sb.from('official_letters').insert(payload);
+        if (error) throw error;
+      }
+      toast(letter ? 'تم التعديل' : 'تم إنشاء الكتاب','success');
+      onSave();
+    } catch(err) {
+      toast('خطأ: '+err.message,'error');
+    } finally { setLoading(false); }
+  };
+
+  const saveBtnSt = {background:'#16a34a',color:'#fff',border:'none',borderRadius:7,padding:'0 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0};
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:720}}>
+        <div className="modal-header">
+          <span className="modal-title">{letter?'تعديل كتاب':'✉️ كتاب رسمي جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-row mb-4">
+            <div className="form-group">
+              <label className="form-label">السادة *</label>
+              <div style={{display:'flex',gap:6}}>
+                <input className="form-control" list="ltr-recip-opts" value={form.recipient} onChange={e=>setF('recipient',e.target.value)} placeholder="اسم الجهة أو الشخص" style={{flex:1}}/>
+                <button type="button" onClick={()=>saveContact(form.recipient,'recipient')} style={saveBtnSt} title="حفظ للقائمة">💾</button>
+              </div>
+              <datalist id="ltr-recip-opts">
+                {recipientList.map(c=><option key={c.id} value={c.name}/>)}
+              </datalist>
+            </div>
+            <div className="form-group">
+              <label className="form-label">عناية</label>
+              <div style={{display:'flex',gap:6}}>
+                <input className="form-control" list="ltr-att-opts" value={form.attention} onChange={e=>setF('attention',e.target.value)} placeholder="لمن يهمه الأمر" style={{flex:1}}/>
+                <button type="button" onClick={()=>saveContact(form.attention,'attention')} style={saveBtnSt} title="حفظ للقائمة">💾</button>
+              </div>
+              <datalist id="ltr-att-opts">
+                {LETTER_ATT_OPTS.map(s=><option key={s} value={s}/>)}
+                {attentionList.map(c=><option key={c.id} value={c.name}/>)}
+              </datalist>
+            </div>
+          </div>
+
+          <div className="form-row-3 mb-4">
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={form.date} onChange={e=>setF('date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الموضوع *</label>
+              <input className="form-control" value={form.subject} onChange={e=>setF('subject',e.target.value)} placeholder="شهادة خبرة، تعميم، إلخ"/>
+            </div>
+            {isAdmin ? (
+              <div className="form-group">
+                <label className="form-label">التصنيف</label>
+                <select className="form-control" value={form.category} onChange={e=>setF('category',e.target.value)}>
+                  {LETTER_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </div>
+            ) : <div/>}
+          </div>
+
+          <div className="form-group mb-4">
+            <label className="form-label">نص الكتاب *</label>
+            <textarea className="form-control" rows={8} value={form.body} onChange={e=>setF('body',e.target.value)} placeholder="اكتب نص الكتاب هنا..." style={{lineHeight:1.8,resize:'vertical'}}/>
+          </div>
+
+          <div className="form-row-3 mb-4">
+            <div className="form-group">
+              <label className="form-label">اسم الموقّع</label>
+              <input className="form-control" value={form.signer_name} onChange={e=>setF('signer_name',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الصفة</label>
+              <input className="form-control" value={form.signer_title} onChange={e=>setF('signer_title',e.target.value)} placeholder="الادارة"/>
+            </div>
+            <div className="form-group" style={{display:'flex',alignItems:'flex-end',paddingBottom:8}}>
+              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
+                <input type="checkbox" checked={form.use_letterhead!==false} onChange={e=>setF('use_letterhead',e.target.checked)} style={{width:16,height:16}}/>
+                طباعة بالترويسة
+              </label>
+            </div>
+          </div>
+
+          <div className="flex gap-2" style={{justifyContent:'flex-end',paddingTop:14,borderTop:'1px solid var(--gray-200)'}}>
+            <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+              {loading ? '⏳ جاري الحفظ...' : letter ? '💾 تحديث' : '✉️ إنشاء الكتاب'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LetterPrint({ letter, onClose }) {
+  const withHeader = letter.use_letterhead !== false;
+  const handlePrint = () => {
+    const t = `كتاب رسمي ${letter.number} - ${letter.recipient}`;
+    printDoc('letter-print-content', t);
+  };
+  const fmtD = (d) => {
+    if (!d) return '';
+    const parts = d.split('-');
+    return parts.length===3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : d;
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:850}}>
+        <div className="modal-header">
+          <span className="modal-title">كتاب رسمي — {letter.number}</span>
+          <div className="flex gap-2">
+            <button className="btn btn-primary btn-sm" onClick={handlePrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className="modal-body print-container" id="letter-print-content">
+          {withHeader && (
+            <>
+              <div className="print-header">
+                <div className="print-company-right">
+                  <div className="co-name-ar">{COMPANY.name_ar}</div>
+                </div>
+                <div className="print-center">
+                  <img src={LOGO_SRC} className="hayat-logo" alt="Logo"/>
+                </div>
+                <div className="print-company-left">
+                  <div className="co-name-hayat" dir="ltr">HAYAT</div>
+                  <div className="co-name-en" dir="ltr">HAYAT Scientific Medical &amp; Chemical Corp.</div>
+                </div>
+              </div>
+              <hr className="print-divider"/>
+            </>
+          )}
+
+          <table className="letter-info-table">
+            <tbody>
+              <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
+              <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
+              <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
+              <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
+              <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
+            </tbody>
+          </table>
+
+          <div className="letter-body">{letter.body}</div>
+
+          <div className="letter-sig">
+            {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
+            {letter.signer_name && <div className="sig-name">{letter.signer_name}</div>}
+          </div>
+
+          {withHeader && (
+            <div className="print-footer-bar" style={{marginTop:40}}>
+              <div className="print-footer-right">
+                <div className="print-footer-label"></div>
+                <div>Amman - King Hussein Street, Building 22</div>
+                <div>P.O Box 927817, Zip 11190, Jordan</div>
+              </div>
+              <div className="print-footer-center">
+                <div className="print-footer-label">تواصل معنا</div>
+                <div>{COMPANY.website}</div>
+                <div>{COMPANY.email}</div>
+              </div>
+              <div className="print-footer-left">
+                <div className="print-footer-label"></div>
+                <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
+                <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
+                <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* دالة مساعدة لإنشاء إشعار — تُستخدم من أي مكان */
 async function createNotif({ userId, title, body='', type='info', linkType=null, linkId=null }) {
   if (!userId) return;
@@ -4243,6 +4602,7 @@ function App() {
           {page==='orders' && <OrdersPage user={user} orders={orders} onReload={reload}/>}
           {page==='customers' && <CustomersPage user={user}/>}
           {page==='catalog' && <CatalogPage user={user}/>}
+          {page==='letters' && <LettersPage user={user}/>}
           {page==='archive' && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && <ActivityPage logs={logs}/>}
           {page==='deleted-quotes' && (user.role==='admin'||user.role==='manager') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
