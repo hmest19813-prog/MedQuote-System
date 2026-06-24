@@ -234,7 +234,16 @@ th:last-child, td:last-child { border-left: none; }
 .letter-info-table { width: auto; margin: 24px auto 0; border-collapse: collapse; font-size: 14px; direction: rtl; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #bbb; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
-.letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; white-space: pre-wrap; direction: rtl; }
+.letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; direction: rtl; }
+.letter-preprinted-spacer-top { height: 52mm; }
+.letter-preprinted-spacer-bottom { height: 28mm; }
+.rte-toolbar { display:flex; gap:4px; flex-wrap:wrap; padding:6px 8px; background:var(--gray-50); border:1.5px solid var(--gray-200); border-bottom:none; border-radius:7px 7px 0 0; }
+.rte-toolbar button { background:none; border:1px solid transparent; border-radius:5px; padding:4px 8px; cursor:pointer; font-size:13px; color:var(--gray-700); font-family:inherit; }
+.rte-toolbar button:hover { background:var(--gray-200); }
+.rte-toolbar select { border:1px solid var(--gray-200); border-radius:5px; padding:2px 6px; font-size:12px; background:white; cursor:pointer; font-family:inherit; }
+.rte-editor { min-height:180px; padding:12px 14px; border:1.5px solid var(--gray-200); border-radius:0 0 7px 7px; outline:none; line-height:1.8; font-size:14px; color:var(--gray-800); background:white; direction:rtl; overflow-y:auto; max-height:400px; }
+.rte-editor:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(43,143,196,.12); }
+.rte-editor:empty:before { content:attr(data-placeholder); color:var(--gray-400); pointer-events:none; }
 .letter-sig { margin-top: 60px; }
 .letter-sig .sig-title { font-weight: 700; text-decoration: underline; }
 .letter-sig .sig-name { margin-top: 8px; font-weight: 600; }
@@ -4181,6 +4190,71 @@ function LettersPage({ user }) {
   );
 }
 
+function RichTextEditor({ value, onChange, placeholder }) {
+  const editorRef = useRef(null);
+  const initialized = useRef(false);
+
+  useEffect(() => {
+    if (editorRef.current && !initialized.current) {
+      editorRef.current.innerHTML = value || '';
+      initialized.current = true;
+    }
+  }, []);
+
+  const exec = (cmd, val=null) => {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, val);
+    syncContent();
+  };
+
+  const syncContent = () => {
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  };
+
+  const pickColor = () => {
+    const c = prompt('أدخل لون (مثال: red, #0000ff, blue)');
+    if (c) exec('foreColor', c);
+  };
+
+  const setFontSize = (size) => {
+    exec('fontSize', size);
+  };
+
+  return (
+    <div>
+      <div className="rte-toolbar">
+        <button type="button" onClick={()=>exec('bold')} title="غامق"><b>B</b></button>
+        <button type="button" onClick={()=>exec('italic')} title="مائل"><i>I</i></button>
+        <button type="button" onClick={()=>exec('underline')} title="تحته خط"><u>U</u></button>
+        <span style={{width:1,background:'var(--gray-300)',margin:'0 4px'}}/>
+        <button type="button" onClick={pickColor} title="لون الخط">🎨</button>
+        <button type="button" onClick={()=>exec('foreColor','#dc2626')} title="أحمر" style={{color:'#dc2626',fontWeight:700}}>A</button>
+        <button type="button" onClick={()=>exec('foreColor','#2563eb')} title="أزرق" style={{color:'#2563eb',fontWeight:700}}>A</button>
+        <button type="button" onClick={()=>exec('foreColor','#16a34a')} title="أخضر" style={{color:'#16a34a',fontWeight:700}}>A</button>
+        <button type="button" onClick={()=>exec('removeFormat')} title="إزالة التنسيق">✕</button>
+        <span style={{width:1,background:'var(--gray-300)',margin:'0 4px'}}/>
+        <select onChange={e=>{if(e.target.value)setFontSize(e.target.value);e.target.value='';}} defaultValue="">
+          <option value="" disabled>حجم الخط</option>
+          <option value="2">صغير</option>
+          <option value="3">عادي</option>
+          <option value="4">متوسط</option>
+          <option value="5">كبير</option>
+          <option value="6">كبير جداً</option>
+        </select>
+        <span style={{width:1,background:'var(--gray-300)',margin:'0 4px'}}/>
+        <button type="button" onClick={()=>exec('justifyRight')} title="محاذاة يمين">⫷</button>
+        <button type="button" onClick={()=>exec('justifyCenter')} title="توسيط">☰</button>
+        <button type="button" onClick={()=>exec('justifyLeft')} title="محاذاة يسار">⫸</button>
+      </div>
+      <div ref={editorRef} className="rte-editor" contentEditable
+        data-placeholder={placeholder||''}
+        onInput={syncContent}
+        onBlur={syncContent}
+      />
+    </div>
+  );
+}
+
 function LetterForm({ user, letter, contacts, onSave, onClose }) {
   const [form, setForm] = useState({
     recipient:'', attention:'', date: today(), subject:'',
@@ -4288,7 +4362,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
 
           <div className="form-group mb-4">
             <label className="form-label">نص الكتاب *</label>
-            <textarea className="form-control" rows={8} value={form.body} onChange={e=>setF('body',e.target.value)} placeholder="اكتب نص الكتاب هنا..." style={{lineHeight:1.8,resize:'vertical'}}/>
+            <RichTextEditor value={form.body} onChange={v=>setF('body',v)} placeholder="اكتب نص الكتاب هنا..."/>
           </div>
 
           <div className="form-row-3 mb-4">
@@ -4343,7 +4417,7 @@ function LetterPrint({ letter, onClose }) {
           </div>
         </div>
         <div className="modal-body print-container" id="letter-print-content">
-          {withHeader && (
+          {withHeader ? (
             <>
               <div className="print-header">
                 <div className="print-company-right">
@@ -4359,6 +4433,8 @@ function LetterPrint({ letter, onClose }) {
               </div>
               <hr className="print-divider"/>
             </>
+          ) : (
+            <div className="letter-preprinted-spacer-top"/>
           )}
 
           <table className="letter-info-table">
@@ -4371,14 +4447,14 @@ function LetterPrint({ letter, onClose }) {
             </tbody>
           </table>
 
-          <div className="letter-body">{letter.body}</div>
+          <div className="letter-body" dangerouslySetInnerHTML={{__html: letter.body}}/>
 
           <div className="letter-sig">
             {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
             {letter.signer_name && <div className="sig-name">{letter.signer_name}</div>}
           </div>
 
-          {withHeader && (
+          {withHeader ? (
             <div className="print-footer-bar" style={{marginTop:40}}>
               <div className="print-footer-right">
                 <div className="print-footer-label"></div>
@@ -4397,6 +4473,8 @@ function LetterPrint({ letter, onClose }) {
                 <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
               </div>
             </div>
+          ) : (
+            <div className="letter-preprinted-spacer-bottom"/>
           )}
         </div>
       </div>
