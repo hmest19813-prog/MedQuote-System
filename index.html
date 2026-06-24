@@ -2543,19 +2543,21 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
           options: { data: { full_name: form.full_name.trim() } }
         });
         if (signUpErr) throw signUpErr;
-        if (!signUpData?.user?.id) throw new Error('فشل إنشاء الحساب — تأكد أن البريد الإلكتروني غير مستخدم مسبقاً');
+        const userId = signUpData?.user?.id;
+        if (!userId) throw new Error('فشل إنشاء الحساب — احذف المستخدم من Supabase → Authentication وأعد المحاولة');
+        const isExisting = signUpData.user.identities?.length === 0;
         // أعد جلسة المدير
         if (currSess) await sb.auth.setSession({ access_token: currSess.access_token, refresh_token: currSess.refresh_token });
         // حدّث أو أنشئ الـ profile
         const { error: pErr } = await sb.from('profiles').upsert({
-          id: signUpData.user.id,
+          id: userId,
           email: form.email.trim().toLowerCase(),
           full_name: form.full_name.trim(),
           role: form.role,
           is_active: form.is_active,
         });
         if (pErr) throw pErr;
-        toast('✅ تم إنشاء المستخدم — أرسل له الإيميل وكلمة المرور','success');
+        toast(isExisting ? '✅ تم ربط المستخدم الموجود بالنظام' : '✅ تم إنشاء المستخدم — أرسل له الإيميل وكلمة المرور','success');
       } else {
         const { error } = await sb.from('profiles').update({
           full_name: form.full_name.trim(),
