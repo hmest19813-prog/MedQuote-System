@@ -2642,7 +2642,7 @@ function UsersPage({ currentUser }) {
   const deleteUser = async (u) => {
     if (u.id===currentUser?.id) { toast('لا يمكنك حذف حسابك الخاص','error'); return; }
     if (!confirm(`حذف المستخدم "${u.full_name}"؟\nلا يمكن التراجع عن هذا الإجراء.`)) return;
-    const { error } = await sb.from('profiles').delete().eq('id',u.id);
+    const { error } = await sb.rpc('delete_user_completely', { p_user_id: u.id });
     if (error) { toast('خطأ: '+error.message,'error'); return; }
     toast('تم حذف المستخدم','success');
     load();
