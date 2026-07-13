@@ -973,8 +973,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           {/* الإجماليات */}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
             <div style={{fontSize:11,color:'#888',maxWidth:380}}>
+              <p>* السعر بالدينار الأردني والأسعار غير شاملة ضريبة المبيعات</p>
               <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
-              <p>* السعر بالدينار الأردني وصلاحية العرض لمدة 60 يوم من تاريخه</p>
               <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
               <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
               {docType==='invoice' && <p style={{marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included ( 16%) Reg No.{COMPANY.tax_no}</p>}
