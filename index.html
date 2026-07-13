@@ -982,7 +982,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <div className="print-totals">
               <table>
                 <tbody>
-                  <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{parseFloat(doc.subtotal||0).toFixed(0)}</td></tr>
+                  <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{parseFloat(doc.subtotal||0).toFixed(3)}</td></tr>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Discount {doc.discount_type==='amt'?`(${doc.currency})`:`(${doc.discount_pct||0}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{parseFloat(doc.discount_amt||0).toFixed(2)}</td></tr>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Grand Total</td><td style={{textAlign:'left'}}>{(parseFloat(doc.subtotal||0)-parseFloat(doc.discount_amt||0)).toFixed(2)}</td></tr>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sales Tax ({doc.tax_pct||16}%)</td><td style={{textAlign:'left'}}>{parseFloat(doc.tax_amt||0).toFixed(3)}</td></tr>
