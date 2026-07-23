@@ -233,12 +233,8 @@ th:last-child, td:last-child { border-left: none; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .sig-toggle-btn { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .sig-toggle-btn.active { background: #15803d; color: white; border-color: #15803d; }
-/* الختم — على يسار منطقة الملاحظات، لا يلمس الأرقام */
-.stamp-layer-main { position: absolute; top: 50%; left: 0; transform: translateY(-50%); width: 260px; opacity: 0.90; pointer-events: none; z-index: 10; display: block; }
-@media print {
-  .stamp-layer-main { position: fixed !important; bottom: 85px !important; left: 20px !important; top: auto !important; transform: none !important; width: 260px !important; }
-  .stamp-layer-multi { display: none !important; }
-}
+/* الختم */
+.stamp-layer-main { display: block; width: 250px; opacity: 0.90; pointer-events: none; }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
@@ -994,9 +990,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </tbody>
           </table>
 
-          {/* الإجماليات + ختم overlay */}
-          <div style={{position:'relative'}}>
-          {showSig && <img src={SIG_DATA_URL} alt="" className="stamp-layer-main"/>}
+          {/* الإجماليات */}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
             <div style={{fontSize:11,color:'#888',maxWidth:380}}>
               <p>* السعر بالدينار الأردني والأسعار غير شاملة ضريبة المبيعات</p>
@@ -1024,7 +1018,14 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
               <strong>ملاحظات: </strong>{doc.notes}
             </div>
           )}
-          </div>{/* end overlay wrapper */}
+
+          {/* الختم — يطفو على اليسار فوق منطقة الملاحظات بدون تأثير على الـ layout */}
+          {showSig && (
+            <div style={{height:0, overflow:'visible', position:'relative', zIndex:10, pointerEvents:'none'}}>
+              <img src={SIG_DATA_URL} alt="" className="stamp-layer-main"
+                style={{position:'absolute', bottom:0, left:0}}/>
+            </div>
+          )}
 
           {/* الفوتر */}
           <div className="print-footer-bar">
