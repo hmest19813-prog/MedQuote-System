@@ -988,22 +988,16 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </tbody>
           </table>
 
-          {/* الإجماليات + ختم وتوقيع */}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:8}}>
-            <div style={{fontSize:11,color:'#888',maxWidth:300,flex:1}}>
+          {/* الإجماليات */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
+            <div style={{fontSize:11,color:'#888',maxWidth:380}}>
               <p>* السعر بالدينار الأردني والأسعار غير شاملة ضريبة المبيعات</p>
               <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
               <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
               <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
               {docType==='invoice' && <p style={{marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included ( 16%) Reg No.{COMPANY.tax_no}</p>}
             </div>
-            {showSig && (
-              <div style={{textAlign:'center',flexShrink:0}}>
-                <div style={{fontSize:10,color:'#888',marginBottom:2,fontWeight:600}}>التوقيع والختم الرسمي</div>
-                <img src={SIG_DATA_URL} alt="ختم وتوقيع" style={{width:240,opacity:0.93,display:'block'}}/>
-              </div>
-            )}
-            <div className="print-totals" style={{flexShrink:0}}>
+            <div className="print-totals">
               <table>
                 <tbody>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{parseFloat(doc.subtotal||0).toFixed(3)}</td></tr>
@@ -1020,6 +1014,13 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           {doc.notes && (
             <div className="print-notes">
               <strong>ملاحظات: </strong>{doc.notes}
+            </div>
+          )}
+
+          {/* ختم وتوقيع — يظهر على اليسار كأنه مطبوع فوق المحتوى */}
+          {showSig && (
+            <div style={{height:0,overflow:'visible',position:'relative',zIndex:5}}>
+              <img src={SIG_DATA_URL} alt="" style={{width:240,opacity:0.90,display:'block',marginTop:-220,marginLeft:0,pointerEvents:'none'}}/>
             </div>
           )}
 
