@@ -234,7 +234,7 @@ th:last-child, td:last-child { border-left: none; }
 .sig-toggle-btn { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .sig-toggle-btn.active { background: #15803d; color: white; border-color: #15803d; }
 /* الختم */
-.stamp-layer-main { display: block; width: 250px; opacity: 0.90; pointer-events: none; }
+.stamp-layer-main { display: block; width: 300px; opacity: 0.90; pointer-events: none; }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
@@ -289,6 +289,9 @@ th:last-child, td:last-child { border-left: none; }
 
 /* ===================== QUOTE/INVOICE PRINT ===================== */
 .print-container { background: white; padding: 14px 36px 28px; max-width: 900px; margin: 0 auto; position: relative; }
+.print-page-wrap { display: flex; flex-direction: column; }
+.print-page-content { flex: 1; }
+.print-footer-wrap { position: relative; }
 .letter-print-wrap { display:flex; flex-direction:column; min-height:calc(297mm - 20mm); padding:0 36px; background:white; max-width:900px; margin:0 auto; }
 .letter-print-wrap .letter-content { flex:1; }
 .letter-print-wrap .letter-footer-anchor { margin-top:auto; }
@@ -938,6 +941,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           </div>
         </div>
         <div className="modal-body print-container" id="print-content">
+          <div className="print-page-wrap">
+          <div className="print-page-content">
           {/* الرأس */}
           <div className="print-header">
             <div className="print-company-right">
@@ -1027,38 +1032,45 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           )}
 
-          {/* الختم — يطفو على اليسار فوق منطقة الملاحظات بدون تأثير على الـ layout */}
+          </div>{/* /print-page-content */}
+
+          {/* ختم الصفحة الأولى — مخفي بالمتصفح، يُفعَّل في وضع متعدد الصفحات عبر printDoc */}
           {showSig && (
-            <div style={{height:0, overflow:'visible', position:'relative', zIndex:10, pointerEvents:'none'}}>
-              <img src={SIG_DATA_URL} alt="" className="stamp-layer-main"
-                style={{position:'absolute', bottom:0, left:0}}/>
-            </div>
+            <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-multipage"
+              style={{display:'none', pointerEvents:'none'}}/>
           )}
 
-          {/* الفوتر */}
-          <div className="print-footer-bar">
-            <div className="print-footer-right">
-              <div className="print-footer-label"></div>
-              <div>Amman - King Hussein Street, Building 22</div>
-              <div>P.O Box 927817, Zip 11190, Jordan</div>
-            </div>
-            <div className="print-footer-center">
-              <div className="print-footer-label">تواصل معنا</div>
-              <div>{COMPANY.website}</div>
-              <div>{COMPANY.email}</div>
-              <div style={{marginTop:3,fontSize:9,opacity:.85}}>
-                <span>Instagram | Facebook | LinkedIn</span>
-                <span style={{margin:'0 4px'}}>—</span>
-                <span>Hayat Scientific</span>
+          {/* الفوتر مع الختم — print-footer-wrap يوفر position:relative للختم */}
+          <div className="print-footer-wrap">
+            {showSig && (
+              <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-in-footer"
+                style={{position:'absolute', bottom:30, right:0, zIndex:20, pointerEvents:'none'}}/>
+            )}
+            <div className="print-footer-bar">
+              <div className="print-footer-right">
+                <div className="print-footer-label"></div>
+                <div>Amman - King Hussein Street, Building 22</div>
+                <div>P.O Box 927817, Zip 11190, Jordan</div>
+              </div>
+              <div className="print-footer-center">
+                <div className="print-footer-label">تواصل معنا</div>
+                <div>{COMPANY.website}</div>
+                <div>{COMPANY.email}</div>
+                <div style={{marginTop:3,fontSize:9,opacity:.85}}>
+                  <span>Instagram | Facebook | LinkedIn</span>
+                  <span style={{margin:'0 4px'}}>—</span>
+                  <span>Hayat Scientific</span>
+                </div>
+              </div>
+              <div className="print-footer-left">
+                <div className="print-footer-label"></div>
+                <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
+                <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
+                <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
               </div>
             </div>
-            <div className="print-footer-left">
-              <div className="print-footer-label"></div>
-              <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
-              <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
-              <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
-            </div>
-          </div>
+          </div>{/* /print-footer-wrap */}
+          </div>{/* /print-page-wrap */}
         </div>
       </div>
     </div>
@@ -2935,9 +2947,30 @@ const printDoc = (containerId, title) => {
     // ── صفحة واحدة مع ضغط ──────────────────────────────────
     printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom.toFixed(4)};`;
 
+    // ثبّت الفوتر في أسفل الصفحة: احسب ارتفاع منطقة المحتوى بعد خصم الـ padding ثم قسّم على zoom
+    const pageWrap = printDiv.querySelector('.print-page-wrap');
+    if (pageWrap) {
+      const PAD_PX = Math.round(10 * 96 / 25.4) * 2; // 10mm أعلى + 10mm أسفل ≈ 76px
+      pageWrap.style.minHeight = Math.round((A4_H - PAD_PX) / zoom) + 'px';
+    }
+
   } else {
-    // ── متعدد الصفحات: تدفق طبيعي، thead يتكرر تلقائياً ────
-    printDiv.style.cssText = 'position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;';
+    // ── متعدد الصفحات ────────────────────────────────────────
+    // نصفّر الـ padding للقياس الدقيق (الطباعة تستخدم @page margins بدل padding)
+    printDiv.style.cssText = 'position:static;width:100%;padding:0;box-sizing:border-box;background:white;';
+
+    // ارتفاع منطقة محتوى كل صفحة A4 مع @page margin:8mm أعلى وأسفل
+    const PAGE_PX = Math.round((297 - 16) * 96 / 25.4); // 281mm ≈ 1062px
+    const mpPageContent = printDiv.querySelector('.print-page-content');
+    const mpFooterWrap  = printDiv.querySelector('.print-footer-wrap');
+
+    if (mpPageContent && mpFooterWrap) {
+      const footerH   = mpFooterWrap.offsetHeight;
+      const contentH2 = mpPageContent.scrollHeight;
+      const pages     = Math.ceil((contentH2 + footerH) / PAGE_PX);
+      const targetH   = pages * PAGE_PX - footerH;
+      if (targetH > contentH2) mpPageContent.style.minHeight = targetH + 'px';
+    }
 
     multiPageStyle = document.createElement('style');
     multiPageStyle.textContent = `
@@ -2955,9 +2988,20 @@ const printDoc = (containerId, title) => {
           page-break-inside: avoid;
           break-inside: avoid;
         }
-        #temp-print-div .print-footer-bar {
-          margin-top: 16px;
+        #temp-print-div .print-footer-bar { margin-top: 16px; }
+        /* الختم الثابت على جميع الصفحات — يظهر أسفل اليمين */
+        #temp-print-div .stamp-multipage {
+          display: block !important;
+          position: fixed;
+          bottom: 20mm;
+          right: 15mm;
+          width: 300px;
+          z-index: 100;
+          pointer-events: none;
+          opacity: 0.90;
         }
+        /* إخفاء ختم الفوتير في وضع الصفحات المتعددة (يُعوَّض بالختم الثابت) */
+        #temp-print-div .stamp-in-footer { display: none !important; }
       }
     `;
     document.head.appendChild(multiPageStyle);
