@@ -2633,16 +2633,30 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
     setLoading(true);
     try {
       if (isNew) {
-        const { data: newId, error: rpcErr } = await sb.rpc('create_user_with_profile', {
+        // إنشاء مستخدم عبر Supabase Auth مباشرة (بدون pgcrypto)
+        // client مؤقت حتى لا يستبدل session المدير الحالي
+        const tempSb = supabase.createClient(SUPA_URL, SUPA_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false }
+        });
+        const { data: authData, error: authErr } = await tempSb.auth.signUp({
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          options: { data: { full_name: form.full_name.trim() } }
+        });
+        if (authErr) throw authErr;
+        if (!authData?.user?.id) throw new Error('فشل إنشاء المستخدم — تأكد من إعدادات Auth في Supabase');
+
+        // إكمال بيانات الـ profile (الدور، اليوزر، الصلاحيات)
+        const { error: profileErr } = await sb.rpc('setup_new_user_profile', {
+          p_user_id:     authData.user.id,
           p_email:       form.email.trim().toLowerCase(),
-          p_password:    form.password,
           p_full_name:   form.full_name.trim(),
           p_username:    form.username.trim().toLowerCase(),
           p_role:        form.role,
           p_is_active:   form.is_active,
           p_permissions: permsToSave,
         });
-        if (rpcErr) throw rpcErr;
+        if (profileErr) throw profileErr;
         toast('✅ تم إنشاء المستخدم — سلّمه اسم المستخدم وكلمة المرور', 'success');
       } else {
         const updateData = {
