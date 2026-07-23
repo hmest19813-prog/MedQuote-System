@@ -66,7 +66,7 @@ BEGIN
       gen_random_uuid(),
       'authenticated', 'authenticated',
       LOWER(TRIM(p_email)),
-      crypt(p_password, gen_salt('bf')),
+      extensions.crypt(p_password, extensions.gen_salt('bf')),
       NOW(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       jsonb_build_object('full_name', p_full_name),
