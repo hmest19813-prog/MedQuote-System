@@ -45,7 +45,7 @@ CREATE OR REPLACE FUNCTION public.create_user_with_profile(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, auth
+SET search_path = public, auth, extensions
 AS $$
 DECLARE
   v_user_id UUID;
