@@ -515,6 +515,20 @@ const fmt = (n, cur = 'JOD') => {
   return num.toLocaleString('ar-JO', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' ' + cur;
 };
 const today = () => new Date().toISOString().slice(0,10);
+
+/* ---- Unit persistence (localStorage) ---- */
+const STD_UNITS = ['EACH','PCS','SET','BOX','PACK','PAIR','ROLL','KG','G','L','ML','M','CM','UNIT','CARTON','VIAL','AMP','BOTTLE','TUBE'];
+const UNITS_KEY = 'mq_custom_units';
+const getStoredUnits = () => { try { return JSON.parse(localStorage.getItem(UNITS_KEY)||'[]'); } catch{ return []; } };
+const saveUnit = (u) => {
+  if (!u || !u.trim()) return;
+  const val = u.trim().toUpperCase();
+  if (STD_UNITS.includes(val)) return;
+  const existing = getStoredUnits();
+  if (existing.includes(val)) return;
+  localStorage.setItem(UNITS_KEY, JSON.stringify([...existing, val]));
+};
+
 const ago = (ts) => {
   if (!ts) return '';
   const diff = Math.floor((Date.now() - new Date(ts)) / 1000);
@@ -1057,6 +1071,9 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       .then(({data})=>setCatalogItems(data||[]));
   }, []);
 
+  const [customUnits, setCustomUnits] = useState(getStoredUnits);
+  const handleUnitBlur = (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { saveUnit(val); setCustomUnits(getStoredUnits()); } };
+
   const [custSuggest, setCustSuggest] = useState([]);
   const [showCustSuggest, setShowCustSuggest] = useState(false);
   const [isNewCustomer, setIsNewCustomer] = useState(false);
@@ -1403,7 +1420,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                           <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
                         </div>
                       </td>
-                      <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} placeholder="EACH"/></td>
+                      <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH"/></td>
                       <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       <td style={{fontWeight:700,color:'var(--primary)'}}>{tot}</td>
@@ -1417,11 +1434,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
             </table>
           </div>
           <datalist id="unit-opts">
-            <option value="EACH"/><option value="PCS"/><option value="SET"/><option value="BOX"/>
-            <option value="PACK"/><option value="PAIR"/><option value="ROLL"/><option value="KG"/>
-            <option value="G"/><option value="L"/><option value="ML"/><option value="M"/>
-            <option value="CM"/><option value="UNIT"/><option value="CARTON"/><option value="VIAL"/>
-            <option value="AMP"/><option value="BOTTLE"/><option value="TUBE"/>
+            {[...STD_UNITS, ...customUnits].map(u => <option key={u} value={u}/>)}
           </datalist>
           <button className="btn btn-ghost btn-sm" onClick={addItem}>+ إضافة صنف</button>
 
@@ -1915,6 +1928,8 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [catalogItems, setCatalogItems] = useState([]);
+  const [customUnitsInv, setCustomUnitsInv] = useState(getStoredUnits);
+  const handleUnitBlurInv = (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { saveUnit(val); setCustomUnitsInv(getStoredUnits()); } };
 
   useEffect(() => {
     sb.from('catalog_items').select('id,name,unit,unit_price,origin,delivery').eq('is_active',true).order('name')
@@ -2090,7 +2105,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
                           <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
                         </div>
                       </td>
-                      <td><input value={item.unit||'EACH'} onChange={e=>setItem(i,'unit',e.target.value)}/></td>
+                      <td><input list="unit-opts-inv" value={item.unit||'EACH'} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlurInv(e.target.value)}/></td>
                       <td><input type="number" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       <td style={{fontWeight:700,color:'var(--primary)'}}>{tot}</td>
@@ -2104,6 +2119,9 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
             </table>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={addItem}>+ إضافة صنف</button>
+          <datalist id="unit-opts-inv">
+            {[...STD_UNITS, ...customUnitsInv].map(u => <option key={u} value={u}/>)}
+          </datalist>
 
           <div style={{marginTop:12, background:'#F0F8FD', border:'1.5px solid #B8DCF0', borderRadius:8, padding:12, maxWidth:280, marginRight:'auto'}}>
             <table style={{width:'100%',fontSize:12}}>
