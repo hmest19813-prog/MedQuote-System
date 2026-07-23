@@ -231,11 +231,6 @@ th:last-child, td:last-child { border-left: none; }
 .badge-partial_referral { background: #e0f2fe; color: #0369a1; }
 .badge-type-quote { background: #ede9fe; color: #6d28d9; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
-.print-container { position: relative; }
-.print-sig-area { position: absolute; bottom: 88px; left: 0; right: 0; display: flex; justify-content: center; z-index: 10; pointer-events: none; }
-.print-sig-box { text-align: center; }
-.print-sig-box img { width: 360px; opacity: 0.92; }
-.print-sig-label { font-size: 11px; color: var(--gray-500); margin-bottom: 4px; font-weight: 600; }
 .sig-toggle-btn { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .sig-toggle-btn.active { background: #15803d; color: white; border-color: #15803d; }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
@@ -369,8 +364,6 @@ th:last-child, td:last-child { border-left: none; }
   .print-notes { page-break-after: avoid !important; break-after: avoid !important; }
   .print-totals { page-break-inside: avoid !important; break-inside: avoid !important; }
   .print-client-box { page-break-after: avoid !important; break-after: avoid !important; }
-  .print-container { position: relative !important; }
-  .print-sig-area { position: absolute !important; bottom: 88px !important; left: 0 !important; right: 0 !important; }
 }
 
 /* ===================== CHARTS ===================== */
@@ -995,16 +988,22 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </tbody>
           </table>
 
-          {/* الإجماليات */}
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
-            <div style={{fontSize:11,color:'#888',maxWidth:380}}>
+          {/* الإجماليات + ختم وتوقيع */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:8}}>
+            <div style={{fontSize:11,color:'#888',maxWidth:300,flex:1}}>
               <p>* السعر بالدينار الأردني والأسعار غير شاملة ضريبة المبيعات</p>
               <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
               <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
               <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
               {docType==='invoice' && <p style={{marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included ( 16%) Reg No.{COMPANY.tax_no}</p>}
             </div>
-            <div className="print-totals">
+            {showSig && (
+              <div style={{textAlign:'center',flexShrink:0}}>
+                <div style={{fontSize:10,color:'#888',marginBottom:2,fontWeight:600}}>التوقيع والختم الرسمي</div>
+                <img src={SIG_DATA_URL} alt="ختم وتوقيع" style={{width:200,opacity:0.93,display:'block'}}/>
+              </div>
+            )}
+            <div className="print-totals" style={{flexShrink:0}}>
               <table>
                 <tbody>
                   <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{parseFloat(doc.subtotal||0).toFixed(3)}</td></tr>
@@ -1021,16 +1020,6 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           {doc.notes && (
             <div className="print-notes">
               <strong>ملاحظات: </strong>{doc.notes}
-            </div>
-          )}
-
-          {/* ختم وتوقيع */}
-          {showSig && (
-            <div className="print-sig-area">
-              <div className="print-sig-box">
-                <div className="print-sig-label">التوقيع والختم الرسمي</div>
-                <img src={SIG_DATA_URL} alt="ختم وتوقيع"/>
-              </div>
             </div>
           )}
 
