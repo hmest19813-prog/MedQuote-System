@@ -975,8 +975,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
                   <td className="item-name">{item.item_name}</td>
                   <td>{item.unit||'EACH'}</td>
                   <td>{item.quantity}</td>
-                  <td>{parseFloat(item.unit_price).toFixed(0)}</td>
-                  <td><strong>{(parseFloat(item.quantity)*parseFloat(item.unit_price)).toFixed(0)}</strong></td>
+                  <td>{parseFloat(item.unit_price).toFixed(3)}</td>
+                  <td><strong>{(parseFloat(item.quantity)*parseFloat(item.unit_price)).toFixed(3)}</strong></td>
                   <td>{item.origin||'CHINA'}</td>
                   <td>{item.delivery||'PROMPT'}</td>
                   <td className="item-notes">{item.notes||''}</td>
@@ -1891,8 +1891,8 @@ function OrderEditModal({ user, quote, onSave, onClose }) {
                     <td style={{textAlign:'right'}}>{it.item_name}</td>
                     <td>{it.unit||'EACH'}</td>
                     <td>{it.quantity}</td>
-                    <td>{parseFloat(it.unit_price).toFixed(0)}</td>
-                    <td><strong>{(parseFloat(it.quantity)*parseFloat(it.unit_price)).toFixed(0)}</strong></td>
+                    <td>{parseFloat(it.unit_price).toFixed(3)}</td>
+                    <td><strong>{(parseFloat(it.quantity)*parseFloat(it.unit_price)).toFixed(3)}</strong></td>
                     <td>{it.origin||'CHINA'}</td>
                     <td>{it.delivery||'PROMPT'}</td>
                   </tr>
