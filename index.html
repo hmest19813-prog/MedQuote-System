@@ -516,17 +516,17 @@ const fmt = (n, cur = 'JOD') => {
 };
 const today = () => new Date().toISOString().slice(0,10);
 
-/* ---- Unit persistence (localStorage) ---- */
+/* ---- Unit persistence (Supabase) ---- */
 const STD_UNITS = ['EACH','PCS','SET','BOX','PACK','PAIR','ROLL','KG','G','L','ML','M','CM','UNIT','CARTON','VIAL','AMP','BOTTLE','TUBE'];
-const UNITS_KEY = 'mq_custom_units';
-const getStoredUnits = () => { try { return JSON.parse(localStorage.getItem(UNITS_KEY)||'[]'); } catch{ return []; } };
-const saveUnit = (u) => {
+const loadCustomUnits = async () => {
+  const { data } = await sb.from('custom_units').select('name').order('name');
+  return (data||[]).map(r=>r.name);
+};
+const saveUnit = async (u) => {
   if (!u || !u.trim()) return;
   const val = u.trim().toUpperCase();
   if (STD_UNITS.includes(val)) return;
-  const existing = getStoredUnits();
-  if (existing.includes(val)) return;
-  localStorage.setItem(UNITS_KEY, JSON.stringify([...existing, val]));
+  await sb.from('custom_units').insert({ name: val }).select().maybeSingle();
 };
 
 const ago = (ts) => {
@@ -1071,8 +1071,9 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       .then(({data})=>setCatalogItems(data||[]));
   }, []);
 
-  const [customUnits, setCustomUnits] = useState(getStoredUnits);
-  const handleUnitBlur = (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { saveUnit(val); setCustomUnits(getStoredUnits()); } };
+  const [customUnits, setCustomUnits] = useState([]);
+  useEffect(() => { loadCustomUnits().then(setCustomUnits); }, []);
+  const handleUnitBlur = async (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { await saveUnit(val); loadCustomUnits().then(setCustomUnits); } };
 
   const [custSuggest, setCustSuggest] = useState([]);
   const [showCustSuggest, setShowCustSuggest] = useState(false);
@@ -1928,8 +1929,9 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [catalogItems, setCatalogItems] = useState([]);
-  const [customUnitsInv, setCustomUnitsInv] = useState(getStoredUnits);
-  const handleUnitBlurInv = (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { saveUnit(val); setCustomUnitsInv(getStoredUnits()); } };
+  const [customUnitsInv, setCustomUnitsInv] = useState([]);
+  useEffect(() => { loadCustomUnits().then(setCustomUnitsInv); }, []);
+  const handleUnitBlurInv = async (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { await saveUnit(val); loadCustomUnits().then(setCustomUnitsInv); } };
 
   useEffect(() => {
     sb.from('catalog_items').select('id,name,unit,unit_price,origin,delivery').eq('is_active',true).order('name')
