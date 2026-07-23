@@ -233,12 +233,11 @@ th:last-child, td:last-child { border-left: none; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .sig-toggle-btn { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .sig-toggle-btn.active { background: #15803d; color: white; border-color: #15803d; }
-/* الختم الرئيسي — overlay فوق منطقة الإجماليات/الملاحظات */
-.stamp-layer-main { position: absolute; top: 50%; left: 15%; transform: translateY(-50%); width: 280px; opacity: 0.90; pointer-events: none; z-index: 10; display: block; }
-/* الختم الثاني — يظهر فقط عند الطباعة متعددة الصفحات */
-.stamp-layer-multi { display: none; }
+/* الختم — على يسار منطقة الملاحظات، لا يلمس الأرقام */
+.stamp-layer-main { position: absolute; top: 50%; left: 0; transform: translateY(-50%); width: 260px; opacity: 0.90; pointer-events: none; z-index: 10; display: block; }
 @media print {
-  .stamp-layer-multi { display: block; position: fixed; bottom: 90px; left: 20px; width: 260px; opacity: 0.90; pointer-events: none; z-index: 9999; }
+  .stamp-layer-main { position: fixed !important; bottom: 85px !important; left: 20px !important; top: auto !important; transform: none !important; width: 260px !important; }
+  .stamp-layer-multi { display: none !important; }
 }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
@@ -1026,9 +1025,6 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           )}
           </div>{/* end overlay wrapper */}
-
-          {/* ختم ثانٍ للصفحات المتعددة — fixed أسفل عمود التوصيل/النوت */}
-          {showSig && <img src={SIG_DATA_URL} alt="" className="stamp-layer-multi"/>}
 
           {/* الفوتر */}
           <div className="print-footer-bar">
