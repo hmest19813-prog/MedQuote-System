@@ -233,9 +233,13 @@ th:last-child, td:last-child { border-left: none; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .sig-toggle-btn { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
 .sig-toggle-btn.active { background: #15803d; color: white; border-color: #15803d; }
-/* الختم — مرتبط بالفوتر دائماً */
-.stamp-layer { position: absolute; bottom: 100%; left: 0; z-index: 999; pointer-events: none; width: 280px; margin-bottom: 6px; }
-.stamp-layer img { width: 100%; opacity: 0.90; display: block; }
+/* الختم الرئيسي — overlay فوق منطقة الإجماليات/الملاحظات */
+.stamp-layer-main { position: absolute; top: 50%; left: 15%; transform: translateY(-50%); width: 280px; opacity: 0.90; pointer-events: none; z-index: 10; display: block; }
+/* الختم الثاني — يظهر فقط عند الطباعة متعددة الصفحات */
+.stamp-layer-multi { display: none; }
+@media print {
+  .stamp-layer-multi { display: block; position: fixed; bottom: 90px; left: 20px; width: 260px; opacity: 0.90; pointer-events: none; z-index: 9999; }
+}
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
@@ -991,7 +995,9 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </tbody>
           </table>
 
-          {/* الإجماليات */}
+          {/* الإجماليات + ختم overlay */}
+          <div style={{position:'relative'}}>
+          {showSig && <img src={SIG_DATA_URL} alt="" className="stamp-layer-main"/>}
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
             <div style={{fontSize:11,color:'#888',maxWidth:380}}>
               <p>* السعر بالدينار الأردني والأسعار غير شاملة ضريبة المبيعات</p>
@@ -1019,10 +1025,13 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
               <strong>ملاحظات: </strong>{doc.notes}
             </div>
           )}
+          </div>{/* end overlay wrapper */}
+
+          {/* ختم ثانٍ للصفحات المتعددة — fixed أسفل عمود التوصيل/النوت */}
+          {showSig && <img src={SIG_DATA_URL} alt="" className="stamp-layer-multi"/>}
 
           {/* الفوتر */}
-          <div className="print-footer-bar" style={{position:'relative'}}>
-            {showSig && <img src={SIG_DATA_URL} alt="" className="stamp-layer"/>}
+          <div className="print-footer-bar">
             <div className="print-footer-right">
               <div className="print-footer-label"></div>
               <div>Amman - King Hussein Street, Building 22</div>
