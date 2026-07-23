@@ -1726,7 +1726,7 @@ function QuotesList({ user, quotes, onReload }) {
       )}
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>عروض الأسعار</h2>
-        <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ عرض جديد</button>
+        {hasPerm(user, 'quotes_create') && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ عرض جديد</button>}
       </div>
       <div className="card">
         <div className="filter-bar">
@@ -1779,7 +1779,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <td>
                     <div className="flex gap-2">
                       <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)} title="معاينة">👁</button>
-                      <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)} title="تعديل">✏️</button>
+                      {(q.created_by === user?.id || hasPerm(user, 'quotes_edit_all')) && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)} title="تعديل">✏️</button>}
                       {q.status!=='invoiced' && (
                         <button className="btn btn-purple btn-sm" onClick={()=>convertToInvoice(q)} title="تحويل لفاتورة">🧾 فاتورة</button>
                       )}
@@ -2483,12 +2483,12 @@ function OrdersPage({ user, orders, onReload }) {
                   <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
                   <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
                   <td><SBadge status={o.status} type="o"/></td>
-                  <td><select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>{Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></td>
+                  <td>{hasPerm(user,'orders_edit') ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>{Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select> : <SBadge status={o.status} type="o"/>}</td>
                   <td style={{whiteSpace:'nowrap'}}>
                     <div className="flex gap-2">
                       <button className="btn btn-primary btn-sm" onClick={()=>printOrder(o)}>🖨️</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveO(o)} title="أرشفة">🗄️</button>
-                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)} title="حذف نهائي">🗑 حذف</button>}
+                      {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)} title="حذف نهائي">🗑 حذف</button>}
                     </div>
                   </td>
                 </tr>
@@ -3919,7 +3919,7 @@ function CatalogPage({ user }) {
           {user?.role==='admin' && (
             <button className="btn btn-ghost" onClick={()=>setShowCatMgr(true)}>⚙️ إدارة الفئات</button>
           )}
-          <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة صنف</button>
+          {hasPerm(user, 'catalog_edit') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة صنف</button>}
         </div>
       </div>
 
@@ -3940,7 +3940,7 @@ function CatalogPage({ user }) {
               <div style={{fontSize:48,marginBottom:12}}>🗂️</div>
               <div style={{fontSize:16,fontWeight:600}}>لا توجد أصناف</div>
               <div style={{fontSize:13,marginTop:4}}>ابدأ بإضافة أصنافك ومنتجاتك</div>
-              <button className="btn btn-primary" style={{marginTop:16}} onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة أول صنف</button>
+              {hasPerm(user, 'catalog_edit') && <button className="btn btn-primary" style={{marginTop:16}} onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة أول صنف</button>}
             </div>
           ) : (
             <div className="table-wrap">
@@ -3982,8 +3982,8 @@ function CatalogPage({ user }) {
                       </td>
                       <td>
                         <div className="flex gap-1">
-                          <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
-                            onClick={()=>{ setEditing(it); setShowForm(true); }} title="تعديل">✏️</button>
+                          {hasPerm(user, 'catalog_edit') && <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
+                            onClick={()=>{ setEditing(it); setShowForm(true); }} title="تعديل">✏️</button>}
                           {isAdmin && (
                             <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
                               onClick={()=>toggleActive(it)} title={it.is_active?'إيقاف':'تفعيل'}>
@@ -4066,7 +4066,7 @@ function CustomersPage({ user }) {
         {user?.role==='admin' && (
           <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>
         )}
-        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>
+        {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
       </div>
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
@@ -4102,8 +4102,8 @@ function CustomersPage({ user }) {
               <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c)}</div>
               <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
                 <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
-                <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>
-                {user?.role==='admin' && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
+                {hasPerm(user, 'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
+                {hasPerm(user, 'customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
               </div>
             </div>
           ))}
