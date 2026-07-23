@@ -356,17 +356,12 @@ th:last-child, td:last-child { border-left: none; }
   /* margin: 0 يحذف header/footer المتصفح (الوقت والتاريخ واسم الصفحة) */
   @page { margin: 0; size: A4 portrait; }
 
-  /* منع الفوتر من الانتقال لصفحة ثانية */
-  .print-footer-bar {
-    page-break-before: avoid !important;
-    page-break-inside: avoid !important;
-    break-before: avoid !important;
-    break-inside: avoid !important;
-  }
-  .print-notes {
-    page-break-after: avoid !important;
-    break-after: avoid !important;
-  }
+  .print-items thead { display: table-header-group; }
+  .print-items tbody tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+  .print-footer-bar { page-break-inside: avoid !important; break-inside: avoid !important; }
+  .print-notes { page-break-after: avoid !important; break-after: avoid !important; }
+  .print-totals { page-break-inside: avoid !important; break-inside: avoid !important; }
+  .print-client-box { page-break-after: avoid !important; break-after: avoid !important; }
 }
 
 /* ===================== CHARTS ===================== */
@@ -2789,45 +2784,27 @@ const printDoc = (containerId, title) => {
     printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom.toFixed(4)};`;
 
   } else {
-    // ── متعدد الصفحات: الهيدر والفوتر ثابتان في كل صفحة ────
-    printDiv.style.cssText = 'position:static;width:100%;background:white;';
-
-    // نقيس ارتفاع الهيدر والفوتر
-    const headerEl  = printDiv.querySelector('.print-header');
-    const dividerEl = printDiv.querySelector('.print-divider');
-    const footerEl  = printDiv.querySelector('.print-footer-bar');
-
-    const headerPx = (headerEl  ? headerEl.offsetHeight  : 90)
-                   + (dividerEl ? dividerEl.offsetHeight : 4)
-                   + 8; // هامش إضافي
-    const footerPx = (footerEl  ? footerEl.offsetHeight  : 70) + 8;
-
-    // نحسب الـ margin بالـ mm
-    const px2mm = v => (v / 96 * 25.4).toFixed(1);
+    // ── متعدد الصفحات: تدفق طبيعي، thead يتكرر تلقائياً ────
+    printDiv.style.cssText = 'position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;';
 
     multiPageStyle = document.createElement('style');
     multiPageStyle.textContent = `
       @media print {
-        #temp-print-div {
-          padding: 0 10mm !important;
-          padding-top:    calc(${px2mm(headerPx)}mm + 10mm) !important;
-          padding-bottom: calc(${px2mm(footerPx)}mm + 10mm) !important;
+        @page { margin: 8mm 10mm; size: A4 portrait; }
+        #temp-print-div { padding: 0 !important; }
+        #temp-print-div .print-items thead { display: table-header-group; }
+        #temp-print-div .print-items tbody tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
-        #temp-print-div .print-header {
-          position: fixed !important;
-          top: 10mm !important; left: 10mm !important; right: 10mm !important;
-          background: white !important; z-index: 999 !important;
-        }
-        #temp-print-div .print-divider {
-          position: fixed !important;
-          top: calc(${px2mm(headerEl ? headerEl.offsetHeight : 90)}mm + 10mm) !important;
-          left: 10mm !important; right: 10mm !important;
-          z-index: 999 !important;
+        #temp-print-div .print-totals,
+        #temp-print-div .print-notes,
+        #temp-print-div .print-footer-bar {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
         #temp-print-div .print-footer-bar {
-          position: fixed !important;
-          bottom: 10mm !important; left: 10mm !important; right: 10mm !important;
-          z-index: 999 !important;
+          margin-top: 16px;
         }
       }
     `;
