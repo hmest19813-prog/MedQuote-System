@@ -568,6 +568,12 @@ function Toasts() {
 }
 const toast = (msg, type='info') => toastSetter && toastSetter(l => [...l, { msg, type }]);
 
+const hasPerm = (user, key) => {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'manager') return true;
+  return user.permissions?.[key] === true;
+};
+
 /* ===================== BADGE ===================== */
 const SBadge = ({ status, type='q' }) => {
   const label = type === 'q' ? SL[status] : OL[status];
@@ -595,7 +601,7 @@ const LoadingScreen = ({ msg = 'جاري التحميل...' }) => {
 
 /* ===================== AUTH PAGE ===================== */
 function AuthPage({ onLogin }) {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [pass, setPass] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -604,13 +610,15 @@ function AuthPage({ onLogin }) {
     e.preventDefault();
     setError('');
     setLoading(true);
-    // timeout 12 ثانية للحماية
     const timer = setTimeout(() => {
       setLoading(false);
       setError('انتهت مهلة الاتصال — تحقق من الإنترنت وحاول مجدداً');
     }, 12000);
     try {
-      const { data, error: authErr } = await sb.auth.signInWithPassword({ email, password: pass });
+      // جلب الإيميل من اسم المستخدم
+      const { data: emailResult, error: lookupErr } = await sb.rpc('get_email_by_username', { p_username: username.trim() });
+      if (lookupErr || !emailResult) throw new Error('اسم المستخدم غير موجود');
+      const { data, error: authErr } = await sb.auth.signInWithPassword({ email: emailResult, password: pass });
       if (authErr) throw authErr;
       // جلب الـ profile مع timeout
       let profile = null;
@@ -624,7 +632,6 @@ function AuthPage({ onLogin }) {
         console.warn('Profile fetch slow:', pe.message);
       }
       clearTimeout(timer);
-      // نضمن أن id دايماً من auth
       const u = {
         id: data.user.id,
         email: data.user.email,
@@ -635,8 +642,9 @@ function AuthPage({ onLogin }) {
     } catch (err) {
       clearTimeout(timer);
       const msg = err.message || '';
-      if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) setError('الإيميل أو كلمة المرور غير صحيحة');
-      else if (msg.includes('Email not confirmed')) setError('يرجى تأكيد الإيميل أولاً');
+      if (msg.includes('اسم المستخدم غير موجود')) setError('اسم المستخدم غير موجود');
+      else if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) setError('كلمة المرور غير صحيحة');
+      else if (msg.includes('Email not confirmed')) setError('يرجى تأكيد الحساب أولاً');
       else if (msg.includes('fetch') || msg.includes('network') || msg.includes('timeout')) setError('تعذر الاتصال — تحقق من الإنترنت');
       else setError('خطأ: ' + msg);
     } finally {
@@ -658,9 +666,9 @@ function AuthPage({ onLogin }) {
 
         <form onSubmit={handleSubmit}>
           <div className="auth-form-group">
-            <label>البريد الإلكتروني</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
-              placeholder="user@hmest.com" required autoComplete="email"/>
+            <label>اسم المستخدم</label>
+            <input type="text" value={username} onChange={e=>setUsername(e.target.value)}
+              placeholder="your.username" required autoComplete="username" dir="ltr"/>
           </div>
           <div className="auth-form-group">
             <label>كلمة المرور</label>
@@ -683,15 +691,15 @@ function AuthPage({ onLogin }) {
 
 /* ===================== SIDEBAR ===================== */
 const NAV = [
-  { id: 'dashboard', label: 'لوحة التحكم', icon: '📊' },
-  { id: 'quotes', label: 'عروض الأسعار', icon: '📋' },
-  { id: 'orders', label: 'الطلبات', icon: '📦' },
-  { id: 'invoices', label: 'الفواتير', icon: '🧾' },
-  { id: 'customers', label: 'العملاء', icon: '🏢' },
-  { id: 'catalog', label: 'الكتالوج', icon: '🗂️' },
-  { id: 'letters', label: 'الكتب الرسمية', icon: '📝' },
-  { id: 'archive', label: 'الأرشيف', icon: '🗄️' },
-  { id: 'activity', label: 'سجل النشاط', icon: '🕐' },
+  { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊' },
+  { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋' },
+  { id: 'invoices',  label: 'الفواتير',       icon: '🧾' },
+  { id: 'orders',    label: 'الطلبات',        icon: '📦', perm: 'orders_access' },
+  { id: 'customers', label: 'العملاء',        icon: '🏢', perm: 'customers_access' },
+  { id: 'catalog',   label: 'الكتالوج',       icon: '🗂️', perm: 'catalog_access' },
+  { id: 'letters',   label: 'الكتب الرسمية', icon: '📝', perm: 'letters_access' },
+  { id: 'archive',   label: 'الأرشيف',        icon: '🗄️', perm: 'archive_access' },
+  { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
 ];
 
 function Sidebar({ user, page, setPage, onLogout }) {
@@ -707,7 +715,7 @@ function Sidebar({ user, page, setPage, onLogout }) {
 
       <div className="sidebar-section">
         <div className="sidebar-section-label">القائمة</div>
-        {NAV.map(item => (
+        {NAV.filter(item => !item.perm || hasPerm(user, item.perm)).map(item => (
           <div key={item.id} className={`nav-item ${page===item.id?'active':''}`}
             onClick={() => setPage(item.id)}>
             <span>{item.icon}</span>{item.label}
@@ -2540,94 +2548,179 @@ function ActivityPage({ logs }) {
 }
 
 /* ===================== USERS PAGE ===================== */
-const ROLE_LABELS = { admin:'مدير النظام', manager:'مدير', user:'موظف' };
-const ROLE_BADGE  = { admin:'badge-approved', manager:'badge-converted', user:'badge-sent' };
+const ROLE_LABELS = { admin:'مدير النظام', manager:'مدير', employee:'موظف', user:'موظف' };
+const ROLE_BADGE  = { admin:'badge-approved', manager:'badge-converted', employee:'badge-sent', user:'badge-sent' };
+
+const PERM_GROUPS = [
+  { label: 'عروض الأسعار', perms: [
+    { key: 'quotes_create',   label: 'إنشاء عرض سعر جديد' },
+    { key: 'quotes_view_all', label: 'مشاهدة عروض الموظفين الآخرين' },
+    { key: 'quotes_edit_all', label: 'تعديل عروض الموظفين الآخرين' },
+    { key: 'quotes_delete',   label: 'حذف عروض الأسعار' },
+  ]},
+  { label: 'الطلبات', perms: [
+    { key: 'orders_access', label: 'الوصول لصفحة الطلبات' },
+    { key: 'orders_create', label: 'إنشاء طلب جديد' },
+    { key: 'orders_edit',   label: 'تعديل الطلبات' },
+    { key: 'orders_delete', label: 'حذف الطلبات' },
+  ]},
+  { label: 'العملاء', perms: [
+    { key: 'customers_access', label: 'الوصول لقائمة العملاء' },
+    { key: 'customers_create', label: 'إضافة عميل جديد' },
+    { key: 'customers_edit',   label: 'تعديل بيانات العملاء' },
+    { key: 'customers_delete', label: 'حذف العملاء' },
+  ]},
+  { label: 'الكتالوج', perms: [
+    { key: 'catalog_access', label: 'الوصول للكتالوج' },
+    { key: 'catalog_edit',   label: 'تعديل المنتجات' },
+  ]},
+  { label: 'صفحات أخرى', perms: [
+    { key: 'letters_access',  label: 'الكتب الرسمية' },
+    { key: 'archive_access',  label: 'الأرشيف' },
+    { key: 'activity_access', label: 'سجل النشاط' },
+  ]},
+];
+
+const DEFAULT_EMPLOYEE_PERMS = {
+  quotes_create: true,  quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
+  orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
+  customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
+  catalog_access: true, catalog_edit: false,
+  letters_access: true, archive_access: true,   activity_access: false,
+};
 
 function UserForm({ editUser, currentUser, onSave, onClose }) {
   const isNew = !editUser;
-  const [form, setForm] = useState({
-    full_name: editUser?.full_name || '',
-    email:     editUser?.email     || '',
-    role:      editUser?.role      || 'user',
-    is_active: editUser?.is_active ?? true,
-    password:  '',
-    show_pass: false,
+
+  const [form, setForm] = useState(() => {
+    const initPerms = (editUser?.role === 'employee' && editUser?.permissions && Object.keys(editUser.permissions).length > 0)
+      ? Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: editUser.permissions[k] === true }), {})
+      : { ...DEFAULT_EMPLOYEE_PERMS };
+    return {
+      full_name:   editUser?.full_name  || '',
+      email:       editUser?.email      || '',
+      username:    editUser?.username   || '',
+      role:        editUser?.role       || 'employee',
+      is_active:   editUser?.is_active  ?? true,
+      password:    '',
+      show_pass:   false,
+      permissions: initPerms,
+    };
   });
+
   const [loading, setLoading] = useState(false);
-  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const toggleAllPerms = (val) =>
+    setF('permissions', Object.keys(form.permissions).reduce((a, k) => ({ ...a, [k]: val }), {}));
 
   const handleSave = async () => {
-    if (!form.full_name.trim()) { toast('يجب إدخال الاسم الكامل','error'); return; }
+    if (!form.full_name.trim()) { toast('يجب إدخال الاسم الكامل', 'error'); return; }
     if (isNew) {
       const emailVal = form.email.trim();
-      if (!emailVal) { toast('يجب إدخال البريد الإلكتروني','error'); return; }
+      if (!emailVal) { toast('يجب إدخال البريد الإلكتروني', 'error'); return; }
       if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(emailVal)) {
-        toast('صيغة البريد الإلكتروني غير صحيحة — مثال: user@example.com','error'); return;
+        toast('صيغة البريد الإلكتروني غير صحيحة — مثال: user@example.com', 'error'); return;
+      }
+      if (!form.username.trim()) { toast('يجب إدخال اسم المستخدم', 'error'); return; }
+      if (!/^[a-zA-Z0-9._-]{3,30}$/.test(form.username.trim())) {
+        toast('اسم المستخدم: أحرف إنجليزية وأرقام ونقاط فقط (3-30 حرف)', 'error'); return;
       }
     }
-    if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل','error'); return; }
+    if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل', 'error'); return; }
+
+    const permsToSave = form.role === 'employee' ? form.permissions : {};
     setLoading(true);
     try {
       if (isNew) {
         const { data: newId, error: rpcErr } = await sb.rpc('create_user_with_profile', {
-          p_email: form.email.trim().toLowerCase(),
-          p_password: form.password,
-          p_full_name: form.full_name.trim(),
-          p_role: form.role,
-          p_is_active: form.is_active,
+          p_email:       form.email.trim().toLowerCase(),
+          p_password:    form.password,
+          p_full_name:   form.full_name.trim(),
+          p_username:    form.username.trim().toLowerCase(),
+          p_role:        form.role,
+          p_is_active:   form.is_active,
+          p_permissions: permsToSave,
         });
         if (rpcErr) throw rpcErr;
-        toast('✅ تم إنشاء المستخدم — سلّمه الإيميل وكلمة المرور','success');
+        toast('✅ تم إنشاء المستخدم — سلّمه اسم المستخدم وكلمة المرور', 'success');
       } else {
-        const { error } = await sb.from('profiles').update({
-          full_name: form.full_name.trim(),
-          role: form.role,
-          is_active: form.is_active,
-          updated_at: new Date().toISOString(),
-        }).eq('id', editUser.id);
+        const updateData = {
+          full_name:   form.full_name.trim(),
+          username:    form.username.trim().toLowerCase() || editUser.username,
+          role:        form.role,
+          is_active:   form.is_active,
+          permissions: permsToSave,
+          updated_at:  new Date().toISOString(),
+        };
+        const { error } = await sb.from('profiles').update(updateData).eq('id', editUser.id);
         if (error) throw error;
-        toast('تم حفظ التعديلات ✓','success');
+        toast('تم حفظ التعديلات ✓', 'success');
       }
       onSave();
-    } catch(e) { toast('خطأ: '+e.message,'error'); }
+    } catch (e) { toast('خطأ: ' + e.message, 'error'); }
     finally { setLoading(false); }
   };
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:480}}>
+      <div className="modal" style={{maxWidth: form.role === 'employee' ? 620 : 480}}>
         <div className="modal-header">
           <span className="modal-title">{isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+
+          {/* الاسم */}
           <div className="form-group">
             <label className="form-label">الاسم الكامل *</label>
             <input className="form-control" value={form.full_name} onChange={e=>setF('full_name',e.target.value)} placeholder="محمد أحمد"/>
           </div>
-          {isNew && <>
-            <div className="form-group">
-              <label className="form-label">البريد الإلكتروني *</label>
-              <input className="form-control" type="email" value={form.email} onChange={e=>setF('email',e.target.value)} placeholder="user@hayat.jo" dir="ltr"/>
+
+          {/* بيانات تسجيل الدخول */}
+          {isNew ? (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">البريد الإلكتروني *</label>
+                <input className="form-control" type="email" value={form.email} onChange={e=>setF('email',e.target.value)} placeholder="user@hayat.jo" dir="ltr"/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">اسم المستخدم (للدخول) *</label>
+                <input className="form-control" type="text" value={form.username} onChange={e=>setF('username',e.target.value)} placeholder="mohammed.ahmad" dir="ltr"/>
+                <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>أحرف إنجليزية وأرقام ونقاط — سيُستخدم لتسجيل الدخول</div>
+              </div>
             </div>
+          ) : (
+            <div className="form-group">
+              <label className="form-label">اسم المستخدم</label>
+              <input className="form-control" type="text" value={form.username} onChange={e=>setF('username',e.target.value)} placeholder="mohammed.ahmad" dir="ltr"/>
+            </div>
+          )}
+
+          {/* كلمة المرور — فقط عند الإنشاء */}
+          {isNew && (
             <div className="form-group">
               <label className="form-label">كلمة المرور المؤقتة *</label>
               <div style={{display:'flex',gap:6}}>
-                <input className="form-control" type={form.show_pass?'text':'password'} value={form.password} onChange={e=>setF('password',e.target.value)} placeholder="6 أحرف على الأقل" dir="ltr" style={{flex:1}}/>
-                <button type="button" onClick={()=>setF('show_pass',!form.show_pass)} style={{background:'#f0f4f8',border:'1px solid var(--gray-200)',borderRadius:7,padding:'0 10px',cursor:'pointer',fontSize:14}}>
+                <input className="form-control" type={form.show_pass?'text':'password'} value={form.password}
+                  onChange={e=>setF('password',e.target.value)} placeholder="6 أحرف على الأقل" dir="ltr" style={{flex:1}}/>
+                <button type="button" onClick={()=>setF('show_pass',!form.show_pass)}
+                  style={{background:'#f0f4f8',border:'1px solid var(--gray-200)',borderRadius:7,padding:'0 10px',cursor:'pointer',fontSize:14}}>
                   {form.show_pass?'🙈':'👁'}
                 </button>
               </div>
               <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>سلّم كلمة المرور للموظف بشكل منفصل</div>
             </div>
-          </>}
+          )}
+
+          {/* الدور والحالة */}
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">الصلاحية</label>
               <select className="form-control" value={form.role} onChange={e=>setF('role',e.target.value)}>
                 <option value="admin">مدير النظام (Admin)</option>
                 <option value="manager">مدير (Manager)</option>
-                <option value="user">موظف (User)</option>
+                <option value="employee">موظف (Employee)</option>
               </select>
             </div>
             <div className="form-group">
@@ -2640,11 +2733,47 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
               {editUser?.id===currentUser?.id && <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>لا يمكن تعطيل حسابك الخاص</div>}
             </div>
           </div>
+
+          {/* Checklist الصلاحيات — فقط للموظفين */}
+          {form.role === 'employee' && (
+            <div style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'12px 14px',background:'#f8fafc'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 صلاحيات الموظف</span>
+                <div style={{display:'flex',gap:6}}>
+                  <button type="button"
+                    style={{fontSize:11,padding:'3px 10px',borderRadius:6,border:'1px solid var(--primary)',color:'var(--primary)',background:'white',cursor:'pointer',fontFamily:'inherit'}}
+                    onClick={()=>toggleAllPerms(true)}>تحديد الكل</button>
+                  <button type="button"
+                    style={{fontSize:11,padding:'3px 10px',borderRadius:6,border:'1px solid var(--gray-300)',color:'var(--gray-500)',background:'white',cursor:'pointer',fontFamily:'inherit'}}
+                    onClick={()=>toggleAllPerms(false)}>إلغاء الكل</button>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,maxHeight:280,overflowY:'auto'}}>
+                {PERM_GROUPS.map(group => (
+                  <div key={group.label} style={{background:'white',borderRadius:7,padding:'8px 10px',border:'1px solid var(--gray-200)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'var(--primary)',marginBottom:6,paddingBottom:4,borderBottom:'1px solid var(--gray-100)'}}>{group.label}</div>
+                    {group.perms.map(p => (
+                      <label key={p.key} style={{display:'flex',alignItems:'center',gap:7,marginBottom:4,cursor:'pointer',fontSize:12,color:'var(--gray-700)',userSelect:'none'}}>
+                        <input type="checkbox"
+                          checked={form.permissions[p.key] === true}
+                          onChange={e => setF('permissions', { ...form.permissions, [p.key]: e.target.checked })}
+                          style={{cursor:'pointer',width:14,height:14,accentColor:'var(--primary)'}}/>
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
-            {loading ? <><span className="spinner" style={{width:14,height:14,borderWidth:2,display:'inline-block',verticalAlign:'middle',marginLeft:6}}/> جاري...</> : isNew ? 'إنشاء المستخدم' : 'حفظ التعديلات'}
+            {loading
+              ? <><span className="spinner" style={{width:14,height:14,borderWidth:2,display:'inline-block',verticalAlign:'middle',marginLeft:6}}/> جاري...</>
+              : isNew ? 'إنشاء المستخدم' : 'حفظ التعديلات'}
           </button>
         </div>
       </div>
@@ -4753,12 +4882,12 @@ function App() {
           {page==='dashboard' && <Dashboard quotes={quotes} orders={orders} logs={logs} user={user}/>}
           {page==='quotes' && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
           {page==='invoices' && <InvoicesPage user={user} quotes={quotes} onReload={reload}/>}
-          {page==='orders' && <OrdersPage user={user} orders={orders} onReload={reload}/>}
-          {page==='customers' && <CustomersPage user={user}/>}
-          {page==='catalog' && <CatalogPage user={user}/>}
-          {page==='letters' && <LettersPage user={user}/>}
-          {page==='archive' && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
-          {page==='activity' && <ActivityPage logs={logs}/>}
+          {page==='orders' && hasPerm(user,'orders_access') && <OrdersPage user={user} orders={orders} onReload={reload}/>}
+          {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
+          {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
+          {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
+          {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
+          {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage logs={logs}/>}
           {page==='deleted-quotes' && (user.role==='admin'||user.role==='manager') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
         </div>
