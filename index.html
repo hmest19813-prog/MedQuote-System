@@ -1787,7 +1787,7 @@ function QuotesList({ user, quotes, onReload }) {
                         <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveQ(q)} title="أرشفة">🗄️</button>
-                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️ حذف</button>}
+                      {hasPerm(user,'quotes_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️ حذف</button>}
                     </div>
                   </td>
                   {isAdmin && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
@@ -2392,7 +2392,7 @@ function InvoicesPage({ user, quotes, onReload }) {
                         <button className="btn btn-ghost btn-sm" onClick={()=>setPayingInvoice(q)}>💰 دفعات</button>
                         <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>🧾 عرض</button>
                         <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️</button>
-                        {isAdmin && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>deleteInvoice(q)}>🗑️</button>}
+                        {hasPerm(user,'quotes_delete') && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>deleteInvoice(q)}>🗑️</button>}
                       </div>
                     </td>
                   </tr>
