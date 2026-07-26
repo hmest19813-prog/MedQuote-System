@@ -2847,7 +2847,7 @@ function UsersPage({ currentUser }) {
   const closeReset = () => { setResetTarget(null); setNewPassword(''); };
 
   const doResetPassword = async () => {
-    if (!newPassword || newPassword.length < 6) { toast('كلمة المرور يجب أن تكون 6 أحرف على الأقل','error'); return; }
+    if (!newPassword) { toast('أدخل كلمة المرور الجديدة','error'); return; }
     setResetLoading(true);
     const { error } = await sb.rpc('reset_user_password', { p_user_id: resetTarget.id, p_new_password: newPassword });
     setResetLoading(false);
