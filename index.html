@@ -2607,18 +2607,153 @@ function ArchivePage({ user, quotes, orders, onReload }) {
 }
 
 /* ===================== ACTIVITY PAGE ===================== */
-function ActivityPage({ logs }) {
+function ActivityPage() {
+  const PAGE = 50;
+  const [logs, setLogs]           = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]     = useState(true);
+  const [users, setUsers]         = useState([]);
+  const [filterUser, setFilterUser]   = useState('');
+  const [filterType, setFilterType]   = useState('');
+  const [filterFrom, setFilterFrom]   = useState('');
+  const [filterTo,   setFilterTo]     = useState('');
+  const [search,     setSearch]       = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const searchTimer = React.useRef(null);
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').order('full_name').then(({data}) => setUsers(data||[]));
+  }, []);
+
+  const buildQuery = (offset) => {
+    let q = sb.from('activity_logs').select('*').order('created_at',{ascending:false});
+    if (filterUser) q = q.eq('user_id', filterUser);
+    if (filterType) q = q.eq('target_type', filterType);
+    if (filterFrom) q = q.gte('created_at', filterFrom + 'T00:00:00');
+    if (filterTo)   q = q.lte('created_at', filterTo   + 'T23:59:59');
+    if (search)     q = q.ilike('action', `%${search}%`);
+    return q.range(offset, offset + PAGE - 1);
+  };
+
+  const load = async (reset=false) => {
+    const offset = reset ? 0 : logs.length;
+    reset ? setLoading(true) : setLoadingMore(true);
+    const {data} = await buildQuery(offset);
+    const rows = data||[];
+    setLogs(reset ? rows : prev=>[...prev,...rows]);
+    setHasMore(rows.length===PAGE);
+    reset ? setLoading(false) : setLoadingMore(false);
+  };
+
+  useEffect(() => { load(true); }, [filterUser, filterType, filterFrom, filterTo, search]);
+
+  const handleSearch = val => {
+    setSearchInput(val);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setSearch(val), 400);
+  };
+
+  const clearFilters = () => {
+    setFilterUser(''); setFilterType(''); setFilterFrom(''); setFilterTo('');
+    setSearch(''); setSearchInput('');
+  };
+  const hasFilters = filterUser||filterType||filterFrom||filterTo||search;
+
+  const TT = {
+    quote:    {label:'عرض سعر', icon:'📄'},
+    customer: {label:'عميل',    icon:'🏢'},
+    order:    {label:'طلبية',   icon:'📦'},
+    invoice:  {label:'فاتورة',  icon:'🧾'},
+    catalog:  {label:'كتالوج',  icon:'📋'},
+    user:     {label:'مستخدم',  icon:'👤'},
+    payment:  {label:'دفعة',    icon:'💰'},
+  };
+
+  const actionColor = a => {
+    if (!a) return '#64748b';
+    if (/أنش|أضاف|إنشاء|جديد|سجّل/.test(a))  return '#16a34a';
+    if (/حذف/.test(a))                          return '#dc2626';
+    if (/تغيير|عدّل|تعديل|تحديث/.test(a))      return '#2563eb';
+    if (/تحويل|محوّل|أصدر/.test(a))             return '#9333ea';
+    return '#64748b';
+  };
+
+  const TYPES = ['quote','customer','order','invoice','catalog','user','payment'];
+
+  const iStyle = {padding:'6px 10px',fontSize:12,border:'1px solid var(--gray-200)',borderRadius:6,background:'#fff',outline:'none'};
+
   return (
     <div>
-      <h2 style={{fontSize:20,fontWeight:800,marginBottom:16}}>سجل النشاط</h2>
-      <div className="card card-body">
-        {logs.length===0&&<div className="empty-state"><p>لا توجد نشاطات</p></div>}
-        {logs.map((l,i)=>(
-          <div key={i} className="activity-item">
-            <div className="activity-dot"/>
-            <div><div className="activity-text">{l.action}</div><div className="activity-time">{l.user_name} — {l.created_at?new Date(l.created_at).toLocaleString('ar'):''}</div></div>
-          </div>
-        ))}
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:18}}>
+        <h2 style={{fontSize:20,fontWeight:800,margin:0}}>سجل النشاط</h2>
+        {!loading && <span style={{fontSize:12,color:'var(--gray-400)',background:'var(--gray-100)',padding:'2px 8px',borderRadius:12}}>{logs.length}{hasMore?'+':''} سجل</span>}
+      </div>
+
+      {/* فلاتر */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'12px 14px',alignItems:'center'}}>
+          <input value={searchInput} onChange={e=>handleSearch(e.target.value)}
+            placeholder="🔍 بحث في النشاط..." style={{...iStyle,flex:'2 1 160px'}}/>
+          <select value={filterUser} onChange={e=>setFilterUser(e.target.value)} style={{...iStyle,flex:'1 1 130px'}}>
+            <option value="">كل المستخدمين</option>
+            {users.map(u=><option key={u.id} value={u.id}>{u.full_name}</option>)}
+          </select>
+          <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={{...iStyle,flex:'1 1 120px'}}>
+            <option value="">كل الأنواع</option>
+            {TYPES.map(k=><option key={k} value={k}>{TT[k]?.icon} {TT[k]?.label}</option>)}
+          </select>
+          <input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} style={{...iStyle,flex:'1 1 120px'}} title="من تاريخ"/>
+          <input type="date" value={filterTo}   onChange={e=>setFilterTo(e.target.value)}   style={{...iStyle,flex:'1 1 120px'}} title="إلى تاريخ"/>
+          {hasFilters && (
+            <button onClick={clearFilters} style={{...iStyle,color:'var(--danger)',cursor:'pointer',flexShrink:0}}>✕ مسح</button>
+          )}
+        </div>
+      </div>
+
+      {/* القائمة */}
+      <div className="card">
+        {loading ? (
+          <div style={{padding:48,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div>
+        ) : logs.length===0 ? (
+          <div className="empty-state"><p>لا توجد نشاطات تطابق الفلاتر</p></div>
+        ) : <>
+          {logs.map((l,i)=>{
+            const tt = TT[l.target_type];
+            const clr = actionColor(l.action);
+            return (
+              <div key={l.id||i} style={{display:'flex',gap:12,padding:'11px 16px',borderBottom:'1px solid var(--gray-100)',alignItems:'flex-start'}}>
+                <div style={{width:38,height:38,borderRadius:11,background:'#f1f5f9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:17,flexShrink:0,marginTop:1}}>
+                  {tt?.icon||'🔔'}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:clr,marginBottom:4,display:'flex',gap:7,alignItems:'center',flexWrap:'wrap'}}>
+                    {l.action}
+                    {l.target_number && (
+                      <span style={{fontSize:11,background:'#e8f0f7',color:'#1C6A99',padding:'1px 8px',borderRadius:12,fontWeight:700,flexShrink:0}}>
+                        {l.target_number}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--gray-400)',display:'flex',gap:12,flexWrap:'wrap'}}>
+                    <span>👤 {l.user_name||'—'}</span>
+                    {tt && <span>{tt.icon} {tt.label}</span>}
+                    <span>🗓 {l.created_at ? new Date(l.created_at).toLocaleString('ar-JO',{dateStyle:'short',timeStyle:'short'}) : '—'}</span>
+                    <span style={{opacity:.55}}>{ago(l.created_at)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {hasMore && (
+            <div style={{padding:12,textAlign:'center'}}>
+              <button onClick={()=>load(false)} disabled={loadingMore}
+                style={{...iStyle,cursor:'pointer',color:'var(--primary)',padding:'7px 24px'}}>
+                {loadingMore?'جاري التحميل...':'⬇ تحميل المزيد'}
+              </button>
+            </div>
+          )}
+        </>}
       </div>
     </div>
   );
@@ -5207,7 +5342,7 @@ function App() {
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
           {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
-          {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage logs={logs}/>}
+          {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
           {page==='deleted-quotes' && (user.role==='admin'||user.role==='manager') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
         </div>
