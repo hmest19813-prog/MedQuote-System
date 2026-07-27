@@ -3422,6 +3422,7 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
     allChildren.forEach(c => { c.style.cssText = 'display:none !important;'; });
 
     const printDiv = document.createElement('div');
+    printDiv.id = 'temp-print-div';
     printDiv.style.cssText = 'position:static;width:100%;padding:15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
     printDiv.innerHTML = `
       <style>
