@@ -3666,10 +3666,19 @@ function DeliverySelect({ value, onChange }) {
 }
 
 const STD_ORIGINS = ['CHINA','INDIA','JORDAN','HAYAT™','EUROPE','USA'];
+function getCustomOrigins() {
+  try { return JSON.parse(localStorage.getItem('customOrigins') || '[]'); } catch { return []; }
+}
+function saveCustomOrigin(val) {
+  if (!val || STD_ORIGINS.includes(val)) return;
+  const list = getCustomOrigins();
+  if (!list.includes(val)) { list.unshift(val); localStorage.setItem('customOrigins', JSON.stringify(list.slice(0, 30))); }
+}
 function OriginSelect({ value, onChange, style }) {
   const isStd = !value || STD_ORIGINS.includes(value);
   const [isOther, setIsOther] = React.useState(!isStd);
   const [customVal, setCustomVal] = React.useState(isStd ? '' : (value||''));
+  const [customOrigins, setCustomOrigins] = React.useState(getCustomOrigins);
   const selStyle = { width:'100%', padding:'5px 4px', fontSize:11, border:'1px solid var(--gray-200)', borderRadius:5, fontFamily:'inherit', ...style };
   return (
     <div>
@@ -3682,10 +3691,16 @@ function OriginSelect({ value, onChange, style }) {
         <option value="__other__">أخرى...</option>
       </select>
       {isOther && (
-        <input value={customVal} autoFocus
-          onChange={e => { setCustomVal(e.target.value.toUpperCase()); onChange(e.target.value.toUpperCase()); }}
-          placeholder="اكتب المنشأ"
-          style={{marginTop:4,width:'100%',fontSize:11,padding:'3px 6px',border:'1px solid var(--primary)',borderRadius:4,outline:'none',boxSizing:'border-box'}}/>
+        <>
+          <input value={customVal} autoFocus list="origin-custom-opts"
+            onChange={e => { setCustomVal(e.target.value.toUpperCase()); onChange(e.target.value.toUpperCase()); }}
+            onBlur={e => { const v = e.target.value.toUpperCase(); if (v) { saveCustomOrigin(v); setCustomOrigins(getCustomOrigins()); } }}
+            placeholder="اكتب المنشأ"
+            style={{marginTop:4,width:'100%',fontSize:11,padding:'3px 6px',border:'1px solid var(--primary)',borderRadius:4,outline:'none',boxSizing:'border-box'}}/>
+          <datalist id="origin-custom-opts">
+            {customOrigins.map(o => <option key={o} value={o}/>)}
+          </datalist>
+        </>
       )}
     </div>
   );
