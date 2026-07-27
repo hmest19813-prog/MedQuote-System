@@ -3375,11 +3375,75 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
   const [quotes, setQuotes] = useState([]);
   const [loadingQ, setLoadingQ] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewItems, setPreviewItems] = useState([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
   useEffect(() => {
     sb.from('quotations').select('*').eq('customer_id', customer.id).order('created_at',{ascending:false})
       .then(({data})=>{ setQuotes(data||[]); setLoadingQ(false); });
   }, [customer.id]);
+
   const assignedName = customer.rep_name || profiles.find(p=>p.id===customer.assigned_to)?.full_name || '—';
+
+  const filteredQuotes = statusFilter === 'all' ? quotes : quotes.filter(q => q.status === statusFilter);
+
+  const statusesPresent = [...new Set(quotes.map(q=>q.status))];
+
+  const handleView = q => {
+    setLoadingPreview(true);
+    sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order')
+      .then(({data}) => { setPreviewDoc(q); setPreviewItems(data||[]); setLoadingPreview(false); });
+  };
+
+  const printCustomerReport = () => {
+    const filterLabel = statusFilter === 'all' ? 'جميع الحالات' : (SL[statusFilter] || statusFilter);
+    const rows = filteredQuotes.map(q => `
+      <tr>
+        <td style="font-weight:700;color:#1C6A99">${q.number||'—'}</td>
+        <td>${q.date||'—'}</td>
+        <td style="font-weight:700">${parseFloat(q.nett_price||0).toFixed(3)} ${q.currency||''}</td>
+        <td>${SL[q.status]||q.status||'—'}</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"/>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;padding:20px;direction:rtl}
+        h2{color:#1C6A99;margin-bottom:4px;font-size:18px}
+        .sub{color:#666;font-size:12px;margin-bottom:16px}
+        .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 20px;margin-bottom:20px;padding:12px;background:#f4f8fb;border-radius:8px;border:1px solid #dde8f0}
+        .info-item label{display:block;font-size:10px;color:#7a8fa6;font-weight:700;margin-bottom:2px}
+        .info-item span{font-size:12px;font-weight:600}
+        table{width:100%;border-collapse:collapse;margin-top:8px}
+        th{background:#1C6A99;color:white;padding:7px 10px;font-size:12px;text-align:right}
+        td{padding:6px 10px;border-bottom:1px solid #e8edf2;font-size:12px}
+        tr:nth-child(even) td{background:#f9fbfc}
+        .footer{margin-top:20px;font-size:10px;color:#aaa;text-align:center}
+        @media print{body{padding:10px}}
+      </style></head><body>
+      <h2>${customer.name}</h2>
+      <div class="sub">تقرير عروض الأسعار — ${filterLabel} (${filteredQuotes.length} عرض)</div>
+      <div class="info-grid">
+        ${customer.phone||customer.mobile ? `<div class="info-item"><label>هاتف</label><span>${customer.phone||customer.mobile}</span></div>` : ''}
+        ${customer.email ? `<div class="info-item"><label>البريد الإلكتروني</label><span>${customer.email}</span></div>` : ''}
+        ${customer.city ? `<div class="info-item"><label>المدينة</label><span>${customer.city}</span></div>` : ''}
+        ${customer.category ? `<div class="info-item"><label>الفئة</label><span>${customer.category}</span></div>` : ''}
+        ${customer.contact1_name ? `<div class="info-item"><label>الشخص المسؤول</label><span>${customer.contact1_name}</span></div>` : ''}
+        <div class="info-item"><label>المندوب</label><span>${assignedName}</span></div>
+      </div>
+      <table>
+        <thead><tr><th>رقم العرض</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">لا توجد عروض</td></tr>'}</tbody>
+      </table>
+      <div class="footer">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</div>
+      <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
+    </body></html>`;
+
+    const w = window.open('','_blank','width=900,height=700');
+    w.document.write(html);
+    w.document.close();
+  };
 
   const Field = ({label, val}) => (
     <div className="erp-field">
@@ -3393,12 +3457,14 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       {editing && <CustomerForm customer={customer} profiles={profiles} user={user}
         onSave={()=>{ setEditing(false); onBack(); }} onClose={()=>setEditing(false)}/>}
 
+      {previewDoc && <DocPreview doc={previewDoc} items={previewItems} docType="quote" onClose={()=>setPreviewDoc(null)}/>}
+
       {/* ERP Toolbar */}
       <div className="erp-toolbar">
         <button className="btn btn-ghost btn-sm" onClick={onBack}>← رجوع للقائمة</button>
         <div style={{flex:1}}/>
         <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>
-        <button className="btn btn-ghost btn-sm" onClick={()=>window.print()}>🖨️ طباعة</button>
+        <button className="btn btn-ghost btn-sm" onClick={printCustomerReport}>🖨️ طباعة</button>
       </div>
 
       {/* Customer Header Card */}
@@ -3428,7 +3494,6 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
       {/* Three ERP Panels */}
       <div className="erp-cards">
-        {/* Company Info */}
         <div className="erp-card main-card">
           <div className="erp-section-header">🏢 بيانات الشركة</div>
           <Field label="موبايل" val={customer.phone||customer.mobile}/>
@@ -3440,7 +3505,6 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
           <Field label="العنوان" val={customer.address}/>
           {customer.notes && <Field label="ملاحظات" val={customer.notes}/>}
         </div>
-        {/* Contact 1 */}
         <div className="erp-card contact-card">
           <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الأول</div>
           <Field label="الاسم" val={customer.contact1_name}/>
@@ -3451,7 +3515,6 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
           <Field label="التحويلة EXT" val={customer.contact1_ext}/>
           {customer.contact1_notes && <Field label="ملاحظات" val={customer.contact1_notes}/>}
         </div>
-        {/* Contact 2 */}
         <div className="erp-card contact-card">
           <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الثاني</div>
           <Field label="الاسم" val={customer.contact2_name}/>
@@ -3466,21 +3529,43 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
       {/* Linked Quotations */}
       <div className="card">
-        <div className="card-header"><span className="card-title">عروض الأسعار الصادرة ({quotes.length})</span></div>
+        <div className="card-header" style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <span className="card-title">
+            عروض الأسعار الصادرة
+            ({filteredQuotes.length}{statusFilter!=='all' ? ` من ${quotes.length}` : ''})
+          </span>
+          <div style={{flex:1}}/>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+            style={{fontSize:12,padding:'4px 8px',border:'1px solid var(--gray-200)',borderRadius:6,background:'#fff',color:'var(--gray-700)',cursor:'pointer'}}>
+            <option value="all">كل الحالات</option>
+            {statusesPresent.map(s=>(
+              <option key={s} value={s}>{SL[s]||s}</option>
+            ))}
+          </select>
+        </div>
         <div className="table-wrap">
           {loadingQ ? <div style={{padding:24,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div> : (
             <table>
-              <thead><tr><th>الرقم</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th></tr></thead>
+              <thead><tr><th>الرقم</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th><th style={{width:48}}></th></tr></thead>
               <tbody>
-                {quotes.map(q=>(
+                {filteredQuotes.map(q=>(
                   <tr key={q.id}>
                     <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
                     <td className="text-sm text-muted">{q.date}</td>
                     <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)} {q.currency}</td>
                     <td><SBadge status={q.status}/></td>
+                    <td>
+                      <button title="عرض" disabled={loadingPreview}
+                        onClick={()=>handleView(q)}
+                        style={{background:'none',border:'1px solid var(--gray-200)',borderRadius:6,padding:'3px 7px',cursor:'pointer',fontSize:14,color:'var(--primary)',lineHeight:1}}>
+                        {loadingPreview && previewDoc?.id===q.id ? '…' : '👁'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
-                {quotes.length===0 && <tr><td colSpan="4"><div className="empty-state"><p>لا توجد عروض أسعار لهذا العميل بعد</p></div></td></tr>}
+                {filteredQuotes.length===0 && (
+                  <tr><td colSpan="5"><div className="empty-state"><p>{statusFilter==='all' ? 'لا توجد عروض أسعار لهذا العميل بعد' : `لا توجد عروض بحالة "${SL[statusFilter]||statusFilter}"`}</p></div></td></tr>
+                )}
               </tbody>
             </table>
           )}
