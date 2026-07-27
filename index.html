@@ -3399,6 +3399,9 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
   const printCustomerReport = () => {
     const filterLabel = statusFilter === 'all' ? 'جميع الحالات' : (SL[statusFilter] || statusFilter);
+
+    const f = (label, val) => val ? `<div class="ii"><span class="il">${label}</span><span>${val}</span></div>` : '';
+
     const rows = filteredQuotes.map(q =>
       `<tr>
         <td style="font-weight:700;color:#1C6A99">${q.number||'—'}</td>
@@ -3407,15 +3410,6 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
         <td>${SL[q.status]||q.status||'—'}</td>
       </tr>`).join('');
 
-    const infoItems = [
-      customer.phone||customer.mobile ? `<div class="ii"><span class="il">هاتف</span><span>${customer.phone||customer.mobile}</span></div>` : '',
-      customer.email   ? `<div class="ii"><span class="il">البريد الإلكتروني</span><span>${customer.email}</span></div>` : '',
-      customer.city    ? `<div class="ii"><span class="il">المدينة</span><span>${customer.city}</span></div>` : '',
-      customer.category? `<div class="ii"><span class="il">الفئة</span><span>${customer.category}</span></div>` : '',
-      customer.contact1_name ? `<div class="ii"><span class="il">الشخص المسؤول</span><span>${customer.contact1_name}</span></div>` : '',
-      `<div class="ii"><span class="il">المندوب</span><span>${assignedName}</span></div>`,
-    ].filter(Boolean).join('');
-
     const body = document.body;
     const allChildren = Array.from(body.children);
     const originalStyles = allChildren.map(c => c.style.cssText);
@@ -3423,21 +3417,73 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
     const printDiv = document.createElement('div');
     printDiv.id = 'temp-print-div';
-    printDiv.style.cssText = 'position:static;width:100%;padding:15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
+    printDiv.style.cssText = 'position:static;width:100%;padding:12mm 15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
     printDiv.innerHTML = `
       <style>
-        h2{color:#1C6A99;margin:0 0 4px;font-size:18px} .sub{color:#666;font-size:12px;margin-bottom:14px}
-        .ig{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 16px;margin-bottom:18px;padding:10px 14px;background:#f4f8fb;border:1px solid #dde8f0;border-radius:8px}
-        .ii{font-size:12px} .il{display:block;font-size:10px;color:#7a8fa6;font-weight:700;margin-bottom:1px}
-        table{width:100%;border-collapse:collapse}
+        h2{color:#1C6A99;margin:0 0 2px;font-size:20px;font-weight:900}
+        .sub{color:#888;font-size:11px;margin-bottom:14px}
+        .sec-title{font-size:12px;font-weight:800;color:#1C6A99;border-bottom:2px solid #1C6A99;padding-bottom:3px;margin:14px 0 8px}
+        .ig{display:grid;grid-template-columns:repeat(3,1fr);gap:7px 20px;margin-bottom:4px}
+        .ii{font-size:12px;padding:4px 0}
+        .il{display:block;font-size:10px;color:#7a8fa6;font-weight:700;margin-bottom:1px}
+        .badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+        .badge{background:#e8f0f7;color:#1C6A99;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px}
+        table{width:100%;border-collapse:collapse;margin-top:4px}
         th{background:#1C6A99;color:#fff;padding:7px 10px;font-size:12px;text-align:right}
         td{padding:6px 10px;border-bottom:1px solid #e8edf2;font-size:12px}
         tr:nth-child(even) td{background:#f9fbfc}
-        .ft{margin-top:18px;font-size:10px;color:#aaa;text-align:center}
+        .ft{margin-top:16px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:8px}
+        .divider{border:none;border-top:1px solid #e2edf5;margin:12px 0}
       </style>
+
       <h2>${customer.name}</h2>
-      <div class="sub">تقرير عروض الأسعار — ${filterLabel} &nbsp;(${filteredQuotes.length} عرض)</div>
-      <div class="ig">${infoItems}</div>
+      <div class="badges">
+        ${customer.customer_code ? `<span class="badge">#${customer.customer_code}</span>` : ''}
+        ${customer.category      ? `<span class="badge">${customer.category}</span>` : ''}
+        ${(customer.tags||'').split(',').filter(Boolean).map(t=>`<span class="badge">${t.trim()}</span>`).join('')}
+        <span class="badge">مندوب: ${assignedName}</span>
+      </div>
+
+      <div class="sec-title">🏢 بيانات الشركة</div>
+      <div class="ig">
+        ${f('موبايل',       customer.phone||customer.mobile)}
+        ${f('هاتف بديل',   customer.alt_phone)}
+        ${f('فاكس',         customer.fax)}
+        ${f('البريد الإلكتروني', customer.email)}
+        ${f('الموقع الإلكتروني', customer.website)}
+        ${f('المدينة / المنطقة', customer.city)}
+        ${f('العنوان',      customer.address)}
+        ${f('ملاحظات',      customer.notes)}
+      </div>
+
+      ${customer.contact1_name ? `
+      <hr class="divider"/>
+      <div class="sec-title">👤 الشخص المسؤول الأول</div>
+      <div class="ig">
+        ${f('الاسم',               customer.contact1_name)}
+        ${f('المسمى الوظيفي',     customer.contact1_title)}
+        ${f('الهاتف',              customer.contact1_phone)}
+        ${f('الموبايل',           customer.contact1_mobile)}
+        ${f('البريد الإلكتروني',  customer.contact1_email)}
+        ${f('التحويلة EXT',       customer.contact1_ext)}
+        ${f('ملاحظات',             customer.contact1_notes)}
+      </div>` : ''}
+
+      ${customer.contact2_name ? `
+      <hr class="divider"/>
+      <div class="sec-title">👤 الشخص المسؤول الثاني</div>
+      <div class="ig">
+        ${f('الاسم',               customer.contact2_name)}
+        ${f('المسمى الوظيفي',     customer.contact2_title)}
+        ${f('الهاتف',              customer.contact2_phone)}
+        ${f('الموبايل',           customer.contact2_mobile)}
+        ${f('البريد الإلكتروني',  customer.contact2_email)}
+        ${f('التحويلة EXT',       customer.contact2_ext)}
+        ${f('ملاحظات',             customer.contact2_notes)}
+      </div>` : ''}
+
+      <hr class="divider"/>
+      <div class="sec-title">📋 عروض الأسعار — ${filterLabel} (${filteredQuotes.length} عرض)</div>
       <table>
         <thead><tr><th>رقم العرض</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th></tr></thead>
         <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">لا توجد عروض</td></tr>'}</tbody>
