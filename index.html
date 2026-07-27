@@ -3399,50 +3399,54 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
   const printCustomerReport = () => {
     const filterLabel = statusFilter === 'all' ? 'جميع الحالات' : (SL[statusFilter] || statusFilter);
-    const rows = filteredQuotes.map(q => `
-      <tr>
+    const rows = filteredQuotes.map(q =>
+      `<tr>
         <td style="font-weight:700;color:#1C6A99">${q.number||'—'}</td>
         <td>${q.date||'—'}</td>
         <td style="font-weight:700">${parseFloat(q.nett_price||0).toFixed(3)} ${q.currency||''}</td>
         <td>${SL[q.status]||q.status||'—'}</td>
       </tr>`).join('');
 
-    const html = `<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"/>
+    const infoItems = [
+      customer.phone||customer.mobile ? `<div class="ii"><span class="il">هاتف</span><span>${customer.phone||customer.mobile}</span></div>` : '',
+      customer.email   ? `<div class="ii"><span class="il">البريد الإلكتروني</span><span>${customer.email}</span></div>` : '',
+      customer.city    ? `<div class="ii"><span class="il">المدينة</span><span>${customer.city}</span></div>` : '',
+      customer.category? `<div class="ii"><span class="il">الفئة</span><span>${customer.category}</span></div>` : '',
+      customer.contact1_name ? `<div class="ii"><span class="il">الشخص المسؤول</span><span>${customer.contact1_name}</span></div>` : '',
+      `<div class="ii"><span class="il">المندوب</span><span>${assignedName}</span></div>`,
+    ].filter(Boolean).join('');
+
+    const body = document.body;
+    const allChildren = Array.from(body.children);
+    const originalStyles = allChildren.map(c => c.style.cssText);
+    allChildren.forEach(c => { c.style.cssText = 'display:none !important;'; });
+
+    const printDiv = document.createElement('div');
+    printDiv.style.cssText = 'position:static;width:100%;padding:15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
+    printDiv.innerHTML = `
       <style>
-        body{font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;padding:20px;direction:rtl}
-        h2{color:#1C6A99;margin-bottom:4px;font-size:18px}
-        .sub{color:#666;font-size:12px;margin-bottom:16px}
-        .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px 20px;margin-bottom:20px;padding:12px;background:#f4f8fb;border-radius:8px;border:1px solid #dde8f0}
-        .info-item label{display:block;font-size:10px;color:#7a8fa6;font-weight:700;margin-bottom:2px}
-        .info-item span{font-size:12px;font-weight:600}
-        table{width:100%;border-collapse:collapse;margin-top:8px}
-        th{background:#1C6A99;color:white;padding:7px 10px;font-size:12px;text-align:right}
+        h2{color:#1C6A99;margin:0 0 4px;font-size:18px} .sub{color:#666;font-size:12px;margin-bottom:14px}
+        .ig{display:grid;grid-template-columns:repeat(3,1fr);gap:6px 16px;margin-bottom:18px;padding:10px 14px;background:#f4f8fb;border:1px solid #dde8f0;border-radius:8px}
+        .ii{font-size:12px} .il{display:block;font-size:10px;color:#7a8fa6;font-weight:700;margin-bottom:1px}
+        table{width:100%;border-collapse:collapse}
+        th{background:#1C6A99;color:#fff;padding:7px 10px;font-size:12px;text-align:right}
         td{padding:6px 10px;border-bottom:1px solid #e8edf2;font-size:12px}
         tr:nth-child(even) td{background:#f9fbfc}
-        .footer{margin-top:20px;font-size:10px;color:#aaa;text-align:center}
-        @media print{body{padding:10px}}
-      </style></head><body>
+        .ft{margin-top:18px;font-size:10px;color:#aaa;text-align:center}
+      </style>
       <h2>${customer.name}</h2>
-      <div class="sub">تقرير عروض الأسعار — ${filterLabel} (${filteredQuotes.length} عرض)</div>
-      <div class="info-grid">
-        ${customer.phone||customer.mobile ? `<div class="info-item"><label>هاتف</label><span>${customer.phone||customer.mobile}</span></div>` : ''}
-        ${customer.email ? `<div class="info-item"><label>البريد الإلكتروني</label><span>${customer.email}</span></div>` : ''}
-        ${customer.city ? `<div class="info-item"><label>المدينة</label><span>${customer.city}</span></div>` : ''}
-        ${customer.category ? `<div class="info-item"><label>الفئة</label><span>${customer.category}</span></div>` : ''}
-        ${customer.contact1_name ? `<div class="info-item"><label>الشخص المسؤول</label><span>${customer.contact1_name}</span></div>` : ''}
-        <div class="info-item"><label>المندوب</label><span>${assignedName}</span></div>
-      </div>
+      <div class="sub">تقرير عروض الأسعار — ${filterLabel} &nbsp;(${filteredQuotes.length} عرض)</div>
+      <div class="ig">${infoItems}</div>
       <table>
         <thead><tr><th>رقم العرض</th><th>التاريخ</th><th>القيمة</th><th>الحالة</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">لا توجد عروض</td></tr>'}</tbody>
+        <tbody>${rows||'<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">لا توجد عروض</td></tr>'}</tbody>
       </table>
-      <div class="footer">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</div>
-      <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
-    </body></html>`;
+      <div class="ft">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</div>`;
 
-    const w = window.open('','_blank','width=900,height=700');
-    w.document.write(html);
-    w.document.close();
+    body.appendChild(printDiv);
+    window.print();
+    body.removeChild(printDiv);
+    allChildren.forEach((c,i) => { c.style.cssText = originalStyles[i]; });
   };
 
   const Field = ({label, val}) => (
