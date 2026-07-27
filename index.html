@@ -806,28 +806,45 @@ function Donut({ items }) {
 function Dashboard({ quotes, orders, logs, user }) {
   const active = quotes.filter(q => !q.archived);
   const totalVal = active.reduce((s,q) => s+parseFloat(q.nett_price||0), 0);
-  const pending = active.filter(q => q.status==='sent').length;
-  const approved = active.filter(q => q.status==='approved').length;
   const ordersActive = orders.filter(o => !o.archived);
+  const [repProfiles, setRepProfiles] = useState([]);
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').then(({data}) => setRepProfiles(data||[]));
+  }, []);
 
   const months = [];
   for (let i=4; i>=0; i--) {
     const d = new Date(); d.setMonth(d.getMonth()-i);
     const m = d.getMonth(), y = d.getFullYear();
     const label = d.toLocaleString('ar', {month:'short'});
-    const v = active.filter(q => {
-      const qd = new Date(q.created_at||q.date);
-      return qd.getMonth()===m && qd.getFullYear()===y;
-    }).length;
+    const v = active.filter(q => { const qd=new Date(q.created_at||q.date); return qd.getMonth()===m&&qd.getFullYear()===y; }).length;
     months.push({ l: label, v });
   }
 
-  const donutItems = [
-    { l:'مسودة', v: active.filter(q=>q.status==='draft').length },
-    { l:'قيد الدراسة', v: active.filter(q=>q.status==='sent').length },
-    { l:'مُعتمد', v: active.filter(q=>q.status==='approved').length },
-    { l:'مرفوض', v: active.filter(q=>q.status==='rejected').length },
-  ].filter(i=>i.v>0);
+  const donutItems = Object.entries(SL).map(([k,l])=>({ l, v: active.filter(q=>q.status===k).length })).filter(i=>i.v>0);
+
+  const statusCards = [
+    { key:'total',            label:'الإجمالي',         color:'var(--primary)',  val: active.length },
+    { key:'orders',           label:'الطلبات',           color:'var(--info)',     val: ordersActive.length },
+    { key:'draft',            label:'مسودة',             color:'#94a3b8',        val: active.filter(q=>q.status==='draft').length },
+    { key:'sent',             label:'قيد الدراسة',       color:'var(--warning)', val: active.filter(q=>q.status==='sent').length },
+    { key:'approved',         label:'مُعتمد',            color:'var(--success)', val: active.filter(q=>q.status==='approved').length },
+    { key:'partial_referral', label:'إحالة جزئية',       color:'#0ea5e9',        val: active.filter(q=>q.status==='partial_referral').length },
+    { key:'rejected',         label:'مرفوض',             color:'var(--danger)',  val: active.filter(q=>q.status==='rejected').length },
+    { key:'converted',        label:'محوّل لطلب',        color:'#8b5cf6',        val: active.filter(q=>q.status==='converted').length },
+    { key:'invoiced',         label:'صدرت فاتورة',       color:'#10b981',        val: active.filter(q=>q.status==='invoiced').length },
+    { key:'cancelled',        label:'ملغي',              color:'#f43f5e',        val: active.filter(q=>q.status==='cancelled').length },
+    { key:'expired',          label:'منتهي',             color:'#d97706',        val: active.filter(q=>q.status==='expired').length },
+    { key:'value',            label:'القيمة الكلية',     color:'var(--primary)', val: totalVal.toFixed(0), sub:'JOD' },
+  ];
+
+  const sentPerRep = repProfiles.map(p => ({
+    name: p.full_name,
+    count: active.filter(q => q.status==='sent' && q.created_by===p.id).length,
+  })).filter(r => r.count > 0).sort((a,b) => b.count - a.count);
+
+  const SC = { padding:'10px 12px', borderRadius:'var(--radius)', background:'white', boxShadow:'var(--shadow)', border:'1px solid var(--gray-100)', borderRight:'3px solid' };
 
   return (
     <div>
@@ -835,32 +852,45 @@ function Dashboard({ quotes, orders, logs, user }) {
         <h2 style={{fontSize:20,fontWeight:800,color:'var(--gray-900)'}}>لوحة التحكم</h2>
         <p style={{color:'var(--gray-400)',fontSize:13}}>مرحباً {user?.full_name||''} — ملخص النشاط</p>
       </div>
-      <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">إجمالي العروض</div><div className="stat-value">{active.length}</div></div>
-        <div className="stat-card orange"><div className="stat-label">معلقة</div><div className="stat-value">{pending}</div></div>
-        <div className="stat-card green"><div className="stat-label">مُعتمدة</div><div className="stat-value">{approved}</div></div>
-        <div className="stat-card teal"><div className="stat-label">الطلبات</div><div className="stat-value">{ordersActive.length}</div></div>
-        <div className="stat-card red"><div className="stat-label">القيمة الكلية</div><div className="stat-value" style={{fontSize:18}}>{(totalVal).toFixed(0)}</div><div className="stat-sub">JOD</div></div>
+
+      {/* بطاقات الإحصاء — كل الحالات */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:10,marginBottom:20}}>
+        {statusCards.map(c => (
+          <div key={c.key} style={{...SC, borderRightColor: c.color}}>
+            <div style={{fontSize:10,color:'var(--gray-500)',fontWeight:700,marginBottom:4,textTransform:'uppercase',letterSpacing:'.03em'}}>{c.label}</div>
+            <div style={{fontSize:20,fontWeight:800,color:'var(--gray-900)'}}>{c.val}</div>
+            {c.sub && <div style={{fontSize:10,color:'var(--gray-400)',marginTop:2}}>{c.sub}</div>}
+          </div>
+        ))}
       </div>
+
       <div className="grid-2 mb-4">
         <div className="card"><div className="card-header"><span className="card-title">النشاط الشهري</span></div><div className="card-body"><MiniChart data={months}/></div></div>
         <div className="card"><div className="card-header"><span className="card-title">توزيع الحالات</span></div><div className="card-body">{donutItems.length>0?<Donut items={donutItems}/>:<p className="text-muted text-sm">لا توجد بيانات</p>}</div></div>
       </div>
+
       <div className="grid-2">
+        {/* عروض قيد الدراسة لكل مستخدم */}
         <div className="card">
-          <div className="card-header"><span className="card-title">آخر 5 عروض</span></div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>الرقم</th><th>العميل</th><th>المبلغ</th><th>الحالة</th></tr></thead>
-              <tbody>
-                {active.slice(0,5).map(q=>(
-                  <tr key={q.id}><td className="font-bold">{q.number}</td><td>{q.customer_name}</td><td>{parseFloat(q.nett_price||0).toFixed(3)}</td><td><SBadge status={q.status}/></td></tr>
-                ))}
-                {active.length===0&&<tr><td colSpan="4" style={{textAlign:'center',color:'var(--gray-400)',padding:20}}>لا توجد عروض بعد</td></tr>}
-              </tbody>
-            </table>
+          <div className="card-header"><span className="card-title">قيد الدراسة — لكل مستخدم</span></div>
+          <div className="card-body" style={{padding:'8px 0'}}>
+            {sentPerRep.length === 0 ? (
+              <p className="text-muted text-sm" style={{padding:'8px 16px'}}>لا توجد عروض قيد الدراسة حالياً</p>
+            ) : sentPerRep.map((r,i) => (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 16px',borderBottom:'1px solid var(--gray-100)'}}>
+                <div style={{width:32,height:32,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:'white',fontWeight:800,flexShrink:0}}>
+                  {r.name.charAt(0)}
+                </div>
+                <div style={{flex:1,fontWeight:600,fontSize:13}}>{r.name}</div>
+                <div style={{background:'var(--warning-light)',color:'var(--warning)',fontWeight:800,fontSize:13,padding:'2px 10px',borderRadius:20}}>
+                  {r.count}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+
+        {/* آخر النشاطات */}
         <div className="card">
           <div className="card-header"><span className="card-title">آخر النشاطات</span></div>
           <div className="card-body">
