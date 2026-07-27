@@ -883,19 +883,13 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
-  const [stampPos, setStampPos] = useState({ bottom: 120, right: 0 });
-  const [isDragging, setIsDragging] = useState(false);
+  const [stampMm, setStampMm] = useState({ bottom: 20, right: 15 });
 
-  const handleStampDrag = e => {
-    e.preventDefault();
-    setIsDragging(true);
-    const startX = e.clientX, startY = e.clientY;
-    const startBottom = stampPos.bottom, startRight = stampPos.right;
-    const onMove = ev => setStampPos({ bottom: startBottom - (ev.clientY - startY), right: startRight - (ev.clientX - startX) });
-    const onUp = () => { setIsDragging(false); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  };
+  const STAMP_PRESETS = [
+    {r:155,b:230},{r:80,b:230},{r:15,b:230},
+    {r:155,b:130},{r:80,b:130},{r:15,b:130},
+    {r:155,b:20}, {r:80,b:20}, {r:15,b:20},
+  ];
 
   const sendViaOutlook = () => {
     // بعد ما يُغلق مربع الطباعة نفتح Outlook
@@ -936,7 +930,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
     window.addEventListener('afterprint', handleAfterPrint);
     const pdfTitle = `${doc.customer_name || 'عميل'} - ${doc.number || ''}`.trim().replace(/\s+/g,' ');
-    printDoc('print-content', pdfTitle, stampPos);
+    printDoc('print-content', pdfTitle, stampMm);
   };
 
   return (
@@ -948,11 +942,43 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <button className={`sig-toggle-btn${showSig?' active':''}`} onClick={()=>setShowSig(s=>!s)} title="إضافة ختم وتوقيع للمستند">
               {showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t,stampPos); }}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t,stampMm); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
+        {showSig && (
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac',flexWrap:'wrap'}}>
+            <span style={{fontSize:12,fontWeight:700,color:'#15803d'}}>موضع الختم:</span>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,26px)',gap:3}}>
+              {STAMP_PRESETS.map((p,i)=>{
+                const sel = stampMm.bottom===p.b && stampMm.right===p.r;
+                return <button key={i} title={`أسفل ${p.b}mm • يمين ${p.r}mm`}
+                  onClick={()=>setStampMm({bottom:p.b,right:p.r})}
+                  style={{width:26,height:26,borderRadius:4,border:sel?'2px solid #15803d':'1px solid #ccc',background:sel?'#15803d':'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10}}>
+                  {['↖','↑','↗','←','·','→','↙','↓','↘'][i]}
+                </button>;
+              })}
+            </div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>
+                أسفل:
+                <input type="number" min={0} max={260} value={stampMm.bottom}
+                  onChange={e=>setStampMm(p=>({...p,bottom:+e.target.value}))}
+                  style={{width:48,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/>
+                mm
+              </label>
+              <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>
+                يمين:
+                <input type="number" min={0} max={180} value={stampMm.right}
+                  onChange={e=>setStampMm(p=>({...p,right:+e.target.value}))}
+                  style={{width:48,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/>
+                mm
+              </label>
+            </div>
+            <span style={{fontSize:11,color:'#16a34a'}}>✓ يظهر على كل صفحة</span>
+          </div>
+        )}
         <div className="modal-body print-container" id="print-content">
           <div className="print-page-wrap">
           <div className="print-page-content">
@@ -1074,16 +1100,10 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           </div>{/* /print-footer-wrap */}
 
-          {/* الختم القابل للسحب — مُطلق داخل print-page-wrap */}
+          {/* الختم — مُطلق داخل print-page-wrap، موقعه تقريبي في المعاينة ودقيق في الطباعة */}
           {showSig && (
-            <div style={{position:'absolute', bottom:stampPos.bottom, right:stampPos.right, zIndex:20, userSelect:'none'}}
-              onMouseDown={handleStampDrag}>
-              <div className="no-print" style={{fontSize:10, color:'var(--primary)', textAlign:'center', background:'rgba(255,255,255,0.88)', border:'1px dashed var(--primary)', borderRadius:4, padding:'1px 8px', marginBottom:2, cursor: isDragging?'grabbing':'grab'}}>
-                ✋ اسحب الختم
-              </div>
-              <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-draggable"
-                style={{display:'block', cursor: isDragging?'grabbing':'grab', pointerEvents:'auto'}}/>
-            </div>
+            <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-draggable"
+              style={{position:'absolute', bottom: stampMm.bottom*3.78, right: stampMm.right*3.78, zIndex:20, pointerEvents:'none'}}/>
           )}
           </div>{/* /print-page-wrap */}
         </div>
@@ -3048,19 +3068,24 @@ const printDoc = (containerId, title, stampPos) => {
           break-inside: avoid;
         }
         #temp-print-div .print-footer-bar { margin-top: 16px; }
-        /* الختم الثابت على جميع الصفحات — موقعه من stampPos */
-        #temp-print-div .stamp-draggable {
-          position: fixed !important;
-          bottom: ${((stampPos?.bottom||120)*25.4/96).toFixed(1)}mm;
-          right: ${((stampPos?.right||0)*25.4/96).toFixed(1)}mm;
-          width: 300px;
-          z-index: 100;
-          pointer-events: none;
-          opacity: 0.90;
-        }
       }
     `;
     document.head.appendChild(multiPageStyle);
+  }
+
+  // CSS الختم — مُطبَّق دائماً بقيم mm دقيقة، position:fixed لظهوره على كل صفحة
+  let stampStyle = null;
+  if (stampPos) {
+    stampStyle = document.createElement('style');
+    stampStyle.textContent = `@media print {
+      #temp-print-div .stamp-draggable {
+        position: fixed !important;
+        bottom: ${stampPos.bottom}mm;
+        right: ${stampPos.right}mm;
+        width: 300px; z-index: 100; pointer-events: none; opacity: 0.90;
+      }
+    }`;
+    document.head.appendChild(stampStyle);
   }
 
   // اسم ملف الـ PDF
@@ -3071,6 +3096,7 @@ const printDoc = (containerId, title, stampPos) => {
 
   document.title = originalTitle;
   if (multiPageStyle) document.head.removeChild(multiPageStyle);
+  if (stampStyle) document.head.removeChild(stampStyle);
   body.removeChild(printDiv);
   allChildren.forEach((child, i) => { child.style.cssText = originalStyles[i]; });
 };
