@@ -496,6 +496,17 @@ const SUPA_URL = 'https://uzichxyfewvnicoqyqul.supabase.co';
 const SUPA_KEY = 'sb_publishable_7iDMH9jb9YGYtlvWA1idTQ_sgOTE1y5';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
+const createLog = (user, action, targetType='', targetId=null, targetNumber='') => {
+  sb.from('activity_logs').insert({
+    user_id:      user?.id   || null,
+    user_name:    user?.full_name || user?.email || 'نظام',
+    action,
+    target_type:  targetType  || null,
+    target_id:    targetId    || null,
+    target_number: targetNumber || null,
+  }).then(()=>{});
+};
+
 /* ===================== COMPANY INFO ===================== */
 const COMPANY = {
   name_ar: 'مؤسسة الحياة العلمية الطبية الكيماوية',
@@ -1352,6 +1363,11 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       }
 
       toast(editQuote ? 'تم التعديل بنجاح' : 'تم الإنشاء بنجاح', 'success');
+      if (editQuote?.id) {
+        createLog(user, `عدّل عرض السعر ${editQuote.number||''}`, 'quote', editQuote.id, editQuote.number);
+      } else {
+        createLog(user, `أنشأ عرض سعر جديد ${payload.number||''}`, 'quote', qId, payload.number);
+      }
 
       // إشعارات عند إنشاء عرض جديد
       if (!editQuote) {
@@ -1640,6 +1656,7 @@ function DeletedQuotesPage({ user, quotes, onReload }) {
     if (!confirm('استعادة العرض ' + q.number + '؟')) return;
     const {error} = await sb.from('quotations').update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq('id', q.id);
     if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `استعاد العرض ${q.number}`, 'quote', q.id, q.number);
     toast('تم استعادة العرض ✓','success'); onReload();
   };
 
@@ -1649,6 +1666,7 @@ function DeletedQuotesPage({ user, quotes, onReload }) {
     await sb.from('quotation_items').delete().eq('quotation_id', q.id);
     const {error} = await sb.from('quotations').delete().eq('id', q.id);
     if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `حذف نهائي للعرض ${q.number}`, 'quote', q.id, q.number);
     toast('تم الحذف النهائي','success'); onReload();
   };
 
@@ -1743,6 +1761,7 @@ function QuotesList({ user, quotes, onReload }) {
 
   const changeStatus = async (q, newStatus) => {
     await sb.from('quotations').update({ status: newStatus }).eq('id', q.id);
+    createLog(user, `غيّر حالة العرض ${q.number} إلى "${SL[newStatus]||newStatus}"`, 'quote', q.id, q.number);
     toast('تم تغيير الحالة', 'success');
     onReload();
     // إشعار صاحب العرض إذا غيّره شخص آخر
@@ -1760,10 +1779,10 @@ function QuotesList({ user, quotes, onReload }) {
   const archiveQ = async (q) => {
     if (!confirm('أرشفة هذا العرض؟')) return;
     await sb.from('quotations').update({ archived:true, archived_at:new Date().toISOString() }).eq('id', q.id);
+    createLog(user, `أرشف العرض ${q.number}`, 'quote', q.id, q.number);
     toast('تم الأرشفة', 'success'); onReload();
   };
 
-  // الحذف الناعم: يحفظ العرض مع سبب الحذف بدل حذفه نهائياً
   const deleteQ = async (reason) => {
     if (!deleteTarget) return;
     const q = deleteTarget;
@@ -1774,6 +1793,7 @@ function QuotesList({ user, quotes, onReload }) {
         delete_reason: reason,
       }).eq('id', q.id);
       if (error) throw error;
+      createLog(user, `حذف العرض ${q.number} — السبب: ${reason}`, 'quote', q.id, q.number);
       toast('تم نقل العرض إلى المحذوفات', 'success');
       setDeleteTarget(null);
       onReload();
@@ -1785,6 +1805,7 @@ function QuotesList({ user, quotes, onReload }) {
     const { error } = await sb.from('orders').insert({ quotation_id:q.id, quotation_number:q.number, customer_name:q.customer_name, currency:q.currency, total_amount:q.nett_price, status:'pending', created_by: user?.id||null });
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
     await sb.from('quotations').update({ status:'converted' }).eq('id', q.id);
+    createLog(user, `حوّل العرض ${q.number} إلى طلبية`, 'quote', q.id, q.number);
     toast('تم التحويل لطلب', 'success'); onReload();
   };
 
@@ -2277,6 +2298,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
     const { error } = await sb.from('payments').insert({ quotation_id: invoice.id, amount: amt, payment_date: form.payment_date, method: form.method, reference_no: form.reference_no||null, notes: form.notes||null, created_by: user.id });
     setSaving(false);
     if (error) { toast('فشل الحفظ: '+error.message,'error'); return; }
+    createLog(user, `سجّل دفعة ${amt} ${invoice.currency||'JOD'} على الفاتورة ${invoice.number}`, 'invoice', invoice.id, invoice.number);
     toast('تم تسجيل الدفعة ✓','success');
     setForm(f => ({...f, amount:'', reference_no:'', notes:''}));
     load();
@@ -2286,6 +2308,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
   const handleDelete = async (p) => {
     if (!confirm('حذف هذه الدفعة؟')) return;
     await sb.from('payments').delete().eq('id', p.id);
+    createLog(user, `حذف دفعة من الفاتورة ${invoice.number}`, 'invoice', invoice.id, invoice.number);
     toast('تم الحذف','success');
     load(); onSaved();
   };
@@ -2498,12 +2521,14 @@ function OrdersPage({ user, orders, onReload }) {
 
   const changeStatus = async (o, newStatus) => {
     await sb.from('orders').update({ status: newStatus }).eq('id', o.id);
+    createLog(user, `غيّر حالة الطلبية ${o.number||o.quotation_number||''} إلى "${OL[newStatus]||newStatus}"`, 'order', o.id, o.number||o.quotation_number);
     toast('تم تحديث الحالة', 'success'); onReload();
   };
 
   const archiveO = async (o) => {
     if (!confirm('أرشفة هذا الطلب؟')) return;
     await sb.from('orders').update({ archived:true, archived_at:new Date().toISOString() }).eq('id', o.id);
+    createLog(user, `أرشف الطلبية ${o.number||o.quotation_number||''}`, 'order', o.id, o.number||o.quotation_number);
     toast('تمت الأرشفة', 'success'); onReload();
   };
 
@@ -2514,6 +2539,7 @@ function OrdersPage({ user, orders, onReload }) {
       if (e1) throw e1;
       const {error: e2} = await sb.from('orders').delete().eq('id', o.id);
       if (e2) throw e2;
+      createLog(user, `حذف الطلبية ${o.number||o.quotation_number||''}`, 'order', o.id, o.number||o.quotation_number);
       toast('تم الحذف', 'success'); onReload();
     } catch(e) { toast('فشل الحذف: ' + e.message, 'error'); }
   };
@@ -3423,16 +3449,17 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
       if (customer?.id) {
         const {error} = await sb.from('customers').update(payload).eq('id', customer.id);
         if(error) throw error;
+        createLog(user, `عدّل بيانات العميل ${form.name}`, 'customer', customer.id, form.name);
         toast('تم التعديل','success');
         onSave({ id: customer.id, name: form.name });
       } else {
-        // توليد رقم العميل تلقائياً من Supabase
         const { data: genCode, error: genErr } = await sb.rpc('generate_customer_number');
         if (genErr) throw genErr;
         payload.customer_code = genCode;
         payload.created_by = user?.id || null;
         const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name,customer_code').single();
         if(error) throw error;
+        createLog(user, `أضاف عميلاً جديداً: ${form.name} (#${genCode})`, 'customer', inserted.id, form.name);
         toast(`تمت الإضافة — رقم العميل: ${genCode}`,'success');
         onSave(inserted);
       }
@@ -3822,6 +3849,8 @@ function CatalogForm({ user, item: editItem, onSave, onClose, categories: propCa
     }
     setSaving(false);
     if (err) { toast('خطأ: '+err.message,'error'); return; }
+    if (editItem?.id) createLog(user, `عدّل الصنف: ${payload.name}`, 'catalog', editItem.id, payload.name);
+    else createLog(user, `أضاف صنفاً للكتالوج: ${payload.name}`, 'catalog', null, payload.name);
     toast(editItem ? 'تم تحديث الصنف' : 'تمت إضافة الصنف', 'success');
     onSave();
   };
@@ -4325,11 +4354,13 @@ function CatalogPage({ user }) {
     if (!window.confirm('حذف "' + it.name + '"؟')) return;
     const { error } = await sb.from('catalog_items').delete().eq('id', it.id);
     if (error) { toast('فشل الحذف: '+error.message,'error'); return; }
+    createLog(user, `حذف الصنف: ${it.name}`, 'catalog', it.id, it.name);
     toast('تم حذف الصنف','success'); load();
   };
 
   const toggleActive = async (it) => {
     await sb.from('catalog_items').update({ is_active: !it.is_active, updated_at: new Date().toISOString() }).eq('id', it.id);
+    createLog(user, `${it.is_active ? 'أوقف' : 'فعّل'} الصنف: ${it.name}`, 'catalog', it.id, it.name);
     load();
   };
 
@@ -4473,6 +4504,7 @@ function CustomersPage({ user }) {
     if (!confirm(`حذف العميل "${c.name}"؟`)) return;
     const {error} = await sb.from('customers').delete().eq('id', c.id);
     if(error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `حذف العميل ${c.name}`, 'customer', c.id, c.name);
     toast('تم الحذف','success'); load();
   };
 
