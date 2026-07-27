@@ -3666,19 +3666,27 @@ function DeliverySelect({ value, onChange }) {
 }
 
 const STD_ORIGINS = ['CHINA','INDIA','JORDAN','HAYAT™','EUROPE','USA'];
-function getCustomOrigins() {
-  try { return JSON.parse(localStorage.getItem('customOrigins') || '[]'); } catch { return []; }
+let _originsCache = null;
+let _originsFetching = null;
+function fetchCustomOrigins() {
+  if (_originsCache !== null) return Promise.resolve(_originsCache);
+  if (_originsFetching) return _originsFetching;
+  _originsFetching = sb.from('custom_origins').select('name').order('created_at', {ascending:false}).limit(50)
+    .then(({data}) => { _originsCache = (data||[]).map(r=>r.name); _originsFetching = null; return _originsCache; });
+  return _originsFetching;
 }
-function saveCustomOrigin(val) {
+function saveCustomOriginDB(val) {
   if (!val || STD_ORIGINS.includes(val)) return;
-  const list = getCustomOrigins();
-  if (!list.includes(val)) { list.unshift(val); localStorage.setItem('customOrigins', JSON.stringify(list.slice(0, 30))); }
+  sb.from('custom_origins').upsert({name:val}, {onConflict:'name',ignoreDuplicates:true}).then(()=>{
+    if (_originsCache && !_originsCache.includes(val)) _originsCache = [val, ..._originsCache].slice(0,50);
+  });
 }
 function OriginSelect({ value, onChange, style }) {
   const isStd = !value || STD_ORIGINS.includes(value);
   const [isOther, setIsOther] = React.useState(!isStd);
   const [customVal, setCustomVal] = React.useState(isStd ? '' : (value||''));
-  const [customOrigins, setCustomOrigins] = React.useState(getCustomOrigins);
+  const [customOrigins, setCustomOrigins] = React.useState([]);
+  React.useEffect(() => { fetchCustomOrigins().then(setCustomOrigins); }, []);
   const selStyle = { width:'100%', padding:'5px 4px', fontSize:11, border:'1px solid var(--gray-200)', borderRadius:5, fontFamily:'inherit', ...style };
   return (
     <div>
@@ -3694,7 +3702,7 @@ function OriginSelect({ value, onChange, style }) {
         <>
           <input value={customVal} autoFocus list="origin-custom-opts"
             onChange={e => { setCustomVal(e.target.value.toUpperCase()); onChange(e.target.value.toUpperCase()); }}
-            onBlur={e => { const v = e.target.value.toUpperCase(); if (v) { saveCustomOrigin(v); setCustomOrigins(getCustomOrigins()); } }}
+            onBlur={e => { const v = e.target.value.toUpperCase(); if (v) { saveCustomOriginDB(v); setCustomOrigins(p => p.includes(v)?p:[v,...p]); } }}
             placeholder="اكتب المنشأ"
             style={{marginTop:4,width:'100%',fontSize:11,padding:'3px 6px',border:'1px solid var(--primary)',borderRadius:4,outline:'none',boxSizing:'border-box'}}/>
           <datalist id="origin-custom-opts">
