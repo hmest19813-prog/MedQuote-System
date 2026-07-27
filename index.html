@@ -883,7 +883,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
-  const [stampMm, setStampMm] = useState({ bottom: 20, right: 15 });
+  const [stampMm, setStampMm] = useState({ bottom: 30, right: 120 });
 
   const STAMP_PRESETS = [
     {r:155,b:230},{r:80,b:230},{r:15,b:230},
