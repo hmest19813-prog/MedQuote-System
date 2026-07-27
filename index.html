@@ -289,7 +289,7 @@ th:last-child, td:last-child { border-left: none; }
 
 /* ===================== QUOTE/INVOICE PRINT ===================== */
 .print-container { background: white; padding: 14px 36px 28px; max-width: 900px; margin: 0 auto; position: relative; }
-.print-page-wrap { display: flex; flex-direction: column; }
+.print-page-wrap { display: flex; flex-direction: column; position: relative; }
 .print-page-content { flex: 1; }
 .print-footer-wrap { position: relative; }
 .letter-print-wrap { display:flex; flex-direction:column; min-height:calc(297mm - 20mm); padding:0 36px; background:white; max-width:900px; margin:0 auto; }
@@ -883,6 +883,19 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
+  const [stampPos, setStampPos] = useState({ bottom: 120, right: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleStampDrag = e => {
+    e.preventDefault();
+    setIsDragging(true);
+    const startX = e.clientX, startY = e.clientY;
+    const startBottom = stampPos.bottom, startRight = stampPos.right;
+    const onMove = ev => setStampPos({ bottom: startBottom - (ev.clientY - startY), right: startRight - (ev.clientX - startX) });
+    const onUp = () => { setIsDragging(false); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 
   const sendViaOutlook = () => {
     // بعد ما يُغلق مربع الطباعة نفتح Outlook
@@ -923,7 +936,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
     window.addEventListener('afterprint', handleAfterPrint);
     const pdfTitle = `${doc.customer_name || 'عميل'} - ${doc.number || ''}`.trim().replace(/\s+/g,' ');
-    printDoc('print-content', pdfTitle);
+    printDoc('print-content', pdfTitle, stampPos);
   };
 
   return (
@@ -935,7 +948,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <button className={`sig-toggle-btn${showSig?' active':''}`} onClick={()=>setShowSig(s=>!s)} title="إضافة ختم وتوقيع للمستند">
               {showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t,stampPos); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
@@ -1034,18 +1047,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
           </div>{/* /print-page-content */}
 
-          {/* ختم الصفحة الأولى — مخفي بالمتصفح، يُفعَّل في وضع متعدد الصفحات عبر printDoc */}
-          {showSig && (
-            <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-multipage"
-              style={{display:'none', pointerEvents:'none'}}/>
-          )}
-
-          {/* الفوتر مع الختم — print-footer-wrap يوفر position:relative للختم */}
+          {/* الفوتر */}
           <div className="print-footer-wrap">
-            {showSig && (
-              <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-in-footer"
-                style={{position:'absolute', bottom:30, right:0, zIndex:20, pointerEvents:'none'}}/>
-            )}
             <div className="print-footer-bar">
               <div className="print-footer-right">
                 <div className="print-footer-label"></div>
@@ -1070,6 +1073,18 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
               </div>
             </div>
           </div>{/* /print-footer-wrap */}
+
+          {/* الختم القابل للسحب — مُطلق داخل print-page-wrap */}
+          {showSig && (
+            <div style={{position:'absolute', bottom:stampPos.bottom, right:stampPos.right, zIndex:20, userSelect:'none'}}
+              onMouseDown={handleStampDrag}>
+              <div className="no-print" style={{fontSize:10, color:'var(--primary)', textAlign:'center', background:'rgba(255,255,255,0.88)', border:'1px dashed var(--primary)', borderRadius:4, padding:'1px 8px', marginBottom:2, cursor: isDragging?'grabbing':'grab'}}>
+                ✋ اسحب الختم
+              </div>
+              <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-draggable"
+                style={{display:'block', cursor: isDragging?'grabbing':'grab', pointerEvents:'auto'}}/>
+            </div>
+          )}
           </div>{/* /print-page-wrap */}
         </div>
       </div>
@@ -2964,7 +2979,7 @@ function UsersPage({ currentUser }) {
 }
 
 /* ===================== PRINT FUNCTION ===================== */
-const printDoc = (containerId, title) => {
+const printDoc = (containerId, title, stampPos) => {
   const el = document.getElementById(containerId);
   if (!el) return;
 
@@ -3033,19 +3048,16 @@ const printDoc = (containerId, title) => {
           break-inside: avoid;
         }
         #temp-print-div .print-footer-bar { margin-top: 16px; }
-        /* الختم الثابت على جميع الصفحات — يظهر أسفل اليمين */
-        #temp-print-div .stamp-multipage {
-          display: block !important;
-          position: fixed;
-          bottom: 20mm;
-          right: 15mm;
+        /* الختم الثابت على جميع الصفحات — موقعه من stampPos */
+        #temp-print-div .stamp-draggable {
+          position: fixed !important;
+          bottom: ${((stampPos?.bottom||120)*25.4/96).toFixed(1)}mm;
+          right: ${((stampPos?.right||0)*25.4/96).toFixed(1)}mm;
           width: 300px;
           z-index: 100;
           pointer-events: none;
           opacity: 0.90;
         }
-        /* إخفاء ختم الفوتير في وضع الصفحات المتعددة (يُعوَّض بالختم الثابت) */
-        #temp-print-div .stamp-in-footer { display: none !important; }
       }
     `;
     document.head.appendChild(multiPageStyle);
