@@ -919,6 +919,43 @@ function Dashboard({ quotes, orders, logs, user }) {
   );
 }
 
+/* ===== أدوات المصادر البديلة للبنود =====
+   الصفوف بنفس option_group = مصادر بديلة لنفس المنتج.
+   ضمن كل مجموعة يُحتسب في المجموع الخيار الأعلى قيمة (شامل الضريبة) فقط. */
+function itemGroupKey(it, idx) {
+  return (it.option_group != null && it.option_group !== '') ? ('g:' + it.option_group) : ('solo:' + idx);
+}
+function itemRate(it, defaultTax) {
+  const t = parseFloat(it.tax_pct);
+  return isNaN(t) ? (parseFloat(defaultTax) || 0) : t;
+}
+function itemValueWithTax(it, defaultTax) {
+  return (parseFloat(it.quantity || 0) * parseFloat(it.unit_price || 0)) * (1 + itemRate(it, defaultTax) / 100);
+}
+function pickCountedIndices(items, defaultTax) {
+  const groups = {};
+  items.forEach((it, idx) => { const k = itemGroupKey(it, idx); (groups[k] = groups[k] || []).push(idx); });
+  const counted = new Set();
+  Object.values(groups).forEach(idxs => {
+    if (idxs.length === 1) { counted.add(idxs[0]); return; }
+    let best = idxs[0], bv = -Infinity;
+    idxs.forEach(i => { const v = itemValueWithTax(items[i], defaultTax); if (v > bv) { bv = v; best = i; } });
+    counted.add(best);
+  });
+  return counted;
+}
+function itemsGroupMeta(items) {
+  const firstOf = {}, size = {};
+  items.forEach((it, idx) => { const k = itemGroupKey(it, idx); if (firstOf[k] === undefined) firstOf[k] = idx; size[k] = (size[k] || 0) + 1; });
+  let n = 0;
+  return items.map((it, idx) => {
+    const k = itemGroupKey(it, idx);
+    const isAlt = firstOf[k] !== idx;
+    if (!isAlt) n++;
+    return { isAlt, groupSize: size[k], no: isAlt ? null : n };
+  });
+}
+
 /* ===================== QUOTE / INVOICE PREVIEW ===================== */
 function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
@@ -931,6 +968,11 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
     {r:155,b:130},{r:80,b:130},{r:15,b:130},
     {r:155,b:20}, {r:80,b:20}, {r:15,b:20},
   ];
+
+  // مجموعات المصادر البديلة للطباعة
+  const printMeta = itemsGroupMeta(items);
+  const printCounted = pickCountedIndices(items, doc.tax_pct ?? 16);
+  const hasOptions = printMeta.some(m => m.groupSize > 1);
 
   const sendViaOutlook = () => {
     // بعد ما يُغلق مربع الطباعة نفتح Outlook
@@ -1071,10 +1113,17 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
                 const itemTax = (item.tax_pct ?? doc.tax_pct ?? 16);
                 const taxRate = parseFloat(itemTax) || 0;
                 const withTax = parseFloat(item.unit_price||0) * (1 + taxRate/100);
+                const m = printMeta[i];
+                const grouped = m.groupSize > 1;
+                const counted = printCounted.has(i);
                 return (
-                <tr key={i}>
-                  <td>{i+1}</td>
-                  <td className="item-name">{item.item_name}</td>
+                <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
+                  <td>{m.no ?? '↳'}</td>
+                  <td className="item-name">
+                    {m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>مصدر بديل — </span>}
+                    {item.item_name}
+                    {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
+                  </td>
                   <td>{item.unit||'EACH'}</td>
                   <td>{item.quantity}</td>
                   <td>{parseFloat(item.unit_price).toFixed(3)}</td>
@@ -1093,6 +1142,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
             <div style={{fontSize:11,color:'#888',maxWidth:380}}>
               <p>* السعر بالدينار الأردني والأسعار شاملة ضريبة المبيعات</p>
+              {hasOptions && <p>* البنود المعلَّمة (مصدر بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)</p>}
               <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
               <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
               <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
@@ -1234,18 +1284,21 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
 
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
-  const subtotal = items.reduce((s,i) => s + (parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)), 0);
+  const defaultTax = parseFloat(form.tax_pct||0);
+  // ضمن كل مجموعة مصادر بديلة يُحتسب الخيار الأعلى قيمة فقط
+  const counted = pickCountedIndices(items, defaultTax);
+  const itemsMeta = itemsGroupMeta(items);
+  const subtotal = items.reduce((s,i,idx) => counted.has(idx) ? s + (parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)) : s, 0);
   const disc_pct = parseFloat(form.discount_pct||0);
   const disc_fixed = parseFloat(form.discount_fixed||0);
   const disc_amt = form.discount_type === 'amt' ? disc_fixed : subtotal * disc_pct / 100;
   const after_disc = subtotal - disc_amt;
-  const defaultTax = parseFloat(form.tax_pct||0);
   // نسبة الخصم تُوزَّع على البنود بالتناسب، ثم تُحسب ضريبة كل بند حسب نسبته
   const disc_ratio = subtotal > 0 ? after_disc / subtotal : 1;
-  const itemTaxRate = (i) => { const t = parseFloat(i.tax_pct); return isNaN(t) ? defaultTax : t; };
-  const tax_amt = items.reduce((s,i) => {
+  const tax_amt = items.reduce((s,i,idx) => {
+    if (!counted.has(idx)) return s;
     const line = parseFloat(i.quantity||0)*parseFloat(i.unit_price||0);
-    return s + line * disc_ratio * itemTaxRate(i) / 100;
+    return s + line * disc_ratio * itemRate(i, defaultTax) / 100;
   }, 0);
   const nett = after_disc + tax_amt;
 
@@ -1255,6 +1308,17 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
 
   const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:(parseFloat(form.tax_pct)||0), origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
+  // إضافة مصدر بديل لنفس المنتج (يربط الصفوف بنفس option_group)
+  const addAlternative = (idx) => setItems(list => {
+    const src = list[idx] || {};
+    let gid = src.option_group;
+    const next = [...list];
+    if (!gid) { gid = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); next[idx] = { ...src, option_group: gid }; }
+    let insertAt = idx;
+    next.forEach((r,j) => { if (r.option_group === gid) insertAt = j; });
+    next.splice(insertAt+1, 0, { ...src, option_group: gid, unit_price:'', origin:'', notes:'' });
+    return next;
+  });
   const setItem = (idx, k, v) => setItems(i => i.map((it,j) => j===idx ? {...it,[k]:v} : it));
 
   const applyCatalogItem = (idx, cat) => {
@@ -1345,6 +1409,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
         unit: i.unit||'EACH', quantity: parseFloat(i.quantity)||1,
         unit_price: parseFloat(i.unit_price)||0,
         tax_pct: (i.tax_pct===''||i.tax_pct==null) ? (parseFloat(form.tax_pct)||0) : (parseFloat(i.tax_pct)||0),
+        option_group: i.option_group || null,
         origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
         delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
         notes: i.notes,
@@ -1534,10 +1599,14 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                 {items.map((item,i) => {
                   const rowTax = (item.tax_pct===''||item.tax_pct==null) ? (parseFloat(form.tax_pct)||0) : (parseFloat(item.tax_pct)||0);
                   const withTax = (parseFloat(item.unit_price||0)*(1+rowTax/100)).toFixed(3);
+                  const meta = itemsMeta[i];
+                  const grouped = meta.groupSize > 1;
+                  const isCounted = counted.has(i);
                   return (
-                    <tr key={i}>
-                      <td>{i+1}</td>
+                    <tr key={i} style={grouped ? {background: meta.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
+                      <td>{meta.no ?? '↳'}</td>
                       <td>
+                        {meta.isAlt && <div style={{fontSize:10,fontWeight:700,color:'#b45309',marginBottom:2}}>↳ مصدر بديل</div>}
                         <div style={{display:'flex',gap:3,alignItems:'flex-start'}}>
                           <div style={{flex:1}}>
                             <ItemNameCell
@@ -1549,6 +1618,12 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                             />
                           </div>
                           <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
+                        </div>
+                        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
+                          <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ مصدر بديل</button>
+                          {grouped && (isCounted
+                            ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
+                            : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
                         </div>
                       </td>
                       <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH"/></td>
