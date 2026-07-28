@@ -961,7 +961,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
-  const [stampMm, setStampMm] = useState({ bottom: 22, right: 18 });
+  const [stampMm, setStampMm] = useState({ bottom: 22, right: 120 });
 
   const STAMP_PRESETS = [
     {r:155,b:230},{r:80,b:230},{r:15,b:230},
@@ -3293,89 +3293,42 @@ const printDoc = (containerId, title, stampPos) => {
   const originalStyles = allChildren.map(child => child.style.cssText);
   allChildren.forEach(child => { child.style.cssText = 'display:none !important;'; });
 
-  // أنشئ الـ div بعرض A4 الكامل لقياس دقيق
+  // أنشئ الـ div بعرض A4 الكامل
   const printDiv = document.createElement('div');
   printDiv.id = 'temp-print-div';
-  printDiv.style.cssText = 'position:absolute;top:0;left:0;width:210mm;padding:10mm;box-sizing:border-box;background:white;visibility:hidden;';
+  printDiv.style.cssText = 'position:static;width:100%;padding:0;box-sizing:border-box;background:white;';
   printDiv.innerHTML = el.innerHTML;
   body.appendChild(printDiv);
 
-  const contentH  = printDiv.scrollHeight;
-  const A4_H      = Math.round(297 * 96 / 25.4); // ≈ 1122px
-  const zoom      = contentH > A4_H ? A4_H / contentH : 1;
-  const THRESHOLD = 0.70; // أقل من 70% نستخدم متعدد الصفحات
+  // الفوتر ثابت أسفل كل صفحة: نحجز له مساحة عبر @page margin-bottom بمقدار ارتفاعه،
+  // ونثبّته بـ position:fixed داخل تلك المساحة — فيظهر أسفل كل صفحة دائماً بلا تداخل مع المحتوى
+  const footerWrap = printDiv.querySelector('.print-footer-wrap');
+  const footerPx   = footerWrap ? footerWrap.offsetHeight : 60;
+  const footerMm   = Math.ceil(footerPx / 96 * 25.4) + 6; // ارتفاع الفوتر + 6مم فراغ
 
-  let multiPageStyle = null;
-
-  if (zoom >= THRESHOLD) {
-    // ── صفحة واحدة مع ضغط ──────────────────────────────────
-    printDiv.style.cssText = `position:static;width:100%;padding:10mm;box-sizing:border-box;background:white;zoom:${zoom.toFixed(4)};`;
-
-    // ثبّت الفوتر في أسفل الصفحة: احسب ارتفاع منطقة المحتوى بعد خصم الـ padding ثم قسّم على zoom
-    const pageWrap = printDiv.querySelector('.print-page-wrap');
-    if (pageWrap) {
-      const PAD_PX = Math.round(10 * 96 / 25.4) * 2; // 10mm أعلى + 10mm أسفل ≈ 76px
-      pageWrap.style.minHeight = Math.round((A4_H - PAD_PX) / zoom) + 'px';
+  const printStyle = document.createElement('style');
+  printStyle.textContent = `@media print {
+    @page { margin: 8mm 10mm ${footerMm}mm 10mm; size: A4 portrait; }
+    #temp-print-div { padding: 0 !important; }
+    #temp-print-div .print-items thead { display: table-header-group; }
+    #temp-print-div .print-items tbody tr { page-break-inside: avoid; break-inside: avoid; }
+    #temp-print-div .print-totals,
+    #temp-print-div .print-notes { page-break-inside: avoid; break-inside: avoid; }
+    #temp-print-div .print-footer-wrap {
+      position: fixed !important;
+      left: 10mm; right: 10mm; bottom: 3mm;
+      margin: 0 !important; background: white;
     }
-
-  } else {
-    // ── متعدد الصفحات ────────────────────────────────────────
-    // نصفّر الـ padding للقياس الدقيق (الطباعة تستخدم @page margins بدل padding)
-    printDiv.style.cssText = 'position:static;width:100%;padding:0;box-sizing:border-box;background:white;';
-
-    // ارتفاع منطقة محتوى كل صفحة A4 مع @page margin:8mm أعلى وأسفل
-    const PAGE_PX = Math.round((297 - 16) * 96 / 25.4); // 281mm ≈ 1062px
-    const mpPageContent = printDiv.querySelector('.print-page-content');
-    const mpFooterWrap  = printDiv.querySelector('.print-footer-wrap');
-
-    if (mpPageContent && mpFooterWrap) {
-      // +16px = margin-top يُضاف للفوتر بالطباعة، +6px أمان ضد فروق القياس بين الشاشة والطباعة
-      const footerH   = mpFooterWrap.offsetHeight + 22;
-      const contentH2 = mpPageContent.scrollHeight;
-      const pages     = Math.ceil((contentH2 + footerH) / PAGE_PX);
-      const targetH   = pages * PAGE_PX - footerH;
-      if (targetH > contentH2) mpPageContent.style.minHeight = targetH + 'px';
-    }
-
-    multiPageStyle = document.createElement('style');
-    multiPageStyle.textContent = `
-      @media print {
-        @page { margin: 8mm 10mm; size: A4 portrait; }
-        #temp-print-div { padding: 0 !important; }
-        #temp-print-div .print-items thead { display: table-header-group; }
-        #temp-print-div .print-items tbody tr {
-          page-break-inside: avoid;
-          break-inside: avoid;
-        }
-        #temp-print-div .print-totals,
-        #temp-print-div .print-notes,
-        #temp-print-div .print-footer-bar {
-          page-break-inside: avoid;
-          break-inside: avoid;
-        }
-        #temp-print-div .print-footer-bar { margin-top: 16px; }
-      }
-    `;
-    document.head.appendChild(multiPageStyle);
-  }
-
-  // CSS الختم — مُطبَّق دائماً بقيم mm دقيقة، position:fixed لظهوره على كل صفحة
-  let stampStyle = null;
-  if (stampPos) {
-    stampStyle = document.createElement('style');
-    stampStyle.textContent = `@media print {
-      #temp-print-div .stamp-draggable {
-        position: fixed !important;
-        bottom: ${stampPos.bottom}mm;
-        right: ${stampPos.right}mm;
-        width: 300px; height: auto;
-        max-width: calc(210mm - ${stampPos.right}mm - 6mm);
-        max-height: calc(297mm - ${stampPos.bottom}mm - 6mm);
-        z-index: 100; pointer-events: none; opacity: 0.90;
-      }
-    }`;
-    document.head.appendChild(stampStyle);
-  }
+    #temp-print-div .print-footer-bar { margin: 0 !important; }
+    ${stampPos ? `#temp-print-div .stamp-draggable {
+      position: fixed !important;
+      bottom: ${stampPos.bottom}mm;
+      right: ${stampPos.right}mm;
+      width: 550px; height: auto;
+      z-index: 100; pointer-events: none; opacity: 0.90;
+    }` : ''}
+  }`;
+  document.head.appendChild(printStyle);
 
   // اسم ملف الـ PDF
   const originalTitle = document.title;
@@ -3384,8 +3337,7 @@ const printDoc = (containerId, title, stampPos) => {
   window.print();
 
   document.title = originalTitle;
-  if (multiPageStyle) document.head.removeChild(multiPageStyle);
-  if (stampStyle) document.head.removeChild(stampStyle);
+  document.head.removeChild(printStyle);
   body.removeChild(printDiv);
   allChildren.forEach((child, i) => { child.style.cssText = originalStyles[i]; });
 };
