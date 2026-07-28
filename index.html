@@ -961,7 +961,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
-  const [stampMm, setStampMm] = useState({ bottom: 30, right: 120 });
+  const [stampMm, setStampMm] = useState({ bottom: 22, right: 18 });
 
   const STAMP_PRESETS = [
     {r:155,b:230},{r:80,b:230},{r:15,b:230},
@@ -3329,7 +3329,8 @@ const printDoc = (containerId, title, stampPos) => {
     const mpFooterWrap  = printDiv.querySelector('.print-footer-wrap');
 
     if (mpPageContent && mpFooterWrap) {
-      const footerH   = mpFooterWrap.offsetHeight;
+      // +16px = margin-top يُضاف للفوتر بالطباعة، +6px أمان ضد فروق القياس بين الشاشة والطباعة
+      const footerH   = mpFooterWrap.offsetHeight + 22;
       const contentH2 = mpPageContent.scrollHeight;
       const pages     = Math.ceil((contentH2 + footerH) / PAGE_PX);
       const targetH   = pages * PAGE_PX - footerH;
@@ -3367,7 +3368,10 @@ const printDoc = (containerId, title, stampPos) => {
         position: fixed !important;
         bottom: ${stampPos.bottom}mm;
         right: ${stampPos.right}mm;
-        width: 550px; z-index: 100; pointer-events: none; opacity: 0.90;
+        width: 300px; height: auto;
+        max-width: calc(210mm - ${stampPos.right}mm - 6mm);
+        max-height: calc(297mm - ${stampPos.bottom}mm - 6mm);
+        z-index: 100; pointer-events: none; opacity: 0.90;
       }
     }`;
     document.head.appendChild(stampStyle);
