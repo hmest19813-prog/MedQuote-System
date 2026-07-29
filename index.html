@@ -340,13 +340,16 @@ th:last-child, td:last-child { border-left: none; }
 
 /* جدول المستند: الفوتر في tfoot يتكرّر أسفل كل صفحة ويحجز مساحته تلقائياً (لا تداخل مع المحتوى) */
 .print-doc-table { width: 100%; border-collapse: collapse; }
-.print-doc-table > tbody > tr > td { padding: 0; border: none; }
+.print-doc-table > tbody > tr > td { padding: 0; border: none; vertical-align: top; }
+.print-doc-table > thead { display: table-header-group; }
+.print-doc-table > thead > tr > td { padding: 0; border: none; }
 .print-doc-table > tfoot { display: table-footer-group; }
 .print-doc-table > tfoot > tr > td { padding: 10px 0 0; border: none; }
 .print-doc-table .print-footer-bar { margin: 0; }
+.print-top-space { height: 6mm; }
 /* منطقة الختم/التوقيع ضمن التدفق — تظهر مرة واحدة في نهاية المستند */
 .print-sign-area { display: flex; justify-content: flex-end; padding: 14px 4px 4px; break-inside: avoid; page-break-inside: avoid; }
-.print-sign-img { width: 300px; max-width: 62%; opacity: 0.92; object-fit: contain; }
+.print-sign-img { width: 240px; max-width: 55%; opacity: 0.92; object-fit: contain; }
 
 @media print {
   /* نخفي كل شيء - printDoc تتحكم بما يُطبع */
@@ -1047,6 +1050,9 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
         )}
         <div className="modal-body print-container" id="print-content">
           <table className="print-doc-table">
+          <thead>
+            <tr><td><div className="print-top-space"></div></td></tr>
+          </thead>
           <tfoot>
             <tr><td>
               <div className="print-footer-bar">
@@ -3268,9 +3274,10 @@ function UsersPage({ currentUser }) {
   );
 }
 
-/* ===================== PRINT FUNCTION ===================== */
-// الفوتر داخل <tfoot> (display:table-footer-group) يتكرّر أسفل كل صفحة ويحجز مساحته
-// تلقائياً — لا حاجة لأي حسابات ارتفاع أو تثبيت عائم. المتصفح يتكفّل بالتوزيع.
+/* ===================== PRINT FUNCTION =====================
+   - @page margin:0 → يشيل رأس/تذييل المتصفح (التاريخ، العنوان، الرابط، رقم الصفحة)
+   - thead = هامش علوي متكرر، tfoot = الفوتر (يتكرّر أسفل كل صفحة ويحجز مساحته)
+   - نقيس المحتوى بعرض A4 الحقيقي ونملأ الخلية بحيث يستقر الفوتر أسفل الصفحة الأخيرة */
 const printDoc = (containerId, title) => {
   const el = document.getElementById(containerId);
   if (!el) return;
@@ -3282,22 +3289,41 @@ const printDoc = (containerId, title) => {
 
   const printDiv = document.createElement('div');
   printDiv.id = 'temp-print-div';
-  printDiv.style.cssText = 'position:static;width:100%;background:white;';
   printDiv.innerHTML = el.innerHTML;
   body.appendChild(printDiv);
 
   const printStyle = document.createElement('style');
-  printStyle.textContent = `@media print {
-    @page { margin: 10mm; size: A4 portrait; }
-    #temp-print-div { padding: 0 !important; }
-    #temp-print-div .print-container { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+  printStyle.textContent = `
+    /* أثناء القياس: خارج الشاشة بعرض A4 الحقيقي مع نفس هوامش الطباعة الأفقية */
+    #temp-print-div { position: absolute; left: -99999px; top: 0; width: 210mm; background: white; }
+    #temp-print-div .print-container { max-width: none; padding: 0 10mm; margin: 0; }
+    #temp-print-div .print-doc-table > thead { display: table-header-group; }
     #temp-print-div .print-doc-table > tfoot { display: table-footer-group; }
-    #temp-print-div .print-items thead { display: table-header-group; }
-    #temp-print-div .print-items tbody tr { page-break-inside: avoid; break-inside: avoid; }
-    #temp-print-div .print-totals { page-break-inside: avoid; break-inside: avoid; }
-    #temp-print-div .print-sign-area { page-break-inside: avoid; break-inside: avoid; }
-  }`;
+    @media print {
+      @page { margin: 0; size: A4 portrait; }
+      #temp-print-div { position: static !important; left: auto !important; width: 100% !important; }
+      #temp-print-div .print-items thead { display: table-header-group; }
+      #temp-print-div .print-items tbody tr { page-break-inside: avoid; break-inside: avoid; }
+      #temp-print-div .print-totals { page-break-inside: avoid; break-inside: avoid; }
+      #temp-print-div .print-sign-area { page-break-inside: avoid; break-inside: avoid; }
+    }
+  `;
   document.head.appendChild(printStyle);
+
+  // املأ خلية المحتوى بحيث يستقرّ الفوتر أسفل الصفحة الأخيرة تماماً (لأي عدد صفحات)
+  const docTd   = printDiv.querySelector('.print-doc-table > tbody > tr > td');
+  const theadEl = printDiv.querySelector('.print-doc-table > thead');
+  const tfootEl = printDiv.querySelector('.print-doc-table > tfoot');
+  if (docTd && tfootEl) {
+    const PAGE  = 297 * 96 / 25.4;                    // ارتفاع صفحة A4 بالبكسل (هامش 0)
+    const topH  = theadEl ? theadEl.offsetHeight : 0; // الهامش العلوي المتكرر
+    const footH = tfootEl.offsetHeight;               // ارتفاع الفوتر المتكرر
+    const avail = PAGE - topH - footH - 6;            // مساحة المحتوى لكل صفحة (‑6 أمان)
+    if (avail > 0) {
+      const pages = Math.max(1, Math.ceil(docTd.scrollHeight / avail));
+      docTd.style.minHeight = Math.floor(pages * avail) + 'px';
+    }
+  }
 
   const originalTitle = document.title;
   if (title) document.title = title;
