@@ -349,8 +349,9 @@ th:last-child, td:last-child { border-left: none; }
 .print-top-space { height: 6mm; }
 /* منطقة الختم/التوقيع ضمن التدفق — تظهر مرة واحدة في نهاية المستند */
 /* الختم طبقة مطلقة أسفل خلية المحتوى (= أسفل الصفحة الأخيرة) — لا يأخذ مساحة بالتدفق فلا يكسر الترقيم */
-.print-sign-area { position: absolute; bottom: 6px; right: 24px; pointer-events: none; }
-.print-sign-img { width: 550px; max-width: 78%; opacity: 0.9; object-fit: contain; }
+/* الختم طبقة عليا مطلقة داخل خلية المحتوى (= الصفحة الأخيرة)، موضعه بالـ mm من inline */
+.print-sign-area { position: absolute; z-index: 1000; pointer-events: none; }
+.print-sign-img { width: 550px; opacity: 0.9; object-fit: contain; display: block; }
 
 @media print {
   /* نخفي كل شيء - printDoc تتحكم بما يُطبع */
@@ -975,7 +976,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
-  const [stampMm, setStampMm] = useState({ bottom: 22, right: 120 });
+  const [stampMm, setStampMm] = useState({ bottom: 20, right: 120 });
 
   const STAMP_PRESETS = [
     {r:155,b:230},{r:80,b:230},{r:15,b:230},
@@ -1045,8 +1046,25 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           </div>
         </div>
         {showSig && (
-          <div className="no-print" style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac',flexWrap:'wrap'}}>
-            <span style={{fontSize:12,fontWeight:700,color:'#15803d'}}>✓ الختم والتوقيع يظهران في نهاية المستند (منطقة التوقيع)</span>
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac',flexWrap:'wrap'}}>
+            <span style={{fontSize:12,fontWeight:700,color:'#15803d'}}>موضع الختم:</span>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,26px)',gap:3}}>
+              {STAMP_PRESETS.map((p,i)=>{
+                const sel = stampMm.bottom===p.b && stampMm.right===p.r;
+                return <button key={i} title={`أسفل ${p.b}mm • يمين ${p.r}mm`}
+                  onClick={()=>setStampMm({bottom:p.b,right:p.r})}
+                  style={{width:26,height:26,borderRadius:4,border:sel?'2px solid #15803d':'1px solid #ccc',background:sel?'#15803d':'#fff',color:sel?'#fff':'#333',cursor:'pointer',fontSize:10}}>
+                  {['↖','↑','↗','←','·','→','↙','↓','↘'][i]}
+                </button>;
+              })}
+            </div>
+            <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>أسفل:
+              <input type="number" min={0} max={260} value={stampMm.bottom} onChange={e=>setStampMm(p=>({...p,bottom:+e.target.value||0}))} style={{width:52,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/> mm
+            </label>
+            <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>يمين:
+              <input type="number" min={0} max={200} value={stampMm.right} onChange={e=>setStampMm(p=>({...p,right:+e.target.value||0}))} style={{width:52,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/> mm
+            </label>
+            <span style={{fontSize:11,color:'#16a34a'}}>الختم 550px — طبقة عليا أسفل الصفحة الأخيرة</span>
           </div>
         )}
         <div className="modal-body print-container" id="print-content">
@@ -1188,7 +1206,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
           {/* الختم — منطقة توقيع ضمن التدفق (تظهر مرة واحدة في نهاية المستند) */}
           {showSig && (
-            <div className="print-sign-area">
+            <div className="print-sign-area" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}>
               <img src={SIG_DATA_URL} alt="" className="print-sign-img"/>
             </div>
           )}
