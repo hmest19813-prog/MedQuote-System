@@ -340,7 +340,7 @@ th:last-child, td:last-child { border-left: none; }
 
 /* جدول المستند: الفوتر في tfoot يتكرّر أسفل كل صفحة ويحجز مساحته تلقائياً (لا تداخل مع المحتوى) */
 .print-doc-table { width: 100%; border-collapse: collapse; }
-.print-doc-table > tbody > tr > td { padding: 0; border: none; vertical-align: top; }
+.print-doc-table > tbody > tr > td { padding: 0; border: none; vertical-align: top; position: relative; }
 .print-doc-table > thead { display: table-header-group; }
 .print-doc-table > thead > tr > td { padding: 0; border: none; }
 .print-doc-table > tfoot { display: table-footer-group; }
@@ -348,8 +348,9 @@ th:last-child, td:last-child { border-left: none; }
 .print-doc-table .print-footer-bar { margin: 0; }
 .print-top-space { height: 6mm; }
 /* منطقة الختم/التوقيع ضمن التدفق — تظهر مرة واحدة في نهاية المستند */
-.print-sign-area { display: flex; justify-content: flex-end; padding: 14px 4px 4px; break-inside: avoid; page-break-inside: avoid; }
-.print-sign-img { width: 550px; max-width: 95%; opacity: 0.92; object-fit: contain; }
+/* الختم طبقة مطلقة أسفل خلية المحتوى (= أسفل الصفحة الأخيرة) — لا يأخذ مساحة بالتدفق فلا يكسر الترقيم */
+.print-sign-area { position: absolute; bottom: 6px; right: 24px; pointer-events: none; }
+.print-sign-img { width: 550px; max-width: 78%; opacity: 0.9; object-fit: contain; }
 
 @media print {
   /* نخفي كل شيء - printDoc تتحكم بما يُطبع */
