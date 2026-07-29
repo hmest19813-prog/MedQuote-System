@@ -984,10 +984,12 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
     {r:155,b:20}, {r:80,b:20}, {r:15,b:20},
   ];
 
+  // نوع العرض: مفصّل (بأعمدة الضريبة) أو مبسّط
+  const detailed = doc.detailed_layout !== false;
   // مجموعات المصادر البديلة للطباعة
   const printMeta = itemsGroupMeta(items);
   const printCounted = pickCountedIndices(items, doc.tax_pct ?? 16);
-  const hasOptions = printMeta.some(m => m.groupSize > 1);
+  const hasOptions = detailed && printMeta.some(m => m.groupSize > 1);
 
   const sendViaOutlook = () => {
     // بعد ما يُغلق مربع الطباعة نفتح Outlook
@@ -1141,7 +1143,10 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <thead>
               <tr>
                 <th>No.</th><th>ITEM</th><th>UNIT</th><th>QTY</th>
-                <th>Unit Price<br/>(without tax)</th><th>Tax %</th><th>Unit Price<br/>(with tax)</th><th>Total Price<br/>(with tax)</th><th>ORIGIN</th><th>DELIVERY</th>
+                {detailed
+                  ? <><th>Unit Price<br/>(without tax)</th><th>Tax %</th><th>Unit Price<br/>(with tax)</th><th>Total Price<br/>(with tax)</th></>
+                  : <><th>Unit Price</th><th>Total Price</th></>}
+                <th>ORIGIN</th><th>DELIVERY</th>
               </tr>
             </thead>
             <tbody>
@@ -1150,22 +1155,27 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
                 const taxRate = parseFloat(itemTax) || 0;
                 const withTax = parseFloat(item.unit_price||0) * (1 + taxRate/100);
                 const m = printMeta[i];
-                const grouped = m.groupSize > 1;
+                const grouped = detailed && m.groupSize > 1;
                 const counted = printCounted.has(i);
                 return (
                 <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
-                  <td>{m.no ?? '↳'}</td>
+                  <td>{detailed ? (m.no ?? '↳') : i+1}</td>
                   <td className="item-name">
-                    {m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>مصدر بديل — </span>}
+                    {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>مصدر بديل — </span>}
                     {item.item_name}
                     {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
                   </td>
                   <td>{item.unit||'EACH'}</td>
                   <td>{item.quantity}</td>
-                  <td>{parseFloat(item.unit_price).toFixed(3)}</td>
-                  <td>{taxRate}%</td>
-                  <td>{withTax.toFixed(3)}</td>
-                  <td><strong>{(parseFloat(item.quantity||0)*withTax).toFixed(3)}</strong></td>
+                  {detailed ? <>
+                    <td>{parseFloat(item.unit_price).toFixed(3)}</td>
+                    <td>{taxRate}%</td>
+                    <td>{withTax.toFixed(3)}</td>
+                    <td><strong>{(parseFloat(item.quantity||0)*withTax).toFixed(3)}</strong></td>
+                  </> : <>
+                    <td>{parseFloat(item.unit_price).toFixed(3)}</td>
+                    <td><strong>{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toFixed(3)}</strong></td>
+                  </>}
                   <td>{item.origin||'CHINA'}</td>
                   <td>{item.delivery||'PROMPT'}</td>
                 </tr>
@@ -1226,9 +1236,11 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
     date: today(), reference:'', currency:'JOD',
     delivery:'PROMPT', notes:'', terms:'', valid_until:'',
     discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
-    quote_type: 'quote',
+    quote_type: 'quote', detailed_layout: true,
     ...(editQuote || {})
   });
+  // مفصّل = بأعمدة الضريبة، مبسّط = سعر الوحدة + الإجمالي فقط
+  const detailed = form.detailed_layout !== false;
   const [items, setItems] = useState([
     { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:16, origin:'CHINA', delivery:'PROMPT', notes:'' }
   ]);
@@ -1295,8 +1307,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
   const defaultTax = parseFloat(form.tax_pct||0);
-  // ضمن كل مجموعة مصادر بديلة يُحتسب الخيار الأعلى قيمة فقط
-  const counted = pickCountedIndices(items, defaultTax);
+  // مفصّل: ضريبة لكل بند + مصادر بديلة (الأعلى قيمة يُحتسب). مبسّط: ضريبة المستند لكل البنود.
+  const counted = detailed ? pickCountedIndices(items, defaultTax) : new Set(items.map((_,i)=>i));
   const itemsMeta = itemsGroupMeta(items);
   const subtotal = items.reduce((s,i,idx) => counted.has(idx) ? s + (parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)) : s, 0);
   const disc_pct = parseFloat(form.discount_pct||0);
@@ -1308,7 +1320,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const tax_amt = items.reduce((s,i,idx) => {
     if (!counted.has(idx)) return s;
     const line = parseFloat(i.quantity||0)*parseFloat(i.unit_price||0);
-    return s + line * disc_ratio * itemRate(i, defaultTax) / 100;
+    const rate = detailed ? itemRate(i, defaultTax) : defaultTax;
+    return s + line * disc_ratio * rate / 100;
   }, 0);
   const nett = after_disc + tax_amt;
 
@@ -1496,6 +1509,23 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          {/* اختيار نوع العرض قبل التعبئة — يحدّد أعمدة الجدول والطباعة */}
+          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',background:'#F0F8FD',border:'1.5px solid #B8DCF0',borderRadius:10,padding:'10px 14px',marginBottom:18}}>
+            <span style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>نوع العرض:</span>
+            <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)'}}>
+              <button type="button" onClick={()=>setF('detailed_layout',true)}
+                style={{padding:'7px 14px',fontSize:12.5,fontWeight:700,border:'none',cursor:'pointer',background:detailed?'var(--primary)':'#fff',color:detailed?'#fff':'var(--primary)'}}>
+                📊 مفصّل (بأعمدة الضريبة)
+              </button>
+              <button type="button" onClick={()=>setF('detailed_layout',false)}
+                style={{padding:'7px 14px',fontSize:12.5,fontWeight:700,border:'none',cursor:'pointer',background:!detailed?'var(--primary)':'#fff',color:!detailed?'#fff':'var(--primary)'}}>
+                📄 مبسّط
+              </button>
+            </div>
+            <span style={{fontSize:11,color:'var(--gray-500)'}}>
+              {detailed ? 'سعر بدون ضريبة + الضريبة% + سعر شامل + إجمالي شامل + مصادر بديلة' : 'سعر الوحدة + الإجمالي فقط (الشكل المبسّط)'}
+            </span>
+          </div>
           {/* بيانات العميل */}
           <div className="section-title">بيانات العميل</div>
           <div className="form-row mb-4">
@@ -1589,17 +1619,22 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           {/* الأصناف */}
           <div className="section-title">الأصناف</div>
           <div className="table-wrap" style={{marginBottom:10}}>
-            <table className="items-table" style={{minWidth:1120}}>
+            <table className="items-table" style={{minWidth: detailed?1120:820}}>
               <thead>
                 <tr>
                   <th style={{width:28}}>#</th>
                   <th style={{minWidth:240}}>المنتج</th>
                   <th style={{width:75}}>الوحدة</th>
                   <th style={{width:60}}>الكمية</th>
-                  <th style={{width:90}}>سعر الوحدة<br/>(بدون ضريبة)</th>
-                  <th style={{width:60}}>الضريبة %</th>
-                  <th style={{width:90}}>سعر الوحدة<br/>(شامل)</th>
-                  <th style={{width:80}}>الإجمالي<br/>(شامل)</th>
+                  {detailed ? <>
+                    <th style={{width:90}}>سعر الوحدة<br/>(بدون ضريبة)</th>
+                    <th style={{width:60}}>الضريبة %</th>
+                    <th style={{width:90}}>سعر الوحدة<br/>(شامل)</th>
+                    <th style={{width:80}}>الإجمالي<br/>(شامل)</th>
+                  </> : <>
+                    <th style={{width:90}}>سعر الوحدة</th>
+                    <th style={{width:80}}>الإجمالي</th>
+                  </>}
                   <th style={{minWidth:100}}>المنشأ</th>
                   <th style={{width:75}}>التوصيل</th>
                   <th style={{width:28}}></th>
@@ -1629,19 +1664,23 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                           </div>
                           <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
                         </div>
-                        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
+                        {detailed && <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
                           <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ مصدر بديل</button>
                           {grouped && (isCounted
                             ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
                             : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
-                        </div>
+                        </div>}
                       </td>
                       <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH"/></td>
                       <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
-                      <td><input type="number" min="0" step="0.5" value={item.tax_pct ?? ''} onChange={e=>setItem(i,'tax_pct',e.target.value)}/></td>
-                      <td style={{fontWeight:600,color:'var(--gray-600)'}}>{withTax}</td>
-                      <td style={{fontWeight:700,color:'var(--primary)'}}>{(parseFloat(item.quantity||0)*parseFloat(withTax)).toFixed(3)}</td>
+                      {detailed ? <>
+                        <td><input type="number" min="0" step="0.5" value={item.tax_pct ?? ''} onChange={e=>setItem(i,'tax_pct',e.target.value)}/></td>
+                        <td style={{fontWeight:600,color:'var(--gray-600)'}}>{withTax}</td>
+                        <td style={{fontWeight:700,color:'var(--primary)'}}>{(parseFloat(item.quantity||0)*parseFloat(withTax)).toFixed(3)}</td>
+                      </> : (
+                        <td style={{fontWeight:700,color:'var(--primary)'}}>{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toFixed(3)}</td>
+                      )}
                       <td><OriginSelect value={item.origin} onChange={v=>setItem(i,'origin',v)}/></td>
                       <td><DeliverySelect value={item.delivery} onChange={v=>setItem(i,'delivery',v)}/></td>
                       <td><button onClick={()=>removeItem(i)} style={{background:'none',border:'none',color:'var(--danger)',fontSize:16,cursor:'pointer'}}>×</button></td>
