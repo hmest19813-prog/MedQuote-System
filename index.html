@@ -338,6 +338,16 @@ th:last-child, td:last-child { border-left: none; }
 .footer-contact-row .fc-sep { margin: 0 4px; opacity: .6; }
 .footer-contact-row .fc-value { letter-spacing: .02em; }
 
+/* جدول المستند: الفوتر في tfoot يتكرّر أسفل كل صفحة ويحجز مساحته تلقائياً (لا تداخل مع المحتوى) */
+.print-doc-table { width: 100%; border-collapse: collapse; }
+.print-doc-table > tbody > tr > td { padding: 0; border: none; }
+.print-doc-table > tfoot { display: table-footer-group; }
+.print-doc-table > tfoot > tr > td { padding: 10px 0 0; border: none; }
+.print-doc-table .print-footer-bar { margin: 0; }
+/* منطقة الختم/التوقيع ضمن التدفق — تظهر مرة واحدة في نهاية المستند */
+.print-sign-area { display: flex; justify-content: flex-end; padding: 14px 4px 4px; break-inside: avoid; page-break-inside: avoid; }
+.print-sign-img { width: 300px; max-width: 62%; opacity: 0.92; object-fit: contain; }
+
 @media print {
   /* نخفي كل شيء - printDoc تتحكم بما يُطبع */
   body > *:not(#temp-print-div) { display: none !important; }
@@ -1013,7 +1023,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 
     window.addEventListener('afterprint', handleAfterPrint);
     const pdfTitle = `${doc.customer_name || 'عميل'} - ${doc.number || ''}`.trim().replace(/\s+/g,' ');
-    printDoc('print-content', pdfTitle, stampMm);
+    printDoc('print-content', pdfTitle);
   };
 
   return (
@@ -1025,46 +1035,47 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <button className={`sig-toggle-btn${showSig?' active':''}`} onClick={()=>setShowSig(s=>!s)} title="إضافة ختم وتوقيع للمستند">
               {showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t,stampMm); }}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
         {showSig && (
-          <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac',flexWrap:'wrap'}}>
-            <span style={{fontSize:12,fontWeight:700,color:'#15803d'}}>موضع الختم:</span>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,26px)',gap:3}}>
-              {STAMP_PRESETS.map((p,i)=>{
-                const sel = stampMm.bottom===p.b && stampMm.right===p.r;
-                return <button key={i} title={`أسفل ${p.b}mm • يمين ${p.r}mm`}
-                  onClick={()=>setStampMm({bottom:p.b,right:p.r})}
-                  style={{width:26,height:26,borderRadius:4,border:sel?'2px solid #15803d':'1px solid #ccc',background:sel?'#15803d':'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10}}>
-                  {['↖','↑','↗','←','·','→','↙','↓','↘'][i]}
-                </button>;
-              })}
-            </div>
-            <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>
-                أسفل:
-                <input type="number" min={0} max={260} value={stampMm.bottom}
-                  onChange={e=>setStampMm(p=>({...p,bottom:+e.target.value}))}
-                  style={{width:48,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/>
-                mm
-              </label>
-              <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>
-                يمين:
-                <input type="number" min={0} max={180} value={stampMm.right}
-                  onChange={e=>setStampMm(p=>({...p,right:+e.target.value}))}
-                  style={{width:48,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/>
-                mm
-              </label>
-            </div>
-            <span style={{fontSize:11,color:'#16a34a'}}>✓ يظهر على كل صفحة</span>
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:10,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac',flexWrap:'wrap'}}>
+            <span style={{fontSize:12,fontWeight:700,color:'#15803d'}}>✓ الختم والتوقيع يظهران في نهاية المستند (منطقة التوقيع)</span>
           </div>
         )}
         <div className="modal-body print-container" id="print-content">
-          <div className="print-page-wrap">
-          <div className="print-page-content">
+          <table className="print-doc-table">
+          <tfoot>
+            <tr><td>
+              <div className="print-footer-bar">
+                <div className="print-footer-right">
+                  <div className="print-footer-label"></div>
+                  <div>Amman - King Hussein Street, Building 22</div>
+                  <div>P.O Box 927817, Zip 11190, Jordan</div>
+                </div>
+                <div className="print-footer-center">
+                  <div className="print-footer-label">تواصل معنا</div>
+                  <div>{COMPANY.website}</div>
+                  <div>{COMPANY.email}</div>
+                  <div style={{marginTop:3,fontSize:9,opacity:.85}}>
+                    <span>Instagram | Facebook | LinkedIn</span>
+                    <span style={{margin:'0 4px'}}>—</span>
+                    <span>Hayat Scientific</span>
+                  </div>
+                </div>
+                <div className="print-footer-left">
+                  <div className="print-footer-label"></div>
+                  <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
+                  <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
+                  <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
+                </div>
+              </div>
+            </td></tr>
+          </tfoot>
+          <tbody>
+            <tr><td>
           {/* الرأس */}
           <div className="print-header">
             <div className="print-company-right">
@@ -1168,41 +1179,15 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           )}
 
-          </div>{/* /print-page-content */}
-
-          {/* الفوتر */}
-          <div className="print-footer-wrap">
-            <div className="print-footer-bar">
-              <div className="print-footer-right">
-                <div className="print-footer-label"></div>
-                <div>Amman - King Hussein Street, Building 22</div>
-                <div>P.O Box 927817, Zip 11190, Jordan</div>
-              </div>
-              <div className="print-footer-center">
-                <div className="print-footer-label">تواصل معنا</div>
-                <div>{COMPANY.website}</div>
-                <div>{COMPANY.email}</div>
-                <div style={{marginTop:3,fontSize:9,opacity:.85}}>
-                  <span>Instagram | Facebook | LinkedIn</span>
-                  <span style={{margin:'0 4px'}}>—</span>
-                  <span>Hayat Scientific</span>
-                </div>
-              </div>
-              <div className="print-footer-left">
-                <div className="print-footer-label"></div>
-                <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
-                <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
-                <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
-              </div>
-            </div>
-          </div>{/* /print-footer-wrap */}
-
-          {/* الختم — مُطلق داخل print-page-wrap، موقعه تقريبي في المعاينة ودقيق في الطباعة */}
+          {/* الختم — منطقة توقيع ضمن التدفق (تظهر مرة واحدة في نهاية المستند) */}
           {showSig && (
-            <img src={SIG_DATA_URL} alt="" className="stamp-layer-main stamp-draggable"
-              style={{position:'absolute', bottom: stampMm.bottom*3.78, right: stampMm.right*3.78, zIndex:20, pointerEvents:'none'}}/>
+            <div className="print-sign-area">
+              <img src={SIG_DATA_URL} alt="" className="print-sign-img"/>
+            </div>
           )}
-          </div>{/* /print-page-wrap */}
+            </td></tr>
+          </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -3284,7 +3269,9 @@ function UsersPage({ currentUser }) {
 }
 
 /* ===================== PRINT FUNCTION ===================== */
-const printDoc = (containerId, title, stampPos) => {
+// الفوتر داخل <tfoot> (display:table-footer-group) يتكرّر أسفل كل صفحة ويحجز مساحته
+// تلقائياً — لا حاجة لأي حسابات ارتفاع أو تثبيت عائم. المتصفح يتكفّل بالتوزيع.
+const printDoc = (containerId, title) => {
   const el = document.getElementById(containerId);
   if (!el) return;
 
@@ -3293,44 +3280,25 @@ const printDoc = (containerId, title, stampPos) => {
   const originalStyles = allChildren.map(child => child.style.cssText);
   allChildren.forEach(child => { child.style.cssText = 'display:none !important;'; });
 
-  // أنشئ الـ div بعرض A4 الكامل
   const printDiv = document.createElement('div');
   printDiv.id = 'temp-print-div';
-  printDiv.style.cssText = 'position:static;width:100%;padding:0;box-sizing:border-box;background:white;';
+  printDiv.style.cssText = 'position:static;width:100%;background:white;';
   printDiv.innerHTML = el.innerHTML;
   body.appendChild(printDiv);
 
-  // الفوتر ثابت أسفل كل صفحة: نحجز له مساحة عبر @page margin-bottom بمقدار ارتفاعه،
-  // ونثبّته بـ position:fixed داخل تلك المساحة — فيظهر أسفل كل صفحة دائماً بلا تداخل مع المحتوى
-  const footerWrap = printDiv.querySelector('.print-footer-wrap');
-  const footerPx   = footerWrap ? footerWrap.offsetHeight : 60;
-  const footerMm   = Math.ceil(footerPx / 96 * 25.4) + 6; // ارتفاع الفوتر + 6مم فراغ
-
   const printStyle = document.createElement('style');
   printStyle.textContent = `@media print {
-    @page { margin: 8mm 10mm ${footerMm}mm 10mm; size: A4 portrait; }
+    @page { margin: 10mm; size: A4 portrait; }
     #temp-print-div { padding: 0 !important; }
+    #temp-print-div .print-container { max-width: none !important; padding: 0 !important; margin: 0 !important; }
+    #temp-print-div .print-doc-table > tfoot { display: table-footer-group; }
     #temp-print-div .print-items thead { display: table-header-group; }
     #temp-print-div .print-items tbody tr { page-break-inside: avoid; break-inside: avoid; }
-    #temp-print-div .print-totals,
-    #temp-print-div .print-notes { page-break-inside: avoid; break-inside: avoid; }
-    #temp-print-div .print-footer-wrap {
-      position: fixed !important;
-      left: 10mm; right: 10mm; bottom: 3mm;
-      margin: 0 !important; background: white;
-    }
-    #temp-print-div .print-footer-bar { margin: 0 !important; }
-    ${stampPos ? `#temp-print-div .stamp-draggable {
-      position: fixed !important;
-      bottom: ${stampPos.bottom}mm;
-      right: ${stampPos.right}mm;
-      width: 550px; height: auto;
-      z-index: 100; pointer-events: none; opacity: 0.90;
-    }` : ''}
+    #temp-print-div .print-totals { page-break-inside: avoid; break-inside: avoid; }
+    #temp-print-div .print-sign-area { page-break-inside: avoid; break-inside: avoid; }
   }`;
   document.head.appendChild(printStyle);
 
-  // اسم ملف الـ PDF
   const originalTitle = document.title;
   if (title) document.title = title;
 
