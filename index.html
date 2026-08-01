@@ -338,13 +338,16 @@ th:last-child, td:last-child { border-left: none; }
 .footer-contact-row .fc-sep { margin: 0 4px; opacity: .6; }
 .footer-contact-row .fc-value { letter-spacing: .02em; }
 
-/* جدول المستند: thead يتكرر رأس كل صفحة — الفوتر طبقة ثابتة position:fixed في الطباعة */
+/* جدول المستند: tfoot يتكرر أسفل كل صفحة تلقائياً (المتصفح يحجز مساحته ويمنع التداخل) */
 .print-doc-table { width: 100%; border-collapse: collapse; }
 .print-doc-table > tbody > tr > td { padding: 0; border: none; vertical-align: top; position: relative; }
 .print-doc-table > thead { display: table-header-group; }
 .print-doc-table > thead > tr > td { padding: 0; border: none; }
+.print-doc-table > tfoot { display: table-footer-group; }
+.print-doc-table > tfoot > tr > td { padding: 6px 0 0; border: none; }
+.print-doc-table .print-footer-bar { margin: 0; }
 .print-top-space { height: 6mm; }
-/* الختم: أعلى طبقة دائماً فوق جميع عناصر الصفحة */
+/* الختم: أعلى طبقة، position:fixed في الطباعة يجعله يظهر على كل الصفحات */
 .print-sign-area { position: absolute; z-index: 9999; pointer-events: none; }
 .print-sign-img { width: 500px; opacity: 0.9; object-fit: contain; display: block; }
 
@@ -370,20 +373,10 @@ th:last-child, td:last-child { border-left: none; }
 
   body { margin: 0 !important; background: white !important; }
 
-  /* @page: margin-bottom:38mm يحجز منطقة الفوتر — المحتوى لا يدخلها أبداً */
-  @page { margin: 0 0 38mm 0; size: A4 portrait; }
+  /* margin:0 يمنع المتصفح من إضافة URL/تاريخ/ترقيم الصفحات */
+  @page { margin: 0; size: A4 portrait; }
 
-  /* الفوتر في المنطقة المحجوزة أسفل كل صفحة — لا تداخل مع المحتوى */
-  .print-footer-bar {
-    position: fixed !important;
-    bottom: 0 !important;
-    left: 10mm !important;
-    right: 10mm !important;
-    margin: 0 !important;
-    z-index: 2000 !important;
-  }
-
-  /* الختم: fixed يجعله يظهر على كل الصفحات، z-index أعلى من الفوتر */
+  /* الختم: fixed = يظهر على كل الصفحات، أعلى z-index */
   .print-sign-area {
     position: fixed !important;
     z-index: 9999 !important;
@@ -1084,6 +1077,33 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           <thead>
             <tr><td><div className="print-top-space"></div></td></tr>
           </thead>
+          <tfoot>
+            <tr><td>
+              <div className="print-footer-bar">
+                <div className="print-footer-right">
+                  <div className="print-footer-label"></div>
+                  <div>Amman - King Hussein Street, Building 22</div>
+                  <div>P.O Box 927817, Zip 11190, Jordan</div>
+                </div>
+                <div className="print-footer-center">
+                  <div className="print-footer-label">تواصل معنا</div>
+                  <div>{COMPANY.website}</div>
+                  <div>{COMPANY.email}</div>
+                  <div style={{marginTop:3,fontSize:9,opacity:.85}}>
+                    <span>Instagram | Facebook | LinkedIn</span>
+                    <span style={{margin:'0 4px'}}>—</span>
+                    <span>Hayat Scientific</span>
+                  </div>
+                </div>
+                <div className="print-footer-left">
+                  <div className="print-footer-label"></div>
+                  <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
+                  <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
+                  <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
+                </div>
+              </div>
+            </td></tr>
+          </tfoot>
           <tbody>
             <tr><td>
           {/* الرأس */}
@@ -1197,7 +1217,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           )}
 
-          {/* الختم — أعلى طبقة، مرة واحدة في نهاية المستند */}
+          {/* الختم — position:fixed في الطباعة يجعله على كل الصفحات */}
           {showSig && (
             <div className="print-sign-area" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}>
               <img src={SIG_DATA_URL} alt="" className="print-sign-img"/>
@@ -1206,31 +1226,6 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </td></tr>
           </tbody>
           </table>
-
-          {/* الفوتر: في التدفق الطبيعي للشاشة، وposition:fixed في الطباعة (يتكرر أسفل كل صفحة) */}
-          <div className="print-footer-bar">
-            <div className="print-footer-right">
-              <div className="print-footer-label"></div>
-              <div>Amman - King Hussein Street, Building 22</div>
-              <div>P.O Box 927817, Zip 11190, Jordan</div>
-            </div>
-            <div className="print-footer-center">
-              <div className="print-footer-label">تواصل معنا</div>
-              <div>{COMPANY.website}</div>
-              <div>{COMPANY.email}</div>
-              <div style={{marginTop:3,fontSize:9,opacity:.85}}>
-                <span>Instagram | Facebook | LinkedIn</span>
-                <span style={{margin:'0 4px'}}>—</span>
-                <span>Hayat Scientific</span>
-              </div>
-            </div>
-            <div className="print-footer-left">
-              <div className="print-footer-label"></div>
-              <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
-              <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
-              <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -3360,17 +3355,13 @@ const printDoc = (containerId, title) => {
 
   const printStyle = document.createElement('style');
   printStyle.textContent = `
-    /* أثناء القياس: خارج الشاشة بعرض A4 الحقيقي */
     #temp-print-div { position: absolute; left: -99999px; top: 0; width: 210mm; background: white; }
     #temp-print-div .print-container { max-width: none; padding: 0 10mm; margin: 0; }
     #temp-print-div .print-doc-table > thead { display: table-header-group; }
-    /* الفوتر والختم غير ثابتَين أثناء القياس */
-    #temp-print-div .print-footer-bar { position: static !important; margin-top: 0 !important; }
-    #temp-print-div .print-sign-area  { position: absolute !important; }
+    #temp-print-div .print-doc-table > tfoot { display: table-footer-group; }
     @media print {
-      @page { margin: 0 0 38mm 0; size: A4 portrait; }
+      @page { margin: 0; size: A4 portrait; }
       #temp-print-div { position: static !important; left: auto !important; width: 100% !important; }
-      #temp-print-div .print-footer-bar { position: fixed !important; bottom: 0 !important; left: 10mm !important; right: 10mm !important; margin: 0 !important; z-index: 2000 !important; }
       #temp-print-div .print-sign-area { position: fixed !important; z-index: 9999 !important; }
       #temp-print-div .print-items thead { display: table-header-group; }
       #temp-print-div .print-items tbody tr { page-break-inside: avoid; break-inside: avoid; }
@@ -3379,14 +3370,16 @@ const printDoc = (containerId, title) => {
   `;
   document.head.appendChild(printStyle);
 
-  // مساحة المحتوى = A4 (297mm) ناقص هامش الفوتر المحجوز (38mm) = 259mm لكل صفحة
+  // احسب minHeight لملء صفحات كاملة — tfoot يتكفل بالفوتر تلقائياً
   const docTd   = printDiv.querySelector('.print-doc-table > tbody > tr > td');
   const theadEl = printDiv.querySelector('.print-doc-table > thead');
+  const footBar = printDiv.querySelector('.print-doc-table .print-footer-bar');
   if (docTd) {
-    const FOOTER_MM = 38;
-    const PAGE_PX   = (297 - FOOTER_MM) * 96 / 25.4;        // 259mm = مساحة المحتوى الصافية
-    const topH      = theadEl ? theadEl.offsetHeight : 0;    // thead يتكرر رأس كل صفحة
-    const avail     = PAGE_PX - topH;
+    const PAGE  = 297 * 96 / 25.4;                   // ارتفاع A4 بالبكسل (margin:0)
+    const topH  = theadEl ? theadEl.offsetHeight : 0; // 6mm مسافة رأس تتكرر
+    // نقيس شريط الفوتر الداخلي (أدق من offsetHeight على tfoot مباشرة)
+    const footH = footBar ? footBar.offsetHeight + 6 : 70; // +6px padding tfoot
+    const avail = PAGE - topH - footH;
     if (avail > 0) {
       const pages = Math.max(1, Math.ceil(docTd.scrollHeight / avail));
       docTd.style.minHeight = Math.floor(pages * avail) + 'px';
