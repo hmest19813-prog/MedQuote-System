@@ -338,25 +338,20 @@ th:last-child, td:last-child { border-left: none; }
 .footer-contact-row .fc-sep { margin: 0 4px; opacity: .6; }
 .footer-contact-row .fc-value { letter-spacing: .02em; }
 
-/* جدول المستند: الفوتر في tfoot يتكرّر أسفل كل صفحة ويحجز مساحته تلقائياً (لا تداخل مع المحتوى) */
+/* جدول المستند: thead يتكرر رأس كل صفحة — الفوتر طبقة ثابتة position:fixed في الطباعة */
 .print-doc-table { width: 100%; border-collapse: collapse; }
 .print-doc-table > tbody > tr > td { padding: 0; border: none; vertical-align: top; position: relative; }
 .print-doc-table > thead { display: table-header-group; }
 .print-doc-table > thead > tr > td { padding: 0; border: none; }
-.print-doc-table > tfoot { display: table-footer-group; }
-.print-doc-table > tfoot > tr > td { padding: 10px 0 0; border: none; }
-.print-doc-table .print-footer-bar { margin: 0; }
 .print-top-space { height: 6mm; }
-/* منطقة الختم/التوقيع ضمن التدفق — تظهر مرة واحدة في نهاية المستند */
-/* الختم طبقة مطلقة أسفل خلية المحتوى (= أسفل الصفحة الأخيرة) — لا يأخذ مساحة بالتدفق فلا يكسر الترقيم */
-/* الختم طبقة عليا مطلقة داخل خلية المحتوى (= الصفحة الأخيرة)، موضعه بالـ mm من inline */
-.print-sign-area { position: absolute; z-index: 1000; pointer-events: none; }
+/* الختم: أعلى طبقة دائماً فوق جميع عناصر الصفحة */
+.print-sign-area { position: absolute; z-index: 9999; pointer-events: none; }
 .print-sign-img { width: 550px; opacity: 0.9; object-fit: contain; display: block; }
 
 @media print {
   /* نخفي كل شيء - printDoc تتحكم بما يُطبع */
   body > *:not(#temp-print-div) { display: none !important; }
-  
+
   #temp-print-div {
     display: block !important;
     position: static !important;
@@ -365,22 +360,34 @@ th:last-child, td:last-child { border-left: none; }
   }
 
   .no-print { display: none !important; }
-  
+
   /* نحافظ على الألوان عند الطباعة */
-  * { 
-    -webkit-print-color-adjust: exact !important; 
-    print-color-adjust: exact !important; 
-    color-adjust: exact !important; 
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
-  
+
   body { margin: 0 !important; background: white !important; }
 
   /* margin: 0 يحذف header/footer المتصفح (الوقت والتاريخ واسم الصفحة) */
   @page { margin: 0; size: A4 portrait; }
 
+  /* الفوتر ثابت أسفل كل صفحة مطبوعة */
+  .print-footer-bar {
+    position: fixed !important;
+    bottom: 5mm !important;
+    left: 10mm !important;
+    right: 10mm !important;
+    margin: 0 !important;
+    z-index: 2000 !important;
+  }
+
+  /* الختم فوق كل شيء بما في ذلك الفوتر */
+  .print-sign-area { z-index: 9999 !important; }
+
   .print-items thead { display: table-header-group; }
   .print-items tbody tr { page-break-inside: avoid !important; break-inside: avoid !important; }
-  .print-footer-bar { page-break-inside: avoid !important; break-inside: avoid !important; }
   .print-notes { page-break-after: avoid !important; break-after: avoid !important; }
   .print-totals { page-break-inside: avoid !important; break-inside: avoid !important; }
   .print-client-box { page-break-after: avoid !important; break-after: avoid !important; }
@@ -1074,33 +1081,6 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           <thead>
             <tr><td><div className="print-top-space"></div></td></tr>
           </thead>
-          <tfoot>
-            <tr><td>
-              <div className="print-footer-bar">
-                <div className="print-footer-right">
-                  <div className="print-footer-label"></div>
-                  <div>Amman - King Hussein Street, Building 22</div>
-                  <div>P.O Box 927817, Zip 11190, Jordan</div>
-                </div>
-                <div className="print-footer-center">
-                  <div className="print-footer-label">تواصل معنا</div>
-                  <div>{COMPANY.website}</div>
-                  <div>{COMPANY.email}</div>
-                  <div style={{marginTop:3,fontSize:9,opacity:.85}}>
-                    <span>Instagram | Facebook | LinkedIn</span>
-                    <span style={{margin:'0 4px'}}>—</span>
-                    <span>Hayat Scientific</span>
-                  </div>
-                </div>
-                <div className="print-footer-left">
-                  <div className="print-footer-label"></div>
-                  <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
-                  <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
-                  <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
-                </div>
-              </div>
-            </td></tr>
-          </tfoot>
           <tbody>
             <tr><td>
           {/* الرأس */}
@@ -1214,7 +1194,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </div>
           )}
 
-          {/* الختم — منطقة توقيع ضمن التدفق (تظهر مرة واحدة في نهاية المستند) */}
+          {/* الختم — أعلى طبقة، مرة واحدة في نهاية المستند */}
           {showSig && (
             <div className="print-sign-area" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}>
               <img src={SIG_DATA_URL} alt="" className="print-sign-img"/>
@@ -1223,6 +1203,31 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             </td></tr>
           </tbody>
           </table>
+
+          {/* الفوتر: في التدفق الطبيعي للشاشة، وposition:fixed في الطباعة (يتكرر أسفل كل صفحة) */}
+          <div className="print-footer-bar">
+            <div className="print-footer-right">
+              <div className="print-footer-label"></div>
+              <div>Amman - King Hussein Street, Building 22</div>
+              <div>P.O Box 927817, Zip 11190, Jordan</div>
+            </div>
+            <div className="print-footer-center">
+              <div className="print-footer-label">تواصل معنا</div>
+              <div>{COMPANY.website}</div>
+              <div>{COMPANY.email}</div>
+              <div style={{marginTop:3,fontSize:9,opacity:.85}}>
+                <span>Instagram | Facebook | LinkedIn</span>
+                <span style={{margin:'0 4px'}}>—</span>
+                <span>Hayat Scientific</span>
+              </div>
+            </div>
+            <div className="print-footer-left">
+              <div className="print-footer-label"></div>
+              <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
+              <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
+              <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3356,29 +3361,31 @@ const printDoc = (containerId, title) => {
     #temp-print-div { position: absolute; left: -99999px; top: 0; width: 210mm; background: white; }
     #temp-print-div .print-container { max-width: none; padding: 0 10mm; margin: 0; }
     #temp-print-div .print-doc-table > thead { display: table-header-group; }
-    #temp-print-div .print-doc-table > tfoot { display: table-footer-group; }
+    /* الفوتر في وضع الشاشة غير ثابت لأغراض القياس */
+    #temp-print-div .print-footer-bar { position: static !important; margin-top: 0 !important; }
     @media print {
       @page { margin: 0; size: A4 portrait; }
       #temp-print-div { position: static !important; left: auto !important; width: 100% !important; }
+      #temp-print-div .print-footer-bar { position: fixed !important; bottom: 5mm !important; left: 10mm !important; right: 10mm !important; margin: 0 !important; z-index: 2000 !important; }
+      #temp-print-div .print-sign-area { z-index: 9999 !important; }
       #temp-print-div .print-items thead { display: table-header-group; }
       #temp-print-div .print-items tbody tr { page-break-inside: avoid; break-inside: avoid; }
       #temp-print-div .print-totals { page-break-inside: avoid; break-inside: avoid; }
-      #temp-print-div .print-sign-area { page-break-inside: avoid; break-inside: avoid; }
     }
   `;
   document.head.appendChild(printStyle);
 
-  // املأ خلية المحتوى بحيث يستقرّ الفوتر أسفل الصفحة الأخيرة تماماً (لأي عدد صفحات)
+  // احسب عدد الصفحات وأضف مسافة كافية أسفل المحتوى لعدم التداخل مع الفوتر الثابت
   const docTd   = printDiv.querySelector('.print-doc-table > tbody > tr > td');
   const theadEl = printDiv.querySelector('.print-doc-table > thead');
-  const tfootEl = printDiv.querySelector('.print-doc-table > tfoot');
-  if (docTd && tfootEl) {
-    const PAGE  = 297 * 96 / 25.4;                    // ارتفاع صفحة A4 بالبكسل (هامش 0)
-    const topH  = theadEl ? theadEl.offsetHeight : 0; // الهامش العلوي المتكرر
-    const footH = tfootEl.offsetHeight;               // ارتفاع الفوتر المتكرر
-    const avail = PAGE - topH - footH - 6;            // مساحة المحتوى لكل صفحة (‑6 أمان)
+  if (docTd) {
+    const PAGE         = 297 * 96 / 25.4;                    // ارتفاع A4 بالبكسل عند 96dpi
+    const topH         = theadEl ? theadEl.offsetHeight : 0; // thead يتكرر كل صفحة
+    const FOOTER_CLEAR = Math.round(40 * 96 / 25.4);         // 40mm هامش أمان فوق الفوتر الثابت
+    const avail        = PAGE - topH;                        // مساحة المحتوى لكل صفحة
     if (avail > 0) {
-      const pages = Math.max(1, Math.ceil(docTd.scrollHeight / avail));
+      // نضيف FOOTER_CLEAR لضمان وجود مسافة حرة أسفل المحتوى في آخر صفحة
+      const pages = Math.max(1, Math.ceil((docTd.scrollHeight + FOOTER_CLEAR) / avail));
       docTd.style.minHeight = Math.floor(pages * avail) + 'px';
     }
   }
