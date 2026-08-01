@@ -1624,8 +1624,8 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                 <tr>
                   <th style={{width:28}}>#</th>
                   <th style={{minWidth:240}}>المنتج</th>
-                  <th style={{width:75}}>الوحدة</th>
-                  <th style={{width:60}}>الكمية</th>
+                  <th style={{width:110}}>الوحدة</th>
+                  <th style={{width:90}}>الكمية</th>
                   {detailed ? <>
                     <th style={{width:90}}>سعر الوحدة<br/>(بدون ضريبة)</th>
                     <th style={{width:60}}>الضريبة %</th>
@@ -1671,7 +1671,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                             : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
                         </div>}
                       </td>
-                      <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH"/></td>
+                      <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH" style={{width:'100%'}}/></td>
                       <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       {detailed ? <>
