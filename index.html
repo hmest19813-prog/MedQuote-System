@@ -2077,6 +2077,32 @@ function DeletedQuotesPage({ user, quotes, onReload }) {
   );
 }
 
+/* ===================== ARCHIVE MODAL ===================== */
+function ArchiveModal({ label, onConfirm, onClose }) {
+  const [note, setNote] = React.useState('');
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:420}}>
+        <div className="modal-header">
+          <span className="modal-title">🗄️ {label}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">سبب الأرشفة <span style={{color:'var(--gray-400)',fontWeight:400}}>(اختياري)</span></label>
+            <textarea className="form-control" rows={3} value={note} onChange={e=>setNote(e.target.value)}
+              placeholder="مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة..." style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={()=>onConfirm(note.trim())}>تأكيد الأرشفة</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== QUOTES LIST ===================== */
 function QuotesList({ user, quotes, onReload }) {
   const [search, setSearch] = useState('');
@@ -2086,6 +2112,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [profiles, setProfiles] = useState({});
   const [editing, setEditing] = useState(null);
   const [orderingQ, setOrderingQ] = useState(null);
+  const [archiveTarget, setArchiveTarget] = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -2148,10 +2175,11 @@ function QuotesList({ user, quotes, onReload }) {
     }
   };
 
-  const archiveQ = async (q) => {
-    if (!confirm('أرشفة هذا العرض؟')) return;
-    await sb.from('quotations').update({ archived:true, archived_at:new Date().toISOString() }).eq('id', q.id);
-    createLog(user, `أرشف العرض ${q.number}`, 'quote', q.id, q.number);
+  const doArchiveQ = async (note) => {
+    const q = archiveTarget;
+    setArchiveTarget(null);
+    await sb.from('quotations').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', q.id);
+    createLog(user, `أرشف العرض ${q.number}${note ? ` — ${note}` : ''}`, 'quote', q.id, q.number);
     toast('تم الأرشفة', 'success'); onReload();
   };
 
@@ -2247,7 +2275,7 @@ function QuotesList({ user, quotes, onReload }) {
                       {q.status!=='converted' && q.status!=='invoiced' && (
                         <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
-                      <button className="btn btn-ghost btn-sm" onClick={()=>archiveQ(q)} title="أرشفة">🗄️</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveTarget(q)} title="أرشفة">🗄️</button>
                       {hasPerm(user,'quotes_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️ حذف</button>}
                     </div>
                   </td>
@@ -2269,6 +2297,7 @@ function QuotesList({ user, quotes, onReload }) {
       )}
       {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)}/>}
       {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{setOrderingQ(null);onReload();}} onClose={()=>setOrderingQ(null)}/>}
+      {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
     </div>
   );
 }
@@ -3019,10 +3048,12 @@ function OrdersPage({ user, orders, onReload }) {
     toast('تم تحديث الحالة', 'success'); onReload();
   };
 
-  const archiveO = async (o) => {
-    if (!confirm('أرشفة هذا الطلب؟')) return;
-    await sb.from('orders').update({ archived:true, archived_at:new Date().toISOString() }).eq('id', o.id);
-    createLog(user, `أرشف الطلبية ${o.number||o.quotation_number||''}`, 'order', o.id, o.number||o.quotation_number);
+  const [archiveOrderTarget, setArchiveOrderTarget] = useState(null);
+  const doArchiveO = async (note) => {
+    const o = archiveOrderTarget;
+    setArchiveOrderTarget(null);
+    await sb.from('orders').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', o.id);
+    createLog(user, `أرشف الطلبية ${o.number||o.quotation_number||''}${note ? ` — ${note}` : ''}`, 'order', o.id, o.number||o.quotation_number);
     toast('تمت الأرشفة', 'success'); onReload();
   };
 
@@ -3123,7 +3154,7 @@ function OrdersPage({ user, orders, onReload }) {
                     <div className="flex gap-2">
                       <button className="btn btn-primary btn-sm" onClick={()=>previewOrder(o)} title="معاينة وطباعة">👁 معاينة</button>
                       {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)} title="تعديل الطلب">✏️ تعديل</button>}
-                      <button className="btn btn-ghost btn-sm" onClick={()=>archiveO(o)} title="أرشفة">🗄️</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveOrderTarget(o)} title="أرشفة">🗄️</button>
                       {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)} title="حذف نهائي">🗑 حذف</button>}
                     </div>
                   </td>
@@ -3140,6 +3171,7 @@ function OrdersPage({ user, orders, onReload }) {
           onSave={()=>{ setEditingOrder(null); onReload(); }}
           onClose={()=>setEditingOrder(null)}/>
       )}
+      {archiveOrderTarget && <ArchiveModal label={`أرشفة الطلبية ${archiveOrderTarget.number||archiveOrderTarget.quotation_number||''}`} onConfirm={doArchiveO} onClose={()=>setArchiveOrderTarget(null)}/>}
     </div>
   );
 }
@@ -3162,8 +3194,8 @@ function ArchivePage({ user, quotes, orders, onReload }) {
       </div>
       <div className="card">
         <div className="table-wrap">
-          {tab==='quotes' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th></th></tr></thead><tbody>{archivedQ.map(q=><tr key={q.id}><td className="font-bold">{q.number}</td><td>{q.customer_name}</td><td className="text-sm text-muted">{q.date}</td><td><SBadge status={q.status}/></td><td><button className="btn btn-ghost btn-sm" onClick={()=>restore('quotations',q.id)}>↩ استعادة</button></td></tr>)}{archivedQ.length===0&&<tr><td colSpan="5"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}</tbody></table>}
-          {tab==='orders' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>القيمة</th><th>الحالة</th><th></th></tr></thead><tbody>{archivedO.map(o=><tr key={o.id}><td className="font-bold">{o.number}</td><td>{o.customer_name}</td><td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)}</td><td><SBadge status={o.status} type="o"/></td><td><button className="btn btn-ghost btn-sm" onClick={()=>restore('orders',o.id)}>↩ استعادة</button></td></tr>)}{archivedO.length===0&&<tr><td colSpan="5"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}</tbody></table>}
+          {tab==='quotes' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead><tbody>{archivedQ.map(q=><tr key={q.id}><td className="font-bold">{q.number}</td><td>{q.customer_name}</td><td className="text-sm text-muted">{q.date}</td><td><SBadge status={q.status}/></td><td className="text-sm text-muted" style={{maxWidth:220}}>{q.archive_note||'—'}</td><td><button className="btn btn-ghost btn-sm" onClick={()=>restore('quotations',q.id)}>↩ استعادة</button></td></tr>)}{archivedQ.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}</tbody></table>}
+          {tab==='orders' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>القيمة</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead><tbody>{archivedO.map(o=><tr key={o.id}><td className="font-bold">{o.number}</td><td>{o.customer_name}</td><td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)}</td><td><SBadge status={o.status} type="o"/></td><td className="text-sm text-muted" style={{maxWidth:220}}>{o.archive_note||'—'}</td><td><button className="btn btn-ghost btn-sm" onClick={()=>restore('orders',o.id)}>↩ استعادة</button></td></tr>)}{archivedO.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}</tbody></table>}
         </div>
       </div>
     </div>
