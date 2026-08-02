@@ -637,7 +637,7 @@ const toast = (msg, type='info') => toastSetter && toastSetter(l => [...l, { msg
 
 const hasPerm = (user, key) => {
   if (!user) return false;
-  if (user.role === 'admin' || user.role === 'manager') return true;
+  if (user.role === 'admin') return true;
   return user.permissions?.[key] === true;
 };
 
@@ -788,7 +788,7 @@ function Sidebar({ user, page, setPage, onLogout }) {
             <span>{item.icon}</span>{item.label}
           </div>
         ))}
-        {(user?.role === 'admin' || user?.role === 'manager') && (
+        {hasPerm(user, 'deleted_quotes_access') && (
           <div className={`nav-item ${page==='deleted-quotes'?'active':''}`} onClick={() => setPage('deleted-quotes')}>
             <span>🗑️</span>عروض محذوفة
           </div>
@@ -2090,7 +2090,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const canViewIssuer = hasPerm(user, 'quotes_view_issuer');
 
   useEffect(() => {
     sb.from('profiles').select('id,full_name').then(({data}) => {
@@ -2186,7 +2186,7 @@ function QuotesList({ user, quotes, onReload }) {
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
-          {isAdmin && (
+          {canViewIssuer && (
             <select className="form-control" style={{width:'auto',maxWidth:190}} value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)}>
               <option value="">👤 كل المُصدِرين</option>
               {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
@@ -2204,7 +2204,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{isAdmin && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
@@ -2245,10 +2245,10 @@ function QuotesList({ user, quotes, onReload }) {
                       {hasPerm(user,'quotes_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️ حذف</button>}
                     </div>
                   </td>
-                  {isAdmin && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
+                  {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={isAdmin?9:8}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canViewIssuer?9:8}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -2764,7 +2764,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState({ amount:'', payment_date: new Date().toISOString().slice(0,10), method:'تحويل بنكي', reference_no:'', notes:'' });
-  const isAdmin = user?.role==='admin' || user?.role==='manager';
+  const canDeletePayment = hasPerm(user, 'payments_delete');
   const total = parseFloat(invoice.nett_price||0);
 
   const load = async () => {
@@ -2855,7 +2855,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
                   <div style={{fontSize:11,color:'var(--gray-400)'}}>{p.payment_date}{p.notes ? ` · ${p.notes}` : ''}</div>
                 </div>
                 <div className="pay-amount">+{parseFloat(p.amount).toFixed(3)}</div>
-                {isAdmin && <button onClick={()=>handleDelete(p)} style={{background:'none',border:'none',color:'#dc2626',cursor:'pointer',fontSize:16,padding:'0 4px'}}>×</button>}
+                {canDeletePayment && <button onClick={()=>handleDelete(p)} style={{background:'none',border:'none',color:'#dc2626',cursor:'pointer',fontSize:16,padding:'0 4px'}}>×</button>}
               </div>
             ))}
           </div>
@@ -2909,8 +2909,6 @@ function InvoicesPage({ user, quotes, onReload }) {
   const [editing, setEditing] = useState(null);
   const [payingInvoice, setPayingInvoice] = useState(null);
   const [paySummary, setPaySummary] = useState({});
-  const isAdmin = user?.role==='admin' || user?.role==='manager';
-
   const deleteInvoice = async (q) => {
     if (!confirm(`حذف الفاتورة "${q.number}" نهائياً مع جميع دفعاتها وبنودها؟`)) return;
     try {
@@ -3033,8 +3031,6 @@ function OrdersPage({ user, orders, onReload }) {
       toast('تم الحذف', 'success'); onReload();
     } catch(e) { toast('فشل الحذف: ' + e.message, 'error'); }
   };
-
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
   /* المعاينة تعرض بنود الطلب نفسه (order_items) لأنها قد تختلف عن بنود
      العرض بعد التعديل. الطلبات القديمة بلا بنود ترجع لبنود العرض المصدر. */
@@ -3332,6 +3328,7 @@ const PERM_GROUPS = [
     { key: 'quotes_edit_all', label: 'تعديل عروض الموظفين الآخرين' },
     { key: 'quotes_delete',   label: 'حذف عروض الأسعار' },
     { key: 'quotes_validity_override', label: `تعديل مدة صلاحية العرض (الافتراضي ${QUOTE_VALIDITY_DAYS} يوم)` },
+    { key: 'quotes_view_issuer', label: 'مشاهدة مصدر العرض والتصفية حسبه' },
   ]},
   { label: 'الطلبات', perms: [
     { key: 'orders_access', label: 'الوصول لصفحة الطلبات' },
@@ -3339,39 +3336,50 @@ const PERM_GROUPS = [
     { key: 'orders_edit',   label: 'تعديل الطلبات' },
     { key: 'orders_delete', label: 'حذف الطلبات' },
   ]},
+  { label: 'الفواتير والدفعات', perms: [
+    { key: 'payments_delete', label: 'حذف الدفعات من الفواتير' },
+  ]},
   { label: 'العملاء', perms: [
     { key: 'customers_access', label: 'الوصول لقائمة العملاء' },
     { key: 'customers_create', label: 'إضافة عميل جديد' },
     { key: 'customers_edit',   label: 'تعديل بيانات العملاء' },
-    { key: 'customers_delete', label: 'حذف العملاء' },
+    { key: 'customers_delete', label: 'حذف العملاء وإدارة القوائم' },
   ]},
   { label: 'الكتالوج', perms: [
     { key: 'catalog_access', label: 'الوصول للكتالوج' },
-    { key: 'catalog_edit',   label: 'تعديل المنتجات' },
+    { key: 'catalog_edit',   label: 'إضافة وتعديل الأصناف' },
+    { key: 'catalog_delete', label: 'حذف الأصناف وإدارة الفئات' },
   ]},
   { label: 'صفحات أخرى', perms: [
-    { key: 'letters_access',  label: 'الكتب الرسمية' },
-    { key: 'archive_access',  label: 'الأرشيف' },
-    { key: 'activity_access', label: 'سجل النشاط' },
+    { key: 'letters_access',        label: 'الكتب الرسمية' },
+    { key: 'letters_manage',        label: 'حذف الكتب وإدارة تصنيفاتها' },
+    { key: 'archive_access',        label: 'الأرشيف' },
+    { key: 'activity_access',       label: 'سجل النشاط' },
+    { key: 'deleted_quotes_access', label: 'عروض الأسعار المحذوفة' },
   ]},
 ];
 
 const DEFAULT_EMPLOYEE_PERMS = {
   quotes_create: true,  quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
-  quotes_validity_override: false,
+  quotes_validity_override: false, quotes_view_issuer: false,
+  deleted_quotes_access: false,
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
   customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
-  catalog_access: true, catalog_edit: false,
-  letters_access: true, archive_access: true,   activity_access: false,
+  catalog_access: true, catalog_edit: false,    catalog_delete: false,
+  letters_access: true, letters_manage: false,
+  archive_access: true, activity_access: false,
+  payments_delete: false,
 };
+
+const DEFAULT_MANAGER_PERMS = Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: true }), {});
 
 function UserForm({ editUser, currentUser, onSave, onClose }) {
   const isNew = !editUser;
 
   const [form, setForm] = useState(() => {
-    const initPerms = (editUser?.role === 'employee' && editUser?.permissions && Object.keys(editUser.permissions).length > 0)
+    const initPerms = ((editUser?.role === 'employee' || editUser?.role === 'manager') && editUser?.permissions && Object.keys(editUser.permissions).length > 0)
       ? Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: editUser.permissions[k] === true }), {})
-      : { ...DEFAULT_EMPLOYEE_PERMS };
+      : editUser?.role === 'manager' ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_EMPLOYEE_PERMS };
     return {
       full_name:   editUser?.full_name  || '',
       email:       editUser?.email      || '',
@@ -3405,7 +3413,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
     }
     if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل', 'error'); return; }
 
-    const permsToSave = form.role === 'employee' ? form.permissions : {};
+    const permsToSave = (form.role === 'employee' || form.role === 'manager') ? form.permissions : {};
     setLoading(true);
     try {
       if (isNew) {
@@ -3454,7 +3462,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth: form.role === 'employee' ? 620 : 480}}>
+      <div className="modal" style={{maxWidth: (form.role === 'employee' || form.role === 'manager') ? 620 : 480}}>
         <div className="modal-header">
           <span className="modal-title">{isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -3507,7 +3515,10 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">الصلاحية</label>
-              <select className="form-control" value={form.role} onChange={e=>setF('role',e.target.value)}>
+              <select className="form-control" value={form.role} onChange={e => {
+                const r = e.target.value;
+                setForm(f => ({...f, role: r, permissions: isNew ? (r === 'manager' ? {...DEFAULT_MANAGER_PERMS} : {...DEFAULT_EMPLOYEE_PERMS}) : f.permissions}));
+              }}>
                 <option value="admin">مدير النظام (Admin)</option>
                 <option value="manager">مدير (Manager)</option>
                 <option value="employee">موظف (Employee)</option>
@@ -3524,11 +3535,11 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Checklist الصلاحيات — فقط للموظفين */}
-          {form.role === 'employee' && (
+          {/* Checklist الصلاحيات — للمديرين والموظفين */}
+          {(form.role === 'employee' || form.role === 'manager') && (
             <div style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'12px 14px',background:'#f8fafc'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 صلاحيات الموظف</span>
+                <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 {form.role === 'manager' ? 'صلاحيات المدير' : 'صلاحيات الموظف'}</span>
                 <div style={{display:'flex',gap:6}}>
                   <button type="button"
                     style={{fontSize:11,padding:'3px 10px',borderRadius:6,border:'1px solid var(--primary)',color:'var(--primary)',background:'white',cursor:'pointer',fontFamily:'inherit'}}
@@ -4809,7 +4820,7 @@ function CatalogPage({ user }) {
   const [editing,       setEditing]       = React.useState(null);
   const [dbCategories,  setDbCategories]  = React.useState([]);
   const [showCatMgr,    setShowCatMgr]    = React.useState(false);
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const canDeleteCatalog = hasPerm(user, 'catalog_delete');
 
   const loadCats = async () => {
     const { data } = await sb.from('catalog_categories').select('*').order('sort_order').order('name');
@@ -4864,7 +4875,7 @@ function CatalogPage({ user }) {
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>كتالوج الأصناف</h2>
         <div style={{display:'flex',gap:8}}>
-          {user?.role==='admin' && (
+          {canDeleteCatalog && (
             <button className="btn btn-ghost" onClick={()=>setShowCatMgr(true)}>⚙️ إدارة الفئات</button>
           )}
           {hasPerm(user, 'catalog_edit') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>+ إضافة صنف</button>}
@@ -4932,13 +4943,13 @@ function CatalogPage({ user }) {
                         <div className="flex gap-1">
                           {hasPerm(user, 'catalog_edit') && <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
                             onClick={()=>{ setEditing(it); setShowForm(true); }} title="تعديل">✏️</button>}
-                          {isAdmin && (
+                          {canDeleteCatalog && (
                             <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px'}}
                               onClick={()=>toggleActive(it)} title={it.is_active?'إيقاف':'تفعيل'}>
                               {it.is_active ? '🔴' : '🟢'}
                             </button>
                           )}
-                          {isAdmin && (
+                          {canDeleteCatalog && (
                             <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',color:'var(--danger)'}}
                               onClick={()=>deleteItem(it)} title="حذف">🗑️</button>
                           )}
@@ -5012,7 +5023,7 @@ function CustomersPage({ user }) {
         </div>
         <div style={{flex:1}}/>
         <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة، المنطقة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:300}}/>
-        {user?.role==='admin' && (
+        {hasPerm(user, 'customers_delete') && (
           <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>
         )}
         {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
@@ -5218,7 +5229,7 @@ function LettersPage({ user }) {
   };
   useEffect(() => { load(); }, []);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const canManageLetters = hasPerm(user, 'letters_manage');
 
   const filtered = letters.filter(l => {
     const ms = !search || l.recipient?.toLowerCase().includes(search.toLowerCase()) || l.subject?.toLowerCase().includes(search.toLowerCase()) || String(l.number).includes(search);
@@ -5251,7 +5262,7 @@ function LettersPage({ user }) {
 
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
         <input className="form-control" style={{maxWidth:300}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالرقم أو السادة أو الموضوع..."/>
-        {isAdmin && (
+        {canManageLetters && (
           <select className="form-control" style={{width:'auto'}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
             <option value="all">كل التصنيفات</option>
             {LETTER_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
@@ -5266,7 +5277,7 @@ function LettersPage({ user }) {
             <thead>
               <tr>
                 <th>الرقم</th><th>السادة</th><th>الموضوع</th><th>التاريخ</th>
-                {isAdmin && <th>التصنيف</th>}
+                {canManageLetters && <th>التصنيف</th>}
                 <th>إجراءات</th>
               </tr>
             </thead>
@@ -5277,17 +5288,17 @@ function LettersPage({ user }) {
                   <td>{l.recipient}</td>
                   <td>{l.subject}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{l.date}</td>
-                  {isAdmin && <td style={{textAlign:'center'}}><span className={`badge-cat badge-cat-${l.category||'correspondence'}`}>{catLabel(l.category)}</span></td>}
+                  {canManageLetters && <td style={{textAlign:'center'}}><span className={`badge-cat badge-cat-${l.category||'correspondence'}`}>{catLabel(l.category)}</span></td>}
                   <td>
                     <div className="flex gap-2">
                       <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewing(l)} title="معاينة وطباعة">👁</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>{setEditing(l);setShowForm(true);}} title="تعديل">✏️</button>
-                      {isAdmin && <button className="btn btn-danger btn-sm" onClick={()=>deleteLetter(l)} title="حذف">🗑️</button>}
+                      {canManageLetters && <button className="btn btn-danger btn-sm" onClick={()=>deleteLetter(l)} title="حذف">🗑️</button>}
                     </div>
                   </td>
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={isAdmin?6:5}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canManageLetters?6:5}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -5374,7 +5385,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
   });
   const [loading, setLoading] = useState(false);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
-  const isAdmin = user?.role==='admin' || user?.role==='manager';
+  const canManageLetters = hasPerm(user, 'letters_manage');
 
   const recipientList = contacts.filter(c=>c.contact_type==='recipient');
   const attentionList = contacts.filter(c=>c.contact_type==='attention');
@@ -5396,7 +5407,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
     try {
       const payload = {...form};
       delete payload.id; delete payload.created_at; delete payload.updated_at;
-      if (!isAdmin) delete payload.category;
+      if (!canManageLetters) delete payload.category;
 
       if (letter?.id) {
         delete payload.number; delete payload.created_by;
@@ -5459,7 +5470,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
               <label className="form-label">الموضوع *</label>
               <input className="form-control" value={form.subject} onChange={e=>setF('subject',e.target.value)} placeholder="شهادة خبرة، تعميم، إلخ"/>
             </div>
-            {isAdmin ? (
+            {canManageLetters ? (
               <div className="form-group">
                 <label className="form-label">التصنيف</label>
                 <select className="form-control" value={form.category} onChange={e=>setF('category',e.target.value)}>
@@ -5851,7 +5862,7 @@ function App() {
           {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
-          {page==='deleted-quotes' && (user.role==='admin'||user.role==='manager') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
+          {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
         </div>
       </div>
