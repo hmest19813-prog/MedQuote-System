@@ -301,9 +301,13 @@ th:last-child, td:last-child { border-left: none; }
 .pq-stamp { position: absolute; z-index: 50; cursor: grab; touch-action: none; user-select: none; }
 .pq-stamp:hover { outline: 2px dashed rgba(28,106,153,.55); outline-offset: 4px; }
 .pq-stamp:active { cursor: grabbing; }
+/* مقبض التكبير/التصغير: زاوية أعلى-يسار (المرساة أسفل-يمين فيكبر نحو الأعلى واليسار) */
+.pq-stamp-resize { position: absolute; top: -8px; left: -8px; width: 16px; height: 16px; background: white; border: 2.5px solid var(--primary); border-radius: 4px; cursor: nwse-resize; opacity: 0; transition: opacity .15s; z-index: 51; touch-action: none; }
+.pq-stamp:hover .pq-stamp-resize { opacity: 1; }
 @media print {
   .pq-stamp { pointer-events: none; }
   .pq-stamp:hover { outline: none; }
+  .pq-stamp-resize { display: none !important; }
 }
 .pq-cont-header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2.5px solid var(--primary); padding-bottom: 5px; margin-bottom: 12px; }
 .pq-cont-header .pq-cont-name { font-weight: 900; color: var(--primary); font-size: 16px; letter-spacing: .06em; direction: ltr; }
@@ -1091,12 +1095,6 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const [showSig, setShowSig] = useState(false);
   const [stampMm, setStampMm] = useState({ bottom: 20, right: 120 });
 
-  const STAMP_PRESETS = [
-    {r:155,b:230},{r:80,b:230},{r:15,b:230},
-    {r:155,b:130},{r:80,b:130},{r:15,b:130},
-    {r:155,b:20}, {r:80,b:20}, {r:15,b:20},
-  ];
-
   /* سحب الختم بالماوس: نحوّل إزاحة المؤشر من بكسل إلى ملم ونحدّث موضعه.
      المعاينة بمقياس 1:1 مع الورقة، فمكان الإفلات = مكان الطباعة بالضبط */
   const onStampPointerDown = (e) => {
@@ -1108,6 +1106,25 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
         right:  Math.min(200, Math.max(0, Math.round(startMm.right  + (startX - ev.clientX) / PQ_MM))),
         bottom: Math.min(280, Math.max(0, Math.round(startMm.bottom + (startY - ev.clientY) / PQ_MM))),
       });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  /* تغيير حجم الختم من المقبض — العرض فقط يتغيّر والارتفاع يتبعه تلقائياً
+     (النِسب محفوظة)، والمرساة تبقى زاوية أسفل-يمين فلا يتحرك من مكانه */
+  const [stampW, setStampW] = useState(500);
+  const onStampResizeDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = stampW;
+    const onMove = (ev) => {
+      setStampW(Math.min(760, Math.max(80, Math.round(startW + (startX - ev.clientX)))));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -1317,25 +1334,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
           </div>
         </div>
         {showSig && (
-          <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac',flexWrap:'wrap'}}>
-            <span style={{fontSize:12,fontWeight:700,color:'#15803d'}}>موضع الختم:</span>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,26px)',gap:3}}>
-              {STAMP_PRESETS.map((p,i)=>{
-                const sel = stampMm.bottom===p.b && stampMm.right===p.r;
-                return <button key={i} title={`أسفل ${p.b}mm • يمين ${p.r}mm`}
-                  onClick={()=>setStampMm({bottom:p.b,right:p.r})}
-                  style={{width:26,height:26,borderRadius:4,border:sel?'2px solid #15803d':'1px solid #ccc',background:sel?'#15803d':'#fff',color:sel?'#fff':'#333',cursor:'pointer',fontSize:10}}>
-                  {['↖','↑','↗','←','·','→','↙','↓','↘'][i]}
-                </button>;
-              })}
-            </div>
-            <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>أسفل:
-              <input type="number" min={0} max={260} value={stampMm.bottom} onChange={e=>setStampMm(p=>({...p,bottom:+e.target.value||0}))} style={{width:52,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/> mm
-            </label>
-            <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>يمين:
-              <input type="number" min={0} max={200} value={stampMm.right} onChange={e=>setStampMm(p=>({...p,right:+e.target.value||0}))} style={{width:52,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/> mm
-            </label>
-            <span style={{fontSize:11,color:'#16a34a'}}>🖱️ اسحب الختم بالماوس على الورقة لتحديد مكانه — يظهر على كل الصفحات</span>
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac'}}>
+            <span style={{fontSize:11,color:'#16a34a'}}>🖱️ اسحب الختم على الورقة لتحديد مكانه — والمربع الأزرق بزاويته للتكبير/التصغير</span>
           </div>
         )}
         <div className="modal-body pq-preview-body" id="print-content">
@@ -1361,7 +1361,8 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
               {showSig && (
                 <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
                      onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
-                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false}/>
+                  <div className="pq-stamp-resize" onPointerDown={onStampResizeDown} title="اسحب للتكبير/التصغير"></div>
+                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
                 </div>
               )}
               <PqFooterBar/>
