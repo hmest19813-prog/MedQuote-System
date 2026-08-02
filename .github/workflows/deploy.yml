@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Upload index.html via FTP
+      - name: Upload files via FTP
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USER: ${{ secrets.FTP_USERNAME }}
@@ -26,13 +26,25 @@ jobs:
           ftp = ftplib.FTP()
           ftp.connect(host, 21, timeout=30)
           ftp.login(user, pw)
-          print(f"Current dir: {ftp.pwd()}")
-          print(f"Contents: {ftp.nlst()}")
+          print(f"Connected. Dir: {ftp.pwd()}")
 
+          # رفع index.html
           with open('index.html', 'rb') as f:
               ftp.storbinary('STOR index.html', f)
+          print("Uploaded index.html")
 
-          print(f"After upload: {ftp.nlst()}")
+          # رفع مجلد lib
+          lib_files = os.listdir('lib')
+          try:
+              ftp.mkd('lib')
+          except:
+              pass
+          ftp.cwd('lib')
+          for fname in lib_files:
+              with open(f'lib/{fname}', 'rb') as f:
+                  ftp.storbinary(f'STOR {fname}', f)
+              print(f"Uploaded lib/{fname}")
+
           ftp.quit()
-          print("Done!")
+          print("All done!")
           EOF
