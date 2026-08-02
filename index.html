@@ -297,7 +297,14 @@ th:last-child, td:last-child { border-left: none; }
 .pq-page-inner { position: absolute; top: 6mm; right: 10mm; left: 10mm; }
 .pq-page > .print-footer-bar { position: absolute; bottom: 5mm; left: 10mm; right: 10mm; margin-top: 0; }
 .pq-pageno { position: absolute; bottom: 1mm; left: 0; right: 0; text-align: center; font-size: 9px; color: #7a8b99; }
-.pq-stamp { position: absolute; z-index: 50; pointer-events: none; }
+/* الختم: قابل للسحب بالماوس في المعاينة — وبما أن المعاينة = الطباعة، مكانه النهائي مضمون */
+.pq-stamp { position: absolute; z-index: 50; cursor: grab; touch-action: none; user-select: none; }
+.pq-stamp:hover { outline: 2px dashed rgba(28,106,153,.55); outline-offset: 4px; }
+.pq-stamp:active { cursor: grabbing; }
+@media print {
+  .pq-stamp { pointer-events: none; }
+  .pq-stamp:hover { outline: none; }
+}
 .pq-cont-header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2.5px solid var(--primary); padding-bottom: 5px; margin-bottom: 12px; }
 .pq-cont-header .pq-cont-name { font-weight: 900; color: var(--primary); font-size: 16px; letter-spacing: .06em; direction: ltr; }
 .pq-cont-header .pq-cont-title { font-size: 11px; font-weight: 700; color: #555; }
@@ -329,7 +336,7 @@ th:last-child, td:last-child { border-left: none; }
 .print-client-grid label { color: #6B7A8B; font-weight: 700; font-size: 11px; min-width: 85px; flex-shrink: 0; }
 .print-client-grid .field-row > *:not(label) { font-size: 13px; font-weight: 600; color: #111; }
 .print-items { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11.5px; table-layout: fixed; }
-.print-items th { background: linear-gradient(135deg, #1C6A99, #2B8FC4); color: white; padding: 7px 9px; text-align: center; font-size: 11px; }
+.print-items th { background: linear-gradient(135deg, #1C6A99, #2B8FC4); color: white; padding: 7px 3px; text-align: center; font-size: 11px; overflow: hidden; }
 .print-items td { padding: 6px 9px; border-bottom: 1px solid #B8DCF0; text-align: center; vertical-align: middle; }
 .print-items td.item-name { text-align: right; max-width: 150px; white-space: normal; word-break: break-word; line-height: 1.4; }
 .print-items td.item-notes { max-width: 80px; white-space: normal; word-break: break-word; font-size: 10px; line-height: 1.4; }
@@ -1053,14 +1060,14 @@ function PqItemsTable({ detailed, children }) {
     <table className="print-items">
       {detailed ? (
         <colgroup>
-          <col style={{width:'5%'}}/><col style={{width:'24%'}}/><col style={{width:'8%'}}/><col style={{width:'7%'}}/>
+          <col style={{width:'4.5%'}}/><col style={{width:'22.5%'}}/><col style={{width:'7.5%'}}/><col style={{width:'6%'}}/>
           <col style={{width:'10%'}}/><col style={{width:'6%'}}/><col style={{width:'11%'}}/><col style={{width:'12%'}}/>
-          <col style={{width:'9%'}}/><col style={{width:'8%'}}/>
+          <col style={{width:'10.5%'}}/><col style={{width:'10%'}}/>
         </colgroup>
       ) : (
         <colgroup>
-          <col style={{width:'6%'}}/><col style={{width:'34%'}}/><col style={{width:'9%'}}/><col style={{width:'8%'}}/>
-          <col style={{width:'12%'}}/><col style={{width:'14%'}}/><col style={{width:'9%'}}/><col style={{width:'8%'}}/>
+          <col style={{width:'6%'}}/><col style={{width:'31.5%'}}/><col style={{width:'9%'}}/><col style={{width:'8%'}}/>
+          <col style={{width:'12%'}}/><col style={{width:'14%'}}/><col style={{width:'9.5%'}}/><col style={{width:'10%'}}/>
         </colgroup>
       )}
       <thead>
@@ -1089,6 +1096,26 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
     {r:155,b:130},{r:80,b:130},{r:15,b:130},
     {r:155,b:20}, {r:80,b:20}, {r:15,b:20},
   ];
+
+  /* سحب الختم بالماوس: نحوّل إزاحة المؤشر من بكسل إلى ملم ونحدّث موضعه.
+     المعاينة بمقياس 1:1 مع الورقة، فمكان الإفلات = مكان الطباعة بالضبط */
+  const onStampPointerDown = (e) => {
+    e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const startMm = { ...stampMm };
+    const onMove = (ev) => {
+      setStampMm({
+        right:  Math.min(200, Math.max(0, Math.round(startMm.right  + (startX - ev.clientX) / PQ_MM))),
+        bottom: Math.min(280, Math.max(0, Math.round(startMm.bottom + (startY - ev.clientY) / PQ_MM))),
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   // نوع العرض: مفصّل (بأعمدة الضريبة) أو مبسّط
   const detailed = doc.detailed_layout !== false;
@@ -1308,7 +1335,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <label style={{fontSize:12,display:'flex',alignItems:'center',gap:3}}>يمين:
               <input type="number" min={0} max={200} value={stampMm.right} onChange={e=>setStampMm(p=>({...p,right:+e.target.value||0}))} style={{width:52,padding:'2px 4px',fontSize:11,border:'1px solid #ccc',borderRadius:3}}/> mm
             </label>
-            <span style={{fontSize:11,color:'#16a34a'}}>الختم 500px — يظهر على كل الصفحات، z-index أعلى من الفوتر</span>
+            <span style={{fontSize:11,color:'#16a34a'}}>🖱️ اسحب الختم بالماوس على الورقة لتحديد مكانه — يظهر على كل الصفحات</span>
           </div>
         )}
         <div className="modal-body pq-preview-body" id="print-content">
@@ -1332,8 +1359,9 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
                 {pg.tail && tailBlock}
               </div>
               {showSig && (
-                <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}>
-                  <img src={SIG_DATA_URL} alt="" className="print-sign-img"/>
+                <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
+                     onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
+                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false}/>
                 </div>
               )}
               <PqFooterBar/>
