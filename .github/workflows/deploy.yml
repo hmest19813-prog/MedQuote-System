@@ -7,12 +7,25 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      FTP_HOST: ${{ secrets.FTP_HOST }}
+      FTP_USER: ${{ secrets.FTP_USERNAME }}
+      FTP_PASS: ${{ secrets.FTP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check secrets loaded
+        run: |
+          echo "FTP_HOST length: ${#FTP_HOST}"
+          echo "FTP_USER length: ${#FTP_USER}"
+          echo "FTP_PASS length: ${#FTP_PASS}"
+
+      - name: Install lftp
+        run: sudo apt-get install -y lftp
+
       - name: Upload index.html via FTP
         run: |
-          curl -T index.html \
-            "ftp://${{ secrets.FTP_HOST }}/" \
-            --user "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}" \
-            --ftp-create-dirs
+          lftp -u "${FTP_USER},${FTP_PASS}" "ftp://${FTP_HOST}" <<'EOF'
+          put index.html
+          bye
+          EOF
