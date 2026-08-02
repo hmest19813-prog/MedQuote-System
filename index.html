@@ -1487,7 +1487,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
 
   const defaultTax = parseFloat(form.tax_pct||0);
   // مفصّل: ضريبة لكل بند + مصادر بديلة (الأعلى قيمة يُحتسب). مبسّط: ضريبة المستند لكل البنود.
-  const counted = detailed ? pickCountedIndices(items, defaultTax) : new Set(items.map((_,i)=>i));
+  const counted = pickCountedIndices(items, defaultTax);
   const itemsMeta = itemsGroupMeta(items);
   const subtotal = items.reduce((s,i,idx) => counted.has(idx) ? s + (parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)) : s, 0);
   const disc_pct = parseFloat(form.discount_pct||0);
@@ -1880,12 +1880,12 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
                           </div>
                           <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
                         </div>
-                        {detailed && <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
+                        <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
                           <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ مصدر بديل</button>
                           {grouped && (isCounted
                             ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
                             : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
-                        </div>}
+                        </div>
                       </td>
                       <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH" style={{width:'100%'}}/></td>
                       <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
