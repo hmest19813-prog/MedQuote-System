@@ -10,13 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Upload to host2go via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
-          server-dir: /
-          include: |
-            index.html
+      - name: Upload index.html via FTP
+        run: |
+          curl -T index.html \
+            "ftp://${{ secrets.FTP_HOST }}/" \
+            --user "${{ secrets.FTP_USERNAME }}:${{ secrets.FTP_PASSWORD }}" \
+            --ftp-create-dirs
