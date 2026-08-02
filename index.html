@@ -1203,7 +1203,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
   const clientBox = (
     <div className="print-client-box">
       <div className="print-client-grid">
-        <div className="field-row"><label>السادة:</label> <strong>{doc.customer_name}</strong></div>
+        <div className="field-row"><label>السادة:</label> <strong>{doc.customer_name}{doc.customer_name ? ' المحترمين' : ''}</strong></div>
         <div className="field-row"><label>{docType==='order' ? 'رقم الطلب:' : 'رقم العرض:'}</label> <strong style={{color:'var(--primary)'}}>{doc.number}</strong></div>
         <div className="field-row"><label>عناية:</label> {doc.attention||'قسم المشتريات المحترمين'}</div>
         <div className="field-row"><label>المرجع:</label> <strong>{doc.reference||'—'}</strong></div>
@@ -1313,7 +1313,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
         const subject = encodeURIComponent(`${docLabel} رقم ${doc.number} - ${doc.customer_name || ''}`);
 
         const bodyLines = [
-          `السادة ${doc.customer_name || ''}`,
+          `السادة ${doc.customer_name || ''} المحترمين`,
           doc.attention ? `عناية: ${doc.attention}` : '',
           '',
           'تحية طيبة وبعد،',
@@ -1402,7 +1402,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
 function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
   const [form, setForm] = useState(() => {
     const base = {
-      customer_name:'', attention:'', phone:'', address:'',
+      customer_name:'', attention:'قسم المشتريات المحترمين', phone:'', address:'',
       date: today(), reference:'', currency:'JOD',
       delivery:'PROMPT', notes:'', terms:'', valid_until:'',
       discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
