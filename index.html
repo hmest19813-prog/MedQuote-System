@@ -2124,7 +2124,13 @@ function QuotesList({ user, quotes, onReload }) {
        فنفتح شاشة الإصدار (مراجعة وتعديل) والحالة تتغيّر بعد نجاح الإنشاء */
     if (newStatus === 'converted') { setOrderingQ(q); return; }
     if (q.status === 'converted') {
-      if (!confirm(`العرض ${q.number} له طلبية مرتبطة في صفحة الطلبات.\nتغيير الحالة لن يحذف الطلبية — هل تريد المتابعة؟`)) return;
+      if (!confirm(`العرض ${q.number} له طلبية مرتبطة — سيتم حذفها تلقائياً.\nهل تريد المتابعة؟`)) return;
+      const { data: linked } = await sb.from('orders').select('id').eq('quotation_id', q.id);
+      if (linked?.length) {
+        const ids = linked.map(o => o.id);
+        await sb.from('order_items').delete().in('order_id', ids);
+        await sb.from('orders').delete().in('id', ids);
+      }
     }
     await sb.from('quotations').update({ status: newStatus }).eq('id', q.id);
     createLog(user, `غيّر حالة العرض ${q.number} إلى "${SL[newStatus]||newStatus}"`, 'quote', q.id, q.number);
