@@ -14,18 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check secrets loaded
-        run: |
-          echo "FTP_HOST length: ${#FTP_HOST}"
-          echo "FTP_USER length: ${#FTP_USER}"
-          echo "FTP_PASS length: ${#FTP_PASS}"
-
       - name: Install lftp
         run: sudo apt-get install -y lftp
 
       - name: Upload index.html via FTP
         run: |
-          lftp -u "${FTP_USER},${FTP_PASS}" "ftp://${FTP_HOST}" <<'EOF'
-          put index.html
-          bye
-          EOF
+          lftp -d -e "
+            set ftp:ssl-allow no;
+            set net:timeout 30;
+            set ftp:passive-mode yes;
+            open -u ${FTP_USER},${FTP_PASS} ftp://${FTP_HOST};
+            put index.html;
+            bye
+          " 2>&1 | grep -v 'password' | head -60
