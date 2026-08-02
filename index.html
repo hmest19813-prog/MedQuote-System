@@ -997,6 +997,12 @@ function pickCountedIndices(items, defaultTax) {
   });
   return counted;
 }
+/* من مجموعات "المصدر البديل" نُبقي الخيار المعتمد فقط —
+   وهو الخيار الذي بُني عليه إجمالي العرض، فينتقل للطلب وحده */
+function pickQuoteItems(items, defaultTax) {
+  const counted = pickCountedIndices(items, defaultTax);
+  return items.filter((_, i) => counted.has(i));
+}
 function itemsGroupMeta(items) {
   const firstOf = {}, size = {};
   items.forEach((it, idx) => { const k = itemGroupKey(it, idx); if (firstOf[k] === undefined) firstOf[k] = idx; size[k] = (size[k] || 0) + 1; });
@@ -2113,6 +2119,13 @@ function QuotesList({ user, quotes, onReload }) {
   };
 
   const changeStatus = async (q, newStatus) => {
+    if (newStatus === q.status) return;
+    /* "محوّل لطلب" ليست حالة تُكتب يدوياً — لا بد أن يُنشأ طلب فعلي مقابلها،
+       فنفتح شاشة الإصدار (مراجعة وتعديل) والحالة تتغيّر بعد نجاح الإنشاء */
+    if (newStatus === 'converted') { setOrderingQ(q); return; }
+    if (q.status === 'converted') {
+      if (!confirm(`العرض ${q.number} له طلبية مرتبطة في صفحة الطلبات.\nتغيير الحالة لن يحذف الطلبية — هل تريد المتابعة؟`)) return;
+    }
     await sb.from('quotations').update({ status: newStatus }).eq('id', q.id);
     createLog(user, `غيّر حالة العرض ${q.number} إلى "${SL[newStatus]||newStatus}"`, 'quote', q.id, q.number);
     toast('تم تغيير الحالة', 'success');
@@ -2151,15 +2164,6 @@ function QuotesList({ user, quotes, onReload }) {
       setDeleteTarget(null);
       onReload();
     } catch(e) { toast('فشل الحذف: ' + e.message, 'error'); }
-  };
-
-  const convertToOrder = async (q) => {
-    if (!confirm('تحويل لطلب؟')) return;
-    const { error } = await sb.from('orders').insert({ quotation_id:q.id, quotation_number:q.number, customer_name:q.customer_name, currency:q.currency, total_amount:q.nett_price, status:'pending', created_by: user?.id||null });
-    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
-    await sb.from('quotations').update({ status:'converted' }).eq('id', q.id);
-    createLog(user, `حوّل العرض ${q.number} إلى طلبية`, 'quote', q.id, q.number);
-    toast('تم التحويل لطلب', 'success'); onReload();
   };
 
   const convertToInvoice = async (q) => {
@@ -2264,46 +2268,153 @@ function QuotesList({ user, quotes, onReload }) {
 }
 
 /* ===================== ORDER EDIT MODAL (تعديل قبل إصدار الطلب) ===================== */
-function OrderEditModal({ user, quote, onSave, onClose }) {
-  const [items, setItems] = useState([]);
+/* ===================== ORDER EDIT MODAL =====================
+   وضعان بنفس المكوّن:
+   - إصدار طلب من عرض  (prop: quote) → يعبّئ البنود من العرض ثم يُنشئ الطلب
+   - تعديل طلب قائم    (prop: order) → يعبّئ من order_items ثم يحدّث الطلب
+   البنود قابلة للتعديل والحذف والإضافة في الحالتين، والإجمالي يُعاد حسابه
+   لحظياً — فهذه هي مرحلة "المراجعة والتعديل قبل الإصدار". */
+function OrderEditModal({ user, quote, order, onSave, onClose }) {
+  const isEdit = !!order;
+  const src    = order || quote;
+
+  const [items, setItems]     = useState([]);
+  const [srcQuote, setSrcQuote] = useState(quote || null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]   = useState(false);
   const [form, setForm] = useState({
-    customer_name: quote.customer_name || '',
-    phone:         quote.phone || '',
-    currency:      quote.currency || 'JOD',
-    notes:         '',
-    expected_delivery: '',
+    customer_name:     src.customer_name || '',
+    currency:          src.currency || 'JOD',
+    notes:             order?.notes || '',
+    expected_delivery: order?.expected_delivery || '',
+    status:            order?.status || 'pending',
   });
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
+  /* صف بند موحّد — order_items و quotation_items يتشاركان نفس الأعمدة تقريباً */
+  const normItem = (it, defTax) => ({
+    item_name:  it.item_name || '',
+    description:it.description || '',
+    unit:       it.unit || 'EACH',
+    quantity:   it.quantity ?? 1,
+    unit_price: it.unit_price ?? 0,
+    tax_pct:    it.tax_pct ?? defTax,
+    origin:     it.origin || 'CHINA',
+    delivery:   it.delivery || 'PROMPT',
+    notes:      it.notes || '',
+  });
+
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 6000);
-    sb.from('quotation_items').select('*').eq('quotation_id', quote.id).order('sort_order')
-      .then(({data}) => { setItems(data||[]); setLoading(false); clearTimeout(t); });
-    return () => clearTimeout(t);
+    let alive = true;
+    (async () => {
+      try {
+        let q = quote || null;
+        // في وضع التعديل نجلب العرض المصدر لأجل نسبة الضريبة والخصم وبيانات الترويسة
+        if (isEdit && order.quotation_id) {
+          const { data } = await sb.from('quotations').select('*').eq('id', order.quotation_id).maybeSingle();
+          if (data) q = data;
+        }
+        const defTax = parseFloat(q?.tax_pct ?? 16) || 0;
+
+        let list = [];
+        if (isEdit) {
+          const { data: oits } = await sb.from('order_items').select('*').eq('order_id', order.id).order('sort_order');
+          list = (oits || []).map(it => normItem(it, defTax));
+          // طلبات أُنشئت قبل حفظ البنود: نرجع لبنود العرض المصدر
+          if (!list.length && q?.id) {
+            const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
+            list = pickQuoteItems(qits || [], defTax).map(it => normItem(it, defTax));
+          }
+        } else {
+          const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', quote.id).order('sort_order');
+          // من مجموعات "المصدر البديل" نأخذ الخيار المعتمد فقط — هو ما بُني عليه إجمالي العرض
+          list = pickQuoteItems(qits || [], defTax).map(it => normItem(it, defTax));
+        }
+        if (!alive) return;
+        setSrcQuote(q);
+        setItems(list);
+      } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
   }, []);
 
-  const total = parseFloat(quote.nett_price||0);
+  /* الإجمالي يُحسب بنفس معادلة العرض: خصم على الإجمالي ثم ضريبة كل بند بعد الخصم */
+  const defaultTax = parseFloat(srcQuote?.tax_pct ?? 16) || 0;
+  const subtotal   = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+  const disc_amt   = srcQuote?.discount_type === 'amt'
+    ? parseFloat(srcQuote?.discount_fixed || 0)
+    : subtotal * parseFloat(srcQuote?.discount_pct || 0) / 100;
+  const after_disc = subtotal - disc_amt;
+  const disc_ratio = subtotal > 0 ? after_disc / subtotal : 1;
+  const tax_amt    = items.reduce((s,i) => {
+    const line = parseFloat(i.quantity||0) * parseFloat(i.unit_price||0);
+    return s + line * disc_ratio * (parseFloat(i.tax_pct ?? defaultTax) || 0) / 100;
+  }, 0);
+  const total = after_disc + tax_amt;
 
-  const handleIssue = async () => {
+  const setItem = (idx, k, v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]: v } : it));
+  const delItem = (idx) => setItems(list => list.filter((_,i) => i!==idx));
+  const addItem = () => setItems(list => [...list, normItem({}, defaultTax)]);
+
+  const handleSubmit = async () => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    const clean = items.filter(i => i.item_name.trim());
+    if (!clean.length) { toast('الطلب يجب أن يحتوي صنفاً واحداً على الأقل','error'); return; }
     setSaving(true);
     try {
-      const { error } = await sb.from('orders').insert({
-        quotation_id:      quote.id,
-        quotation_number:  quote.number,
-        customer_name:     form.customer_name,
+      const payload = {
+        customer_name:     form.customer_name.trim(),
         currency:          form.currency,
-        total_amount:      total,
+        total_amount:      total.toFixed(3),
         notes:             form.notes || null,
         expected_delivery: form.expected_delivery || null,
-        status:            'pending',
-        created_by:        user?.id || null,
-      });
-      if (error) throw error;
-      await sb.from('quotations').update({ status: 'converted' }).eq('id', quote.id);
-      toast('تم إصدار الطلب بنجاح', 'success');
+      };
+      let orderId, orderNo;
+
+      if (isEdit) {
+        const { error } = await sb.from('orders').update({ ...payload, status: form.status }).eq('id', order.id);
+        if (error) throw error;
+        orderId = order.id; orderNo = order.number;
+        const { error: dErr } = await sb.from('order_items').delete().eq('order_id', orderId);
+        if (dErr) throw dErr;
+      } else {
+        const { data: newOrder, error } = await sb.from('orders').insert({
+          ...payload,
+          quotation_id:     quote.id,
+          quotation_number: quote.number,
+          status:           'pending',
+          created_by:       user?.id || null,
+        }).select().single();
+        if (error) throw error;
+        orderId = newOrder.id; orderNo = newOrder.number;
+      }
+
+      const rows = clean.map((it,idx) => ({
+        order_id:    orderId,
+        sort_order:  idx,
+        item_name:   it.item_name.trim(),
+        description: it.description || null,
+        unit:        it.unit || 'EACH',
+        quantity:    parseFloat(it.quantity) || 0,
+        unit_price:  parseFloat(it.unit_price) || 0,
+        total_price: (parseFloat(it.quantity)||0) * (parseFloat(it.unit_price)||0),
+        tax_pct:     parseFloat(it.tax_pct ?? defaultTax) || 0,
+        origin:      it.origin || null,
+        delivery:    it.delivery || null,
+        notes:       it.notes || null,
+      }));
+      const { error: iErr } = await sb.from('order_items').insert(rows);
+      if (iErr) throw iErr;
+
+      if (!isEdit) {
+        // تحويل حالة العرض يتم فقط بعد نجاح إنشاء الطلب فعلياً
+        await sb.from('quotations').update({ status: 'converted' }).eq('id', quote.id);
+        createLog(user, `حوّل العرض ${quote.number} إلى الطلبية ${orderNo||''}`, 'quote', quote.id, quote.number);
+        toast(`تم إصدار الطلب ${orderNo||''} بنجاح`, 'success');
+      } else {
+        createLog(user, `عدّل الطلبية ${orderNo||''}`, 'order', orderId, orderNo);
+        toast('تم حفظ تعديلات الطلب', 'success');
+      }
       onSave();
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
     finally { setSaving(false); }
@@ -2311,16 +2422,19 @@ function OrderEditModal({ user, quote, onSave, onClose }) {
 
   if (loading) return <div className="modal-overlay"><div className="modal"><div style={{padding:40,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div></div></div>;
 
+  const accent = isEdit ? 'var(--primary)' : 'var(--success)';
+
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:860}}>
-        <div className="modal-header" style={{background:'#F0FFF4',borderBottom:'2px solid var(--success)'}}>
-          <span className="modal-title" style={{color:'var(--success)'}}>📦 إصدار طلب — مراجعة وتعديل قبل الإصدار</span>
+      <div className="modal" style={{maxWidth:940}}>
+        <div className="modal-header" style={{background: isEdit ? '#EFF8FF' : '#F0FFF4', borderBottom:`2px solid ${accent}`}}>
+          <span className="modal-title" style={{color:accent}}>
+            {isEdit ? `✏️ تعديل الطلب ${order.number||''}` : '📦 إصدار طلب — مراجعة وتعديل قبل الإصدار'}
+          </span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
 
-          {/* بيانات الطلب */}
           <div className="section-title">بيانات الطلب</div>
           <div className="form-row mb-4">
             <div className="form-group">
@@ -2328,8 +2442,8 @@ function OrderEditModal({ user, quote, onSave, onClose }) {
               <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)}/>
             </div>
             <div className="form-group">
-              <label className="form-label">هاتف</label>
-              <input className="form-control" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
+              <label className="form-label">تاريخ التسليم المتوقع</label>
+              <input type="date" className="form-control" value={form.expected_delivery||''} onChange={e=>setF('expected_delivery',e.target.value)}/>
             </div>
           </div>
           <div className="form-row mb-4">
@@ -2339,53 +2453,75 @@ function OrderEditModal({ user, quote, onSave, onClose }) {
                 <option>JOD</option><option>USD</option><option>EUR</option>
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">تاريخ التسليم المتوقع</label>
-              <input type="date" className="form-control" value={form.expected_delivery} onChange={e=>setF('expected_delivery',e.target.value)}/>
-            </div>
+            {isEdit && (
+              <div className="form-group">
+                <label className="form-label">حالة الطلب</label>
+                <select className="form-control" value={form.status} onChange={e=>setF('status',e.target.value)}>
+                  {Object.entries(OL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            )}
           </div>
           <div className="form-group mb-4">
             <label className="form-label">ملاحظات على الطلب</label>
             <textarea className="form-control" rows="2" value={form.notes} onChange={e=>setF('notes',e.target.value)} placeholder="أي ملاحظات خاصة بالطلب..."/>
           </div>
 
-          {/* معلومات العرض المصدر */}
-          <div className="section-title">الأصناف — من عرض السعر {quote.number}</div>
-          <div className="table-wrap" style={{marginBottom:14}}>
+          <div className="section-title">
+            الأصناف {isEdit ? '' : `— من عرض السعر ${quote.number}`}
+            <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11,marginRight:8}}>(قابلة للتعديل والحذف قبل الحفظ)</span>
+          </div>
+          <div className="table-wrap" style={{marginBottom:10}}>
             <table className="print-items" style={{fontSize:12}}>
               <thead>
-                <tr><th>#</th><th>المنتج</th><th>الوحدة</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th>المنشأ</th><th>التوصيل</th></tr>
+                <tr>
+                  <th style={{width:28}}>#</th><th>المنتج</th><th style={{width:80}}>الوحدة</th>
+                  <th style={{width:70}}>الكمية</th><th style={{width:95}}>سعر الوحدة</th>
+                  <th style={{width:60}}>ض.%</th><th style={{width:95}}>الإجمالي</th>
+                  <th style={{width:90}}>المنشأ</th><th style={{width:90}}>التوصيل</th><th style={{width:34}}></th>
+                </tr>
               </thead>
               <tbody>
                 {items.map((it,i) => (
                   <tr key={i}>
                     <td>{i+1}</td>
-                    <td style={{textAlign:'right'}}>{it.item_name}</td>
-                    <td>{it.unit||'EACH'}</td>
-                    <td>{it.quantity}</td>
-                    <td>{parseFloat(it.unit_price).toFixed(3)}</td>
-                    <td><strong>{(parseFloat(it.quantity)*parseFloat(it.unit_price)).toFixed(3)}</strong></td>
-                    <td>{it.origin||'CHINA'}</td>
-                    <td>{it.delivery||'PROMPT'}</td>
+                    <td><input className="form-control" style={{fontSize:12,padding:'4px 6px'}} value={it.item_name} onChange={e=>setItem(i,'item_name',e.target.value)}/></td>
+                    <td><input className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.unit} onChange={e=>setItem(i,'unit',e.target.value)}/></td>
+                    <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
+                    <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
+                    <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.tax_pct} onChange={e=>setItem(i,'tax_pct',e.target.value)}/></td>
+                    <td style={{textAlign:'center'}}><strong>{((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0)).toFixed(3)}</strong></td>
+                    <td><input className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.origin} onChange={e=>setItem(i,'origin',e.target.value)}/></td>
+                    <td><input className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.delivery} onChange={e=>setItem(i,'delivery',e.target.value)}/></td>
+                    <td style={{textAlign:'center'}}>
+                      <button className="btn btn-ghost btn-sm" title="حذف الصنف من الطلب"
+                        onClick={()=>delItem(i)} style={{color:'var(--danger)',padding:'2px 6px'}}>✕</button>
+                    </td>
                   </tr>
                 ))}
+                {items.length===0 && <tr><td colSpan="10" style={{textAlign:'center',color:'var(--gray-400)',padding:14}}>لا توجد أصناف — أضف صنفاً</td></tr>}
               </tbody>
             </table>
           </div>
+          <button className="btn btn-ghost btn-sm mb-4" onClick={addItem}>➕ إضافة صنف</button>
 
-          {/* الإجمالي */}
-          <div style={{display:'flex',justifyContent:'flex-end'}}>
-            <div style={{background:'#F0FFF4',border:'1.5px solid var(--success)',borderRadius:8,padding:'10px 20px',textAlign:'center'}}>
+          <div style={{display:'flex',justifyContent:'flex-end',gap:14,alignItems:'flex-end'}}>
+            <div style={{fontSize:12,color:'var(--gray-500)',textAlign:'left'}}>
+              <div>المجموع قبل الخصم: <strong>{subtotal.toFixed(3)}</strong></div>
+              {disc_amt > 0 && <div>الخصم: <strong style={{color:'var(--danger)'}}>−{disc_amt.toFixed(3)}</strong></div>}
+              <div>الضريبة: <strong>{tax_amt.toFixed(3)}</strong></div>
+            </div>
+            <div style={{background: isEdit ? '#EFF8FF' : '#F0FFF4', border:`1.5px solid ${accent}`, borderRadius:8, padding:'10px 20px', textAlign:'center'}}>
               <div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700}}>القيمة الإجمالية</div>
-              <div style={{fontSize:22,fontWeight:900,color:'var(--success)'}}>{total.toFixed(3)} {form.currency}</div>
+              <div style={{fontSize:22,fontWeight:900,color:accent}}>{total.toFixed(3)} {form.currency}</div>
             </div>
           </div>
         </div>
 
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose} disabled={saving}>إلغاء</button>
-          <button className="btn btn-success" onClick={handleIssue} disabled={saving} style={{minWidth:140}}>
-            {saving ? '...' : '📦 إصدار الطلب'}
+          <button className={`btn ${isEdit ? 'btn-primary' : 'btn-success'}`} onClick={handleSubmit} disabled={saving} style={{minWidth:150}}>
+            {saving ? '...' : (isEdit ? '💾 حفظ التعديلات' : '📦 إصدار الطلب')}
           </button>
         </div>
       </div>
@@ -2869,6 +3005,7 @@ function OrdersPage({ user, orders, onReload }) {
   const [printingOrder, setPrintingOrder] = useState(null);
   const [orderDoc, setOrderDoc] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
+  const [editingOrder, setEditingOrder] = useState(null);
   const active = orders.filter(o => !o.archived);
   const filtered = filter==='all' ? active : active.filter(o=>o.status===filter);
 
@@ -2899,13 +3036,53 @@ function OrdersPage({ user, orders, onReload }) {
 
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
 
-  const printOrder = async (o) => {
+  /* المعاينة تعرض بنود الطلب نفسه (order_items) لأنها قد تختلف عن بنود
+     العرض بعد التعديل. الطلبات القديمة بلا بنود ترجع لبنود العرض المصدر. */
+  const previewOrder = async (o) => {
     try {
-      const { data: q, error: qErr } = await sb.from('quotations').select('*').eq('number', o.quotation_number).single();
-      if (qErr || !q) { toast('تعذّر تحميل بيانات العرض', 'error'); return; }
-      const { data: its } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
-      setOrderDoc({ ...q, number: o.number });
-      setOrderItems(its || []);
+      let q = null;
+      if (o.quotation_id || o.quotation_number) {
+        const qy = o.quotation_id
+          ? sb.from('quotations').select('*').eq('id', o.quotation_id)
+          : sb.from('quotations').select('*').eq('number', o.quotation_number);
+        const { data } = await qy.maybeSingle();
+        q = data || null;
+      }
+      const { data: oits } = await sb.from('order_items').select('*').eq('order_id', o.id).order('sort_order');
+      let items = oits || [];
+      if (!items.length && q?.id) {
+        const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
+        items = pickQuoteItems(qits || [], parseFloat(q.tax_pct ?? 16) || 0);
+      }
+      if (!items.length) { toast('لا توجد أصناف لعرضها في هذا الطلب', 'error'); return; }
+
+      // إعادة حساب الإجماليات من بنود الطلب حتى تطابق المعاينة قيمة الطلب
+      const defTax    = parseFloat(q?.tax_pct ?? 16) || 0;
+      const subtotal  = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+      const disc_amt  = q?.discount_type === 'amt'
+        ? parseFloat(q?.discount_fixed || 0)
+        : subtotal * parseFloat(q?.discount_pct || 0) / 100;
+      const ratio     = subtotal > 0 ? (subtotal - disc_amt) / subtotal : 1;
+      const tax_amt   = items.reduce((s,i) => {
+        const line = parseFloat(i.quantity||0) * parseFloat(i.unit_price||0);
+        return s + line * ratio * (parseFloat(i.tax_pct ?? defTax) || 0) / 100;
+      }, 0);
+
+      setOrderDoc({
+        ...(q || {}),
+        number:        o.number,
+        customer_name: o.customer_name,
+        currency:      o.currency || q?.currency || 'JOD',
+        date:          (o.created_at || '').slice(0,10) || q?.date || today(),
+        valid_until:   null,
+        notes:         o.notes || q?.notes || '',
+        tax_pct:       defTax,
+        subtotal:      subtotal.toFixed(3),
+        discount_amt:  disc_amt.toFixed(3),
+        tax_amt:       tax_amt.toFixed(3),
+        nett_price:    (subtotal - disc_amt + tax_amt).toFixed(3),
+      });
+      setOrderItems(items);
       setPrintingOrder(o);
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
   };
@@ -2942,7 +3119,8 @@ function OrdersPage({ user, orders, onReload }) {
                   <td>{hasPerm(user,'orders_edit') ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>{Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select> : <SBadge status={o.status} type="o"/>}</td>
                   <td style={{whiteSpace:'nowrap'}}>
                     <div className="flex gap-2">
-                      <button className="btn btn-primary btn-sm" onClick={()=>printOrder(o)}>🖨️</button>
+                      <button className="btn btn-primary btn-sm" onClick={()=>previewOrder(o)} title="معاينة وطباعة">👁 معاينة</button>
+                      {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)} title="تعديل الطلب">✏️ تعديل</button>}
                       <button className="btn btn-ghost btn-sm" onClick={()=>archiveO(o)} title="أرشفة">🗄️</button>
                       {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)} title="حذف نهائي">🗑 حذف</button>}
                     </div>
@@ -2955,6 +3133,11 @@ function OrdersPage({ user, orders, onReload }) {
         </div>
       </div>
       {printingOrder && orderDoc && <DocPreview doc={orderDoc} items={orderItems} docType="order" onClose={()=>setPrintingOrder(null)}/>}
+      {editingOrder && (
+        <OrderEditModal user={user} order={editingOrder}
+          onSave={()=>{ setEditingOrder(null); onReload(); }}
+          onClose={()=>setEditingOrder(null)}/>
+      )}
     </div>
   );
 }
