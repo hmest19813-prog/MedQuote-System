@@ -18,17 +18,14 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get install -y postgresql-client
 
-      - name: Run pg_dump (force IPv4)
+      - name: Run pg_dump
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           PGSSLMODE: require
         run: |
           mkdir -p backups
           FILENAME="backups/backup_$(date +%Y-%m-%d).sql"
-          HOST="db.uzichxyfewvnicoqyqul.supabase.co"
-          IPV4=$(python3 -c "import socket; print(socket.getaddrinfo('$HOST', 5432, socket.AF_INET)[0][4][0])")
-          echo "Connecting via IPv4: $IPV4"
-          pg_dump -h "$IPV4" -p 5432 -U postgres -d postgres > "$FILENAME"
+          pg_dump -h aws-1-ap-northeast-2.pooler.supabase.com -p 5432 -U postgres.uzichxyfewvnicoqyqul -d postgres > "$FILENAME"
           echo "Backup created: $FILENAME"
           ls -lh "$FILENAME"
 
