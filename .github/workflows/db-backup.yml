@@ -26,7 +26,7 @@ jobs:
           mkdir -p backups
           FILENAME="backups/backup_$(date +%Y-%m-%d).sql"
           HOST="db.uzichxyfewvnicoqyqul.supabase.co"
-          IPV4=$(dig +short A "$HOST" | grep -E '^[0-9]+\.' | head -1)
+          IPV4=$(python3 -c "import socket; print(socket.getaddrinfo('$HOST', 5432, socket.AF_INET)[0][4][0])")
           echo "Connecting via IPv4: $IPV4"
           pg_dump -h "$IPV4" -p 5432 -U postgres -d postgres > "$FILENAME"
           echo "Backup created: $FILENAME"
