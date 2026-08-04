@@ -2511,7 +2511,10 @@ function QuotesList({ user, quotes, onReload }) {
                       {q.status!=='converted' && q.status!=='invoiced' && (
                         <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
-                      <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveTarget(q)}>🗄️ أرشفة</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>{
+                        if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً قبل الأرشفة','error');return;}
+                        setArchiveTarget(q);
+                      }}>🗄️ أرشفة</button>
                       {hasPerm(user,'quotes_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
                     </div>
                   </td>
