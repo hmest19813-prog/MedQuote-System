@@ -21,13 +21,14 @@ jobs:
       - name: Run pg_dump (force IPv4)
         env:
           PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          PGSSLMODE: require
         run: |
           mkdir -p backups
           FILENAME="backups/backup_$(date +%Y-%m-%d).sql"
           HOST="db.uzichxyfewvnicoqyqul.supabase.co"
-          IPV4=$(getent ahostsv4 "$HOST" | head -1 | awk '{print $1}')
+          IPV4=$(dig +short A "$HOST" | grep -E '^[0-9]+\.' | head -1)
           echo "Connecting via IPv4: $IPV4"
-          pg_dump -h "$IPV4" -p 5432 -U postgres -d postgres --sslmode=require > "$FILENAME"
+          pg_dump -h "$IPV4" -p 5432 -U postgres -d postgres > "$FILENAME"
           echo "Backup created: $FILENAME"
           ls -lh "$FILENAME"
 
