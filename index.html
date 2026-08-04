@@ -6157,9 +6157,15 @@ function App() {
       if (qe) console.warn('Quotes error:', qe.message);
       if (oe) console.warn('Orders error:', oe.message);
       if (le) console.warn('Logs error:', le.message);
-      setQuotes(q||[]);
-      setOrders(o||[]);
-      setLogs(l||[]);
+      // تحديث الـ state فقط إذا تغيرت البيانات فعلاً (تجنب re-render بلا سبب)
+      const hasChanged = (prev, next) => {
+        if (!next) return false;
+        if (prev.length !== next.length) return true;
+        return next.some((item, i) => !prev[i] || prev[i].id !== item.id || prev[i].updated_at !== item.updated_at);
+      };
+      if (q) setQuotes(prev => hasChanged(prev, q) ? q : prev);
+      if (o) setOrders(prev => hasChanged(prev, o) ? o : prev);
+      if (l) setLogs(prev => hasChanged(prev, l) ? l : prev);
     } catch (err) {
       console.error('Load data error:', err.message);
       // لا نمسح البيانات الموجودة عند الخطأ
