@@ -1112,7 +1112,7 @@ function PqItemsTable({ detailed, children }) {
 }
 
 /* ===================== QUOTE / INVOICE PREVIEW ===================== */
-function DocPreview({ doc, items, docType='quote', onClose }) {
+function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   const [showSig, setShowSig] = useState(false);
@@ -1351,6 +1351,7 @@ function DocPreview({ doc, items, docType='quote', onClose }) {
             <button className={`sig-toggle-btn${showSig?' active':''}`} onClick={()=>setShowSig(s=>!s)} title="إضافة ختم وتوقيع للمستند">
               {showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}
             </button>
+            {onConfirmDraft && <button className="btn btn-success btn-sm" onClick={onConfirmDraft}>✅ اعتماد العرض</button>}
             <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="modal-close" onClick={onClose}>✕</button>
@@ -1994,8 +1995,13 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose} disabled={loading}>إلغاء</button>
-          <button className="btn btn-ghost" onClick={()=>handleSave('draft')} disabled={loading}>{loading?'...1':'حفظ كمسودة'}</button>
-          <button className="btn btn-primary" onClick={()=>handleSave('sent')} disabled={loading}>{loading?'...':' حفظ وإرسال'}</button>
+          <button className="btn btn-ghost" onClick={()=>handleSave('draft')} disabled={loading}>{loading?'...':'حفظ كمسودة'}</button>
+          {editQuote?.status === 'draft' && (
+            <button className="btn btn-success" onClick={()=>handleSave('sent')} disabled={loading}>{loading?'...':'✅ اعتماد العرض'}</button>
+          )}
+          {editQuote?.status !== 'draft' && (
+            <button className="btn btn-primary" onClick={()=>handleSave('sent')} disabled={loading}>{loading?'...':'حفظ وإرسال'}</button>
+          )}
         </div>
       </div>
     </div>
@@ -2201,6 +2207,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [tab, setTab] = useState('official'); // 'official' | 'drafts'
 
   const canViewIssuer = hasPerm(user, 'quotes_view_issuer');
 
@@ -2213,16 +2220,64 @@ function QuotesList({ user, quotes, onReload }) {
   }, []);
 
   const [searchIssuer, setSearchIssuer] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState(null); // العرض المراد حذفه (يفتح مودال السبب)
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const active = quotes.filter(q => !q.archived && !q.deleted_at);
-  const filtered = active.filter(q => {
+  const officialQuotes = active.filter(q => q.status !== 'draft');
+  const draftQuotes   = active.filter(q => q.status === 'draft');
+
+  const filtered = officialQuotes.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
     const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
     const mi = !searchIssuer || q.created_by === searchIssuer;
     return ms && mf && md && mi;
   });
+  const filteredDrafts = draftQuotes.filter(q => {
+    return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
+  });
+
+  const confirmDraft = async (q) => {
+    if (!confirm(`اعتماد المسودة "${q.number}" كعرض رسمي؟\nسيتم تخصيص رقم رسمي جديد.`)) return;
+    const { error } = await sb.from('quotations').update({ status: 'sent' }).eq('id', q.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `اعتمد المسودة ${q.number} كعرض رسمي`, 'quote', q.id, q.number);
+    toast('تم الاعتماد وتخصيص رقم رسمي ✓', 'success');
+    setPreviewQ(null);
+    onReload();
+  };
+
+  // إشعار كل 3 أيام لصاحب المسودة
+  useEffect(() => {
+    if (!user?.id || !draftQuotes.length) return;
+    const checkDraftReminders = async () => {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const { data: todayNotifs } = await sb.from('notifications')
+        .select('link_id').eq('link_type', 'draft_reminder')
+        .gte('created_at', todayStr + 'T00:00:00');
+      const sentToday = new Set((todayNotifs||[]).map(n => n.link_id));
+      const myDrafts = draftQuotes.filter(q => q.created_by === user.id && q.created_at);
+      for (const q of myDrafts) {
+        const daysSince = Math.floor((Date.now() - new Date(q.created_at)) / 86400000);
+        if (daysSince >= 3 && daysSince % 3 === 0 && !sentToday.has(q.id)) {
+          await createNotif({
+            userId: user.id,
+            title: `📋 مسودة عرض بحاجة إجراء — ${q.number}`,
+            body: `العميل: ${q.customer_name} — منذ ${daysSince} يوم`,
+            type: daysSince >= 9 ? 'danger' : 'warning',
+            linkType: 'draft_reminder',
+            linkId: q.id,
+          });
+        }
+      }
+    };
+    checkDraftReminders();
+  }, [draftQuotes.length, user?.id]);
+
+  const draftAge = (createdAt) => {
+    if (!createdAt) return null;
+    return Math.floor((Date.now() - new Date(createdAt)) / 86400000);
+  };
 
   const openPreview = async (q) => {
     const { data } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
@@ -2302,6 +2357,19 @@ function QuotesList({ user, quotes, onReload }) {
         <h2 style={{fontSize:20,fontWeight:800}}>عروض الأسعار</h2>
         {hasPerm(user, 'quotes_create') && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ عرض جديد</button>}
       </div>
+
+      {/* تبويبات */}
+      <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)'}}>
+        <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='official'?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='official'?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
+          عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
+        </button>
+        <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
+          المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
+        </button>
+      </div>
+
+      {/* قائمة العروض الرسمية */}
+      {tab === 'official' && (
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -2313,7 +2381,7 @@ function QuotesList({ user, quotes, onReload }) {
           )}
           <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
             <option value="all">كل الحالات</option>
-            {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           <input type="date" className="form-control" style={{width:'auto'}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} title="من تاريخ"/>
           <input type="date" className="form-control" style={{width:'auto'}} value={dateTo} onChange={e=>setDateTo(e.target.value)} title="إلى تاريخ"/>
@@ -2347,7 +2415,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <td style={{textAlign:'center'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
-                      {Object.entries(SL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                      {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </td>
                   <td>
@@ -2372,6 +2440,57 @@ function QuotesList({ user, quotes, onReload }) {
           </table>
         </div>
       </div>
+      )}
+
+      {/* قائمة المسودات */}
+      {tab === 'drafts' && (
+      <div className="card">
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredDrafts.length} مسودة</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>العمر</th><th>القيمة</th><th>النوع</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+            </thead>
+            <tbody>
+              {filteredDrafts.map(q => (
+                <tr key={q.id} style={{background:'#fffbeb'}}>
+                  <td className="font-bold" style={{color:'#92400e'}}>{q.number}</td>
+                  <td>{q.customer_name}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>{q.date}</td>
+                  <td style={{textAlign:'center'}}>
+                    {(() => {
+                      const d = draftAge(q.created_at);
+                      if (d === null) return '—';
+                      const color = d >= 9 ? '#dc2626' : d >= 3 ? '#f59e0b' : '#16a34a';
+                      return <span style={{fontWeight:700, color, fontSize:12}}>{d === 0 ? 'اليوم' : `${d} يوم`}</span>;
+                    })()}
+                  </td>
+                  <td className="font-bold" style={{textAlign:'center'}}>{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                  <td style={{textAlign:'center'}}>
+                    <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
+                      {QT[q.quote_type] || 'عرض سعر'}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="flex gap-2">
+                      <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)} title="معاينة">👁</button>
+                      {(q.created_by === user?.id || hasPerm(user, 'quotes_edit_all')) && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)} title="تعديل">✏️</button>}
+                      <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>
+                      {hasPerm(user,'quotes_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)} title="حذف">🗑️</button>}
+                    </div>
+                  </td>
+                  {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
+                </tr>
+              ))}
+              {filteredDrafts.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد مسودات</p></div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
 
       {showForm && <QuoteForm user={user} onSave={()=>{setShowForm(false);onReload();}} onClose={()=>setShowForm(false)}/>}
       {editing && !editing._convertToInvoice && (
@@ -2380,7 +2499,7 @@ function QuotesList({ user, quotes, onReload }) {
       {editing && editing._convertToInvoice && (
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
-      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)}/>}
+      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null}/>}
       {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{setOrderingQ(null);onReload();}} onClose={()=>setOrderingQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
     </div>
