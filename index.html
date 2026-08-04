@@ -2080,6 +2080,40 @@ function DeletedQuotesPage({ user, quotes, onReload }) {
 /* ===================== ARCHIVE MODAL ===================== */
 function ArchiveModal({ label, onConfirm, onClose }) {
   const [note, setNote] = React.useState('');
+  const [allReasons, setAllReasons] = React.useState([]);
+  const [suggestions, setSuggestions] = React.useState([]);
+  const [showSug, setShowSug] = React.useState(false);
+
+  React.useEffect(() => {
+    sb.from('archive_reasons').select('reason').order('last_used_at', {ascending:false}).limit(50)
+      .then(({data}) => setAllReasons((data||[]).map(r=>r.reason)));
+  }, []);
+
+  const handleChange = (val) => {
+    setNote(val);
+    const firstWord = val.trim().split(/\s+/)[0];
+    if (firstWord.length >= 3) {
+      const matches = allReasons.filter(r => r.toLowerCase().includes(val.trim().toLowerCase()));
+      setSuggestions(matches);
+      setShowSug(matches.length > 0);
+    } else {
+      setShowSug(false);
+    }
+  };
+
+  const pickSuggestion = (r) => { setNote(r); setShowSug(false); };
+
+  const handleConfirm = async () => {
+    const trimmed = note.trim();
+    if (trimmed) {
+      await sb.from('archive_reasons').upsert(
+        { reason: trimmed, last_used_at: new Date().toISOString() },
+        { onConflict: 'reason' }
+      );
+    }
+    onConfirm(trimmed);
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:420}}>
@@ -2087,16 +2121,27 @@ function ArchiveModal({ label, onConfirm, onClose }) {
           <span className="modal-title">🗄️ {label}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
-          <div className="form-group">
+        <div className="modal-body" style={{paddingBottom: showSug ? 190 : undefined}}>
+          <div className="form-group" style={{position:'relative'}}>
             <label className="form-label">سبب الأرشفة <span style={{color:'var(--gray-400)',fontWeight:400}}>(اختياري)</span></label>
-            <textarea className="form-control" rows={3} value={note} onChange={e=>setNote(e.target.value)}
-              placeholder="مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة..." style={{resize:'vertical'}}/>
+            <input className="form-control" value={note} onChange={e=>handleChange(e.target.value)}
+              onBlur={()=>setTimeout(()=>setShowSug(false),150)}
+              placeholder="مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة..." autoComplete="off"/>
+            {showSug && (
+              <div style={{position:'absolute',top:'100%',marginTop:4,right:0,left:0,background:'var(--white)',border:'1px solid var(--gray-200)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.1)',zIndex:999,maxHeight:180,overflowY:'auto'}}>
+                {suggestions.map((r,i)=>(
+                  <div key={i} onMouseDown={()=>pickSuggestion(r)}
+                    style={{padding:'8px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid var(--gray-100)'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='var(--gray-50)'}
+                    onMouseLeave={e=>e.currentTarget.style.background=''}>{r}</div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" onClick={()=>onConfirm(note.trim())}>تأكيد الأرشفة</button>
+          <button className="btn btn-primary" onClick={handleConfirm}>تأكيد الأرشفة</button>
         </div>
       </div>
     </div>
@@ -3181,10 +3226,24 @@ function ArchivePage({ user, quotes, orders, onReload }) {
   const [tab, setTab] = useState('quotes');
   const archivedQ = quotes.filter(q=>q.archived);
   const archivedO = orders.filter(o=>o.archived);
+
   const restore = async (table,id) => {
     await sb.from(table).update({archived:false,archived_at:null}).eq('id',id);
     toast('تمت الاستعادة','success'); onReload();
   };
+
+  const changeStatusQ = async (q, status) => {
+    await sb.from('quotations').update({ status }).eq('id', q.id);
+    toast('تم تغيير الحالة','success'); onReload();
+  };
+
+  const changeStatusO = async (o, status) => {
+    await sb.from('orders').update({ status }).eq('id', o.id);
+    toast('تم تغيير الحالة','success'); onReload();
+  };
+
+  const selStyle = {fontSize:11,padding:'3px 7px',width:'auto'};
+
   return (
     <div>
       <h2 style={{fontSize:20,fontWeight:800,marginBottom:16}}>الأرشيف</h2>
@@ -3194,8 +3253,38 @@ function ArchivePage({ user, quotes, orders, onReload }) {
       </div>
       <div className="card">
         <div className="table-wrap">
-          {tab==='quotes' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead><tbody>{archivedQ.map(q=><tr key={q.id}><td className="font-bold">{q.number}</td><td>{q.customer_name}</td><td className="text-sm text-muted">{q.date}</td><td><SBadge status={q.status}/></td><td className="text-sm text-muted" style={{maxWidth:220}}>{q.archive_note||'—'}</td><td><button className="btn btn-ghost btn-sm" onClick={()=>restore('quotations',q.id)}>↩ استعادة</button></td></tr>)}{archivedQ.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}</tbody></table>}
-          {tab==='orders' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>القيمة</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead><tbody>{archivedO.map(o=><tr key={o.id}><td className="font-bold">{o.number}</td><td>{o.customer_name}</td><td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)}</td><td><SBadge status={o.status} type="o"/></td><td className="text-sm text-muted" style={{maxWidth:220}}>{o.archive_note||'—'}</td><td><button className="btn btn-ghost btn-sm" onClick={()=>restore('orders',o.id)}>↩ استعادة</button></td></tr>)}{archivedO.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}</tbody></table>}
+          {tab==='quotes' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead><tbody>
+            {archivedQ.map(q=><tr key={q.id}>
+              <td className="font-bold">{q.number}</td>
+              <td>{q.customer_name}</td>
+              <td className="text-sm text-muted">{q.date}</td>
+              <td>{hasPerm(user,'quotes_edit')
+                ? <select className="form-control" style={selStyle} value={q.status} onChange={e=>changeStatusQ(q,e.target.value)}>
+                    {Object.entries(SL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  </select>
+                : <SBadge status={q.status}/>}
+              </td>
+              <td className="text-sm text-muted" style={{maxWidth:220}}>{q.archive_note||'—'}</td>
+              <td><button className="btn btn-ghost btn-sm" onClick={()=>restore('quotations',q.id)}>↩ استعادة</button></td>
+            </tr>)}
+            {archivedQ.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
+          </tbody></table>}
+          {tab==='orders' && <table><thead><tr><th>الرقم</th><th>العميل</th><th>القيمة</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead><tbody>
+            {archivedO.map(o=><tr key={o.id}>
+              <td className="font-bold">{o.number}</td>
+              <td>{o.customer_name}</td>
+              <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)}</td>
+              <td>{hasPerm(user,'orders_edit')
+                ? <select className="form-control" style={selStyle} value={o.status} onChange={e=>changeStatusO(o,e.target.value)}>
+                    {Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  </select>
+                : <SBadge status={o.status} type="o"/>}
+              </td>
+              <td className="text-sm text-muted" style={{maxWidth:220}}>{o.archive_note||'—'}</td>
+              <td><button className="btn btn-ghost btn-sm" onClick={()=>restore('orders',o.id)}>↩ استعادة</button></td>
+            </tr>)}
+            {archivedO.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
+          </tbody></table>}
         </div>
       </div>
     </div>
