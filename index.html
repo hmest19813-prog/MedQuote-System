@@ -2274,6 +2274,14 @@ function FollowUpModal({ quote, user, onClose }) {
 function QuotesList({ user, quotes, onReload }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+
+  // تحديث تلقائي كل 20 ثانية — useRef يضمن استدعاء أحدث نسخة من onReload
+  const reloadRef = useRef(onReload);
+  useEffect(() => { reloadRef.current = onReload; });
+  useEffect(() => {
+    const t = setInterval(() => reloadRef.current(), 20000);
+    return () => clearInterval(t);
+  }, []);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [profiles, setProfiles] = useState({});
@@ -6154,8 +6162,7 @@ function App() {
       setLogs(l||[]);
     } catch (err) {
       console.error('Load data error:', err.message);
-      // نعرض بيانات فارغة بدلاً من التعليق
-      setQuotes([]); setOrders([]); setLogs([]);
+      // لا نمسح البيانات الموجودة عند الخطأ
     }
   };
 
@@ -6187,31 +6194,60 @@ function App() {
   useEffect(() => {
     if (!user?.id) return;
     const now = Date.now();
-    // إعادة تحميل فقط إذا مرّ أكثر من 30 ثانية على آخر تحميل (تجنب التكرار الزائد)
     if (now - lastReloadRef.current > 30000) {
       lastReloadRef.current = now;
       loadData(user.id, user.role);
     }
   }, [page]);
 
+  // ── Polling: تحديث تلقائي كل 30 ثانية كاحتياطي للـ realtime ──────────────
+  useEffect(() => {
+    if (!user?.id) return;
+    const interval = setInterval(() => {
+      loadData(user.id, user.role);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   // ── Realtime: تحديث فوري عند أي تغيير من أي موظف ──────────────
   useEffect(() => {
     if (!user?.id) return;
 
+    const fetchQ = async (id) => {
+      const { data } = await sb.from('quotations').select('*').eq('id', id).single();
+      return data;
+    };
+    const fetchO = async (id) => {
+      const { data } = await sb.from('orders').select('*').eq('id', id).single();
+      return data;
+    };
+
     const qCh = sb.channel('rt_quotations')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'quotations' },
-        p => setQuotes(prev => prev.find(q=>q.id===p.new.id) ? prev : [p.new, ...prev]))
+        async p => {
+          const full = await fetchQ(p.new.id);
+          if (full) setQuotes(prev => prev.find(q=>q.id===full.id) ? prev : [full, ...prev]);
+        })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'quotations' },
-        p => setQuotes(prev => prev.map(q => q.id===p.new.id ? p.new : q)))
+        async p => {
+          const full = await fetchQ(p.new.id);
+          if (full) setQuotes(prev => prev.map(q => q.id===full.id ? full : q));
+        })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'quotations' },
         p => setQuotes(prev => prev.filter(q => q.id!==p.old.id)))
       .subscribe();
 
     const oCh = sb.channel('rt_orders')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' },
-        p => setOrders(prev => prev.find(o=>o.id===p.new.id) ? prev : [p.new, ...prev]))
+        async p => {
+          const full = await fetchO(p.new.id);
+          if (full) setOrders(prev => prev.find(o=>o.id===full.id) ? prev : [full, ...prev]);
+        })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' },
-        p => setOrders(prev => prev.map(o => o.id===p.new.id ? p.new : o)))
+        async p => {
+          const full = await fetchO(p.new.id);
+          if (full) setOrders(prev => prev.map(o => o.id===full.id ? full : o));
+        })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'orders' },
         p => setOrders(prev => prev.filter(o => o.id!==p.old.id)))
       .subscribe();

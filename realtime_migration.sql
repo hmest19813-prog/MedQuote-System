@@ -7,6 +7,10 @@
 -- تفعيل Realtime على جدول عروض الأسعار
 ALTER PUBLICATION supabase_realtime ADD TABLE public.quotations;
 
+-- إرسال كل الحقول عند UPDATE (ليس فقط المتغيّرة)
+ALTER TABLE public.quotations REPLICA IDENTITY FULL;
+ALTER TABLE public.orders REPLICA IDENTITY FULL;
+
 -- تفعيل Realtime على جدول الطلبات
 ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
 
