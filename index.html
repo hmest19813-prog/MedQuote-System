@@ -1406,7 +1406,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
       date: today(), reference:'', currency:'JOD',
       delivery:'PROMPT', notes:'', terms:'', valid_until:'',
       discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
-      quote_type: 'quote', detailed_layout: true,
+      quote_type: 'quote', detailed_layout: false,
       ...(editQuote || {})
     };
     // مدة الصلاحية إلزامية — تُعبّأ دائماً بالمدة الافتراضية
@@ -1687,7 +1687,7 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
         onSave={(saved)=>{ if(saved?.id) setF('customer_id', saved.id); if(saved?.name) setF('customer_name', saved.name); setShowSaveCustomer(false); toast('تم حفظ العميل ✓ يمكنك الآن إكمال العرض','success'); }}
         onClose={()=>setShowSaveCustomer(false)}
       />}
-      <div className="modal" style={{maxWidth:950}}>
+      <div className="modal" style={{maxWidth:'98vw'}}>
         <div className="modal-header">
           <span className="modal-title">{editQuote ? `تعديل ${modeLabel}` : `إنشاء ${modeLabel} جديد`}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
