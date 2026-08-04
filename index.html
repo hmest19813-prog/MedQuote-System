@@ -771,6 +771,7 @@ const NAV = [
   { id: 'letters',   label: 'الكتب الرسمية', icon: '📝', perm: 'letters_access' },
   { id: 'archive',   label: 'الأرشيف',        icon: '🗄️', perm: 'archive_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
+  { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
 ];
 
 function Sidebar({ user, page, setPage, onLogout }) {
@@ -3752,6 +3753,9 @@ const PERM_GROUPS = [
     { key: 'activity_access',       label: 'سجل النشاط' },
     { key: 'deleted_quotes_access', label: 'عروض الأسعار المحذوفة' },
   ]},
+  { label: 'الموارد البشرية', perms: [
+    { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
+  ]},
 ];
 
 const DEFAULT_EMPLOYEE_PERMS = {
@@ -3764,6 +3768,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   letters_access: true, letters_manage: false,
   archive_access: true, activity_access: false,
   payments_delete: false,
+  hr_access: false,
 };
 
 const DEFAULT_MANAGER_PERMS = Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: true }), {});
@@ -6062,6 +6067,793 @@ async function createNotif({ userId, title, body='', type='info', linkType=null,
   await sb.from('notifications').insert({ user_id: userId, title, body, type, link_type: linkType, link_id: linkId });
 }
 
+/* ===================== HR MODULE ===================== */
+
+function HRPage({ user }) {
+  const [tab, setTab] = useState('employees');
+  const tabs = [
+    { id: 'employees', label: 'الموظفين',       icon: '👤' },
+    { id: 'attendance', label: 'الحضور والغياب', icon: '📅' },
+    { id: 'letters',   label: 'الكتب',           icon: '📝' },
+    { id: 'salaries',  label: 'الرواتب',         icon: '💰' },
+  ];
+  return (
+    <div>
+      <div style={{display:'flex', borderBottom:'2px solid var(--gray-200)', marginBottom:24}}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding:'10px 22px', border:'none', background:'transparent', cursor:'pointer',
+            borderBottom: tab===t.id ? '2px solid var(--primary)' : '2px solid transparent',
+            color: tab===t.id ? 'var(--primary)' : 'var(--gray-500)',
+            fontWeight: tab===t.id ? 700 : 400, fontSize:14, marginBottom:'-2px', transition:'all .15s'
+          }}>{t.icon} {t.label}</button>
+        ))}
+      </div>
+      {tab==='employees' && <HREmployees/>}
+      {tab==='attendance' && <HRAttendance/>}
+      {tab==='letters'   && <HRLetters user={user}/>}
+      {tab==='salaries'  && <HRSalaries/>}
+    </div>
+  );
+}
+
+/* ---------- Employees ---------- */
+const EMP_STATUS_LABEL = { active:'نشط', inactive:'غير نشط', terminated:'منتهي الخدمة' };
+const EMP_STATUS_BADGE = { active:'badge-approved', inactive:'badge-archived', terminated:'badge-rejected' };
+
+function HREmployees() {
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [search, setSearch]       = useState('');
+  const [showForm, setShowForm]   = useState(false);
+  const [editEmp, setEditEmp]     = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('hr_employees').select('*').order('full_name');
+    setEmployees(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = employees.filter(e =>
+    !search ||
+    e.full_name.includes(search) ||
+    (e.job_title||'').includes(search) ||
+    (e.department||'').includes(search)
+  );
+
+  const handleDelete = async (id) => {
+    const { error } = await sb.from('hr_employees').delete().eq('id', id);
+    if (error) { toast('خطأ في الحذف: ' + error.message, 'error'); return; }
+    toast('تم حذف الموظف', 'success');
+    setDelConfirm(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          <input className="form-control" placeholder="بحث بالاسم أو القسم..." value={search}
+            onChange={e => setSearch(e.target.value)} style={{width:220}}/>
+          <span style={{fontSize:13, color:'var(--gray-400)'}}>{filtered.length} موظف</span>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditEmp(null); setShowForm(true); }}>+ إضافة موظف</button>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr>
+              <th>الاسم</th><th>المسمى الوظيفي</th><th>القسم</th>
+              <th>تاريخ التعيين</th><th>الراتب الأساسي</th><th>الهاتف</th><th>الحالة</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={8} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد موظفون{search ? ' بهذا البحث' : ''}</td></tr>
+              ) : filtered.map(emp => (
+                <tr key={emp.id}>
+                  <td style={{fontWeight:600}}>{emp.full_name}</td>
+                  <td>{emp.job_title||'—'}</td>
+                  <td>{emp.department||'—'}</td>
+                  <td>{emp.hire_date ? new Date(emp.hire_date).toLocaleDateString('ar') : '—'}</td>
+                  <td style={{direction:'ltr', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>
+                    {emp.base_salary ? Number(emp.base_salary).toLocaleString('ar') + ' د.أ' : '—'}
+                  </td>
+                  <td>{emp.phone||'—'}</td>
+                  <td><span className={`badge ${EMP_STATUS_BADGE[emp.status]||'badge-sent'}`}>{EMP_STATUS_LABEL[emp.status]||emp.status}</span></td>
+                  <td>
+                    <div style={{display:'flex', gap:6}}>
+                      <button className="btn btn-sm" onClick={() => { setEditEmp(emp); setShowForm(true); }}>تعديل</button>
+                      <button className="btn btn-sm" style={{background:'var(--danger-light)', color:'var(--danger)'}}
+                        onClick={() => setDelConfirm(emp)}>حذف</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <HREmployeeForm editEmp={editEmp} onClose={() => setShowForm(false)}
+          onSave={() => { setShowForm(false); load(); }}/>
+      )}
+
+      {delConfirm && (
+        <div className="modal-overlay" onClick={() => setDelConfirm(null)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>تأكيد الحذف</h3></div>
+            <div className="modal-body">
+              هل أنت متأكد من حذف الموظف <strong>{delConfirm.full_name}</strong>؟
+              <br/><span style={{fontSize:12, color:'var(--danger)', marginTop:6, display:'block'}}>سيُحذف جميع سجلات الحضور والرواتب المرتبطة به نهائياً.</span>
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setDelConfirm(null)}>إلغاء</button>
+              <button className="btn btn-danger" onClick={() => handleDelete(delConfirm.id)}>حذف نهائي</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HREmployeeForm({ editEmp, onClose, onSave }) {
+  const isNew = !editEmp;
+  const [form, setForm] = useState(() => ({
+    full_name:   editEmp?.full_name   || '',
+    job_title:   editEmp?.job_title   || '',
+    department:  editEmp?.department  || '',
+    hire_date:   editEmp?.hire_date   || '',
+    base_salary: editEmp?.base_salary ?? '',
+    phone:       editEmp?.phone       || '',
+    national_id: editEmp?.national_id || '',
+    status:      editEmp?.status      || 'active',
+    notes:       editEmp?.notes       || '',
+  }));
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.full_name.trim()) { toast('الاسم الكامل مطلوب', 'error'); return; }
+    setSaving(true);
+    const payload = { ...form, base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0, hire_date: form.hire_date || null, updated_at: new Date().toISOString() };
+    const { error } = isNew
+      ? await sb.from('hr_employees').insert(payload)
+      : await sb.from('hr_employees').update(payload).eq('id', editEmp.id);
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت إضافة الموظف' : 'تم حفظ التعديلات', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:620}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{isNew ? 'إضافة موظف جديد' : 'تعديل بيانات الموظف'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group">
+              <label>الاسم الكامل *</label>
+              <input className="form-control" value={form.full_name} onChange={e => upd('full_name', e.target.value)} placeholder="اسم الموظف"/>
+            </div>
+            <div className="form-group">
+              <label>المسمى الوظيفي</label>
+              <input className="form-control" value={form.job_title} onChange={e => upd('job_title', e.target.value)} placeholder="مثال: محاسب"/>
+            </div>
+            <div className="form-group">
+              <label>القسم</label>
+              <input className="form-control" value={form.department} onChange={e => upd('department', e.target.value)} placeholder="مثال: المبيعات"/>
+            </div>
+            <div className="form-group">
+              <label>تاريخ التعيين</label>
+              <input type="date" className="form-control" value={form.hire_date} onChange={e => upd('hire_date', e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label>الراتب الأساسي (د.أ)</label>
+              <input type="number" className="form-control" value={form.base_salary} onChange={e => upd('base_salary', e.target.value)} min="0" placeholder="0"/>
+            </div>
+            <div className="form-group">
+              <label>رقم الهاتف</label>
+              <input className="form-control" value={form.phone} onChange={e => upd('phone', e.target.value)} placeholder="05XXXXXXXX"/>
+            </div>
+            <div className="form-group">
+              <label>رقم الهوية / الإقامة</label>
+              <input className="form-control" value={form.national_id} onChange={e => upd('national_id', e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label>الحالة</label>
+              <select className="form-control" value={form.status} onChange={e => upd('status', e.target.value)}>
+                <option value="active">نشط</option>
+                <option value="inactive">غير نشط</option>
+                <option value="terminated">منتهي الخدمة</option>
+              </select>
+            </div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}>
+              <label>ملاحظات</label>
+              <textarea className="form-control" value={form.notes} onChange={e => upd('notes', e.target.value)} rows={3} placeholder="أي ملاحظات إضافية..."/>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Attendance ---------- */
+const ATT_STATUS = [
+  { key:'present',        label:'حاضر',             color:'#16a34a', bg:'#dcfce7' },
+  { key:'absent',         label:'غائب',              color:'#dc2626', bg:'#fee2e2' },
+  { key:'late',           label:'متأخر',             color:'#d97706', bg:'#fef3c7' },
+  { key:'leave_annual',   label:'إجازة سنوية',       color:'#7c3aed', bg:'#ede9fe' },
+  { key:'leave_sick',     label:'إجازة مرضية',       color:'#0891b2', bg:'#cffafe' },
+  { key:'leave_unpaid',   label:'إجازة غير مدفوعة', color:'#9f1239', bg:'#ffe4e6' },
+  { key:'leave_personal', label:'إجازة شخصية',       color:'#a855f7', bg:'#fae8ff' },
+  { key:'holiday',        label:'عطلة',              color:'#64748b', bg:'#f1f5f9' },
+];
+const ATT_MAP = Object.fromEntries(ATT_STATUS.map(s => [s.key, s]));
+const MONTHS_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+function HRAttendance() {
+  const [employees, setEmployees]   = useState([]);
+  const [selectedEmp, setSelectedEmp] = useState('');
+  const [month, setMonth]           = useState(new Date().getMonth() + 1);
+  const [year, setYear]             = useState(new Date().getFullYear());
+  const [attendance, setAttendance] = useState({});
+  const [loading, setLoading]       = useState(false);
+  const [saving, setSaving]         = useState(false);
+
+  useEffect(() => {
+    sb.from('hr_employees').select('id,full_name').eq('status','active').order('full_name')
+      .then(({ data }) => {
+        setEmployees(data || []);
+        if (data?.length) setSelectedEmp(data[0].id);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEmp) return;
+    setLoading(true);
+    const yStr = String(year);
+    const mStr = String(month).padStart(2,'0');
+    sb.from('hr_attendance').select('date,status').eq('employee_id', selectedEmp)
+      .gte('date', `${yStr}-${mStr}-01`).lte('date', `${yStr}-${mStr}-31`)
+      .then(({ data }) => {
+        const map = {};
+        (data||[]).forEach(r => { map[r.date] = r.status; });
+        setAttendance(map);
+        setLoading(false);
+      });
+  }, [selectedEmp, month, year]);
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  const dateStr = (day) => `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  const isFriday = (day) => new Date(year, month-1, day).getDay() === 5;
+  const getDayStatus = (day) => attendance[dateStr(day)] || (isFriday(day) ? 'holiday' : 'present');
+  const getDayName = (day) => new Date(year, month-1, day).toLocaleDateString('ar', { weekday:'short' });
+  const isWeekend = (day) => { const d = new Date(year, month-1, day).getDay(); return d===5||d===6; };
+
+  const setDay = (day, status) => {
+    setAttendance(prev => ({ ...prev, [dateStr(day)]: status }));
+  };
+
+  const handleSave = async () => {
+    if (!selectedEmp) return;
+    setSaving(true);
+    const rows = Object.entries(attendance)
+      .filter(([,s]) => s)
+      .map(([date, status]) => ({ employee_id: selectedEmp, date, status }));
+    const { error } = await sb.from('hr_attendance').upsert(rows, { onConflict: 'employee_id,date' });
+    setSaving(false);
+    if (error) { toast('خطأ في الحفظ: ' + error.message, 'error'); return; }
+    toast('تم حفظ سجل الحضور', 'success');
+  };
+
+  const stats = [
+    { key:'present', label:'حاضر',  color:'#16a34a', bg:'#dcfce7', count: days.filter(d => getDayStatus(d)==='present').length },
+    { key:'absent',  label:'غائب',  color:'#dc2626', bg:'#fee2e2', count: days.filter(d => getDayStatus(d)==='absent').length },
+    { key:'late',    label:'متأخر', color:'#d97706', bg:'#fef3c7', count: days.filter(d => getDayStatus(d)==='late').length },
+    { key:'leave',   label:'إجازة', color:'#7c3aed', bg:'#ede9fe', count: days.filter(d => getDayStatus(d).startsWith('leave_')).length },
+    { key:'holiday', label:'عطلة',  color:'#64748b', bg:'#f1f5f9', count: days.filter(d => getDayStatus(d)==='holiday').length },
+  ];
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:20, flexWrap:'wrap'}}>
+        <select className="form-control" style={{width:200}} value={selectedEmp} onChange={e => setSelectedEmp(e.target.value)}>
+          {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+        </select>
+        <select className="form-control" style={{width:130}} value={month} onChange={e => setMonth(Number(e.target.value))}>
+          {MONTHS_AR.map((m,i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <select className="form-control" style={{width:90}} value={year} onChange={e => setYear(Number(e.target.value))}>
+          {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+      </div>
+
+      <div style={{display:'flex', gap:10, marginBottom:16, flexWrap:'wrap'}}>
+        {stats.map(s => (
+          <div key={s.key} style={{background:s.bg, border:`1px solid ${s.color}40`, borderRadius:8, padding:'8px 16px', minWidth:80, textAlign:'center'}}>
+            <div style={{fontSize:22, fontWeight:700, color:s.color}}>{s.count}</div>
+            <div style={{fontSize:11, color:s.color}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : (
+        <div style={{display:'grid', gridTemplateColumns:'repeat(7, minmax(70px,1fr))', gap:6}}>
+          {days.map(day => {
+            const status = getDayStatus(day);
+            const att = status ? ATT_MAP[status] : null;
+            const weekend = isWeekend(day);
+            return (
+              <div key={day} style={{
+                border:'1px solid var(--gray-200)', borderRadius:8, padding:'8px 4px',
+                textAlign:'center', background: att ? att.bg : weekend ? '#f8fafc' : 'white'
+              }}>
+                <div style={{fontSize:10, color:'var(--gray-400)', marginBottom:2}}>{getDayName(day)}</div>
+                <div style={{fontSize:16, fontWeight:600, color: weekend&&!att ? 'var(--gray-400)' : 'var(--gray-700)'}}>{day}</div>
+                <select value={status} onChange={e => setDay(day, e.target.value)}
+                  style={{
+                    fontSize:10, borderRadius:4, cursor:'pointer', width:'100%', marginTop:4,
+                    textAlign:'center', fontWeight:600, outline:'none',
+                    background: att ? att.color : ATT_MAP['present'].color,
+                    color:'white', border:'none', padding:'2px 0'
+                  }}>
+                  {ATT_STATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{display:'flex', gap:14, marginTop:16, flexWrap:'wrap'}}>
+        {ATT_STATUS.map(s => (
+          <span key={s.key} style={{display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--gray-600)'}}>
+            <span style={{width:10, height:10, borderRadius:'50%', background:s.color, display:'inline-block'}}/>
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- HR Letters ---------- */
+const LETTER_TYPES = [
+  { key:'experience',     label:'شهادة خبرة',
+    template: e => `تشهد مؤسسة الحياة العلمية بأن الموظف / ${e.full_name}، ${e.job_title||''}، يعمل لدى المؤسسة منذ ${e.hire_date ? new Date(e.hire_date).toLocaleDateString('ar') : '...'} حتى تاريخه، وذلك لتقديمها لمن يلزم.` },
+  { key:'salary',         label:'كتاب راتب',
+    template: e => `تشهد مؤسسة الحياة العلمية بأن الموظف / ${e.full_name}، ${e.job_title||''}، يتقاضى راتباً شهرياً إجمالياً قدره (${Number(e.base_salary||0).toLocaleString('ar')} ريال سعودي) وذلك لتقديمه لمن يلزم.` },
+  { key:'recommendation', label:'خطاب توصية',
+    template: e => `نوصي بالموظف / ${e.full_name}، ${e.job_title||''}، الذي أثبت كفاءة ومهنية عالية خلال فترة عمله لدينا منذ ${e.hire_date ? new Date(e.hire_date).toLocaleDateString('ar') : '...'} حتى تاريخه، ونتمنى له التوفيق.` },
+  { key:'warning',        label:'إنذار رسمي',
+    template: e => `يُخطَر الموظف / ${e.full_name}، ${e.job_title||''}، بهذا الإنذار الرسمي بسبب:\n[أسباب الإنذار]\n\nوعليه الالتزام الفوري بلوائح المؤسسة وأنظمتها، وإلا سيُتخذ بحقه الإجراء النظامي.` },
+  { key:'clearance',      label:'إخلاء طرف',
+    template: e => `تشهد مؤسسة الحياة العلمية بأن الموظف / ${e.full_name}، ${e.job_title||''}، قد أتم إجراءات إخلاء الطرف وسلّم جميع المستلزمات الوظيفية، ولا يوجد عليه أي التزام مالي أو إداري تجاه المؤسسة.` },
+];
+const LETTER_MAP = Object.fromEntries(LETTER_TYPES.map(t => [t.key, t.label]));
+
+function HRLetters({ user }) {
+  const [employees, setEmployees] = useState([]);
+  const [letters, setLetters]     = useState([]);
+  const [showForm, setShowForm]   = useState(false);
+  const [preview, setPreview]     = useState(null);
+
+  const load = async () => {
+    const [{ data: emps }, { data: lts }] = await Promise.all([
+      sb.from('hr_employees').select('id,full_name,job_title,hire_date,base_salary').order('full_name'),
+      sb.from('hr_letters').select('*,hr_employees(full_name)').order('created_at', { ascending:false }),
+    ]);
+    setEmployees(emps||[]);
+    setLetters(lts||[]);
+  };
+  useEffect(() => { load(); }, []);
+
+  const handleDelete = async (id) => {
+    await sb.from('hr_letters').delete().eq('id', id);
+    toast('تم حذف الكتاب', 'success');
+    load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
+        <span style={{fontSize:13, color:'var(--gray-400)'}}>{letters.length} كتاب مصدر</span>
+        <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ إصدار كتاب</button>
+      </div>
+
+      <div className="table-container">
+        <table className="table">
+          <thead><tr><th>الموظف</th><th>نوع الكتاب</th><th>العنوان</th><th>تاريخ الإصدار</th><th>إجراءات</th></tr></thead>
+          <tbody>
+            {letters.length===0 ? (
+              <tr><td colSpan={5} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا توجد كتب مصدرة</td></tr>
+            ) : letters.map(lt => (
+              <tr key={lt.id}>
+                <td style={{fontWeight:600}}>{lt.hr_employees?.full_name||'—'}</td>
+                <td><span className="badge badge-sent">{LETTER_MAP[lt.letter_type]||lt.letter_type}</span></td>
+                <td>{lt.title}</td>
+                <td>{lt.issued_date ? new Date(lt.issued_date).toLocaleDateString('ar') : '—'}</td>
+                <td>
+                  <div style={{display:'flex', gap:6}}>
+                    <button className="btn btn-sm" onClick={() => setPreview(lt)}>معاينة</button>
+                    <button className="btn btn-sm" style={{background:'var(--danger-light)', color:'var(--danger)'}}
+                      onClick={() => handleDelete(lt.id)}>حذف</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showForm && (
+        <HRLetterForm employees={employees} user={user} onClose={() => setShowForm(false)}
+          onSave={() => { setShowForm(false); load(); }}/>
+      )}
+
+      {preview && (
+        <div className="modal-overlay" onClick={() => setPreview(null)}>
+          <div className="modal" style={{maxWidth:720}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{preview.title}</h3>
+              <div style={{display:'flex', gap:8}}>
+                <button className="btn btn-primary btn-sm"
+                  onClick={() => printDoc('hr-letter-print-content', preview.title)}>
+                  🖨️ طباعة / PDF
+                </button>
+                <button className="modal-close" onClick={() => setPreview(null)}>×</button>
+              </div>
+            </div>
+            <div className="modal-body" style={{padding:0}}>
+              <div id="hr-letter-print-content" style={{padding:'28px 36px', background:'white', direction:'rtl', fontFamily:'serif'}}>
+                {/* Header */}
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:16, fontWeight:900, color:'#111'}}>{COMPANY.name_ar}</div>
+                    <div style={{fontSize:11, color:'#666', marginTop:2}}>{COMPANY.address_ar}</div>
+                    <div style={{fontSize:11, color:'#666'}}>هاتف: {COMPANY.tel} | فاكس: {COMPANY.fax}</div>
+                  </div>
+                  <img src={window.HAYAT_LOGO_SRC} style={{width:90, height:90, objectFit:'contain'}} alt=""/>
+                  <div style={{textAlign:'left'}}>
+                    <div style={{fontSize:22, fontWeight:900, color:'var(--primary)', letterSpacing:2}}>HAYAT</div>
+                    <div style={{fontSize:9, color:'#6B7A8B', textTransform:'uppercase'}}>Scientific Medical Corp.</div>
+                    <div style={{fontSize:11, color:'#666', marginTop:4}}>{COMPANY.website}</div>
+                    <div style={{fontSize:11, color:'#666'}}>{COMPANY.email}</div>
+                  </div>
+                </div>
+                <hr style={{border:'none', borderTop:'2.5px solid var(--primary)', margin:'10px 0 20px'}}/>
+
+                {/* Info */}
+                <div style={{display:'flex', justifyContent:'space-between', marginBottom:20, fontSize:13}}>
+                  <div><span style={{fontWeight:700}}>العنوان: </span>{preview.title}</div>
+                  <div><span style={{fontWeight:700}}>التاريخ: </span>
+                    {preview.issued_date ? new Date(preview.issued_date).toLocaleDateString('ar',{year:'numeric',month:'long',day:'numeric'}) : ''}
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div style={{lineHeight:2.4, fontSize:14, whiteSpace:'pre-wrap', textAlign:'justify', minHeight:200}}>
+                  {preview.content}
+                </div>
+
+                {/* Signature */}
+                <div style={{marginTop:60, textAlign:'right'}}>
+                  <div style={{fontSize:13, fontWeight:700}}>المفوض بالتوقيع</div>
+                  <div style={{marginTop:40, borderTop:'1px solid #999', display:'inline-block', paddingTop:4, minWidth:150, fontSize:12, color:'#666'}}>التوقيع والختم</div>
+                </div>
+
+                {/* Footer */}
+                <div style={{marginTop:40, background:'var(--primary)', color:'white', borderRadius:6, padding:'10px 16px', fontSize:10, display:'flex', justifyContent:'space-between'}}>
+                  <span>{COMPANY.address}</span>
+                  <span>{COMPANY.tel} | {COMPANY.website}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HRLetterForm({ employees, user, onClose, onSave }) {
+  const [form, setForm] = useState({
+    employee_id: employees[0]?.id || '',
+    letter_type: 'experience',
+    title:       '',
+    content:     '',
+    issued_date: new Date().toISOString().slice(0,10),
+  });
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const emp = employees.find(e => e.id === form.employee_id);
+    const type = LETTER_TYPES.find(t => t.key === form.letter_type);
+    if (!emp || !type) return;
+    setForm(f => ({
+      ...f,
+      title:   type.label + ' — ' + emp.full_name,
+      content: type.template(emp),
+    }));
+  }, [form.employee_id, form.letter_type]);
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { toast('العنوان مطلوب', 'error'); return; }
+    if (!form.employee_id)  { toast('يجب اختيار موظف', 'error'); return; }
+    setSaving(true);
+    const { error } = await sb.from('hr_letters').insert({ ...form, created_by: user.id });
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم إصدار الكتاب', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:660}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>إصدار كتاب جديد</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group">
+              <label>الموظف</label>
+              <select className="form-control" value={form.employee_id} onChange={e => upd('employee_id', e.target.value)}>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>نوع الكتاب</label>
+              <select className="form-control" value={form.letter_type} onChange={e => upd('letter_type', e.target.value)}>
+                {LETTER_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}>
+              <label>العنوان</label>
+              <input className="form-control" value={form.title} onChange={e => upd('title', e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label>تاريخ الإصدار</label>
+              <input type="date" className="form-control" value={form.issued_date} onChange={e => upd('issued_date', e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group" style={{marginTop:12}}>
+            <label>نص الكتاب</label>
+            <textarea className="form-control" value={form.content} onChange={e => upd('content', e.target.value)}
+              rows={7} style={{lineHeight:1.9, fontFamily:'serif', direction:'rtl'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'إصدار الكتاب'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Salaries ---------- */
+function HRSalaries() {
+  const [employees, setEmployees] = useState([]);
+  const [salaries, setSalaries]   = useState([]);
+  const [month, setMonth]         = useState(new Date().getMonth() + 1);
+  const [year, setYear]           = useState(new Date().getFullYear());
+  const [loading, setLoading]     = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: emps }, { data: sals }] = await Promise.all([
+      sb.from('hr_employees').select('id,full_name,job_title,base_salary').eq('status','active').order('full_name'),
+      sb.from('hr_salaries').select('*').eq('month', month).eq('year', year),
+    ]);
+    setEmployees(emps||[]);
+    setSalaries(sals||[]);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [month, year]);
+
+  const getSal = (empId) => salaries.find(s => s.employee_id === empId);
+
+  const rows = employees.map(emp => {
+    const sal = getSal(emp.id);
+    const base = Number(sal?.base_salary ?? emp.base_salary ?? 0);
+    const bonus = Number(sal?.bonus ?? 0);
+    const deductions = Number(sal?.deductions ?? 0);
+    return { emp, sal, base, bonus, deductions, net: base + bonus - deductions, status: sal?.status ?? 'pending', notes: sal?.notes ?? '' };
+  });
+
+  const totals = rows.reduce((acc, r) => ({
+    base: acc.base + r.base, bonus: acc.bonus + r.bonus,
+    deductions: acc.deductions + r.deductions, net: acc.net + r.net,
+    paid: acc.paid + (r.status==='paid' ? 1 : 0),
+  }), { base:0, bonus:0, deductions:0, net:0, paid:0 });
+
+  const upsertRow = async (empId, fields) => {
+    const emp = employees.find(e => e.id === empId);
+    const existing = getSal(empId);
+    const payload = {
+      employee_id: empId, month, year,
+      base_salary: existing?.base_salary ?? emp?.base_salary ?? 0,
+      bonus: existing?.bonus ?? 0,
+      deductions: existing?.deductions ?? 0,
+      status: existing?.status ?? 'pending',
+      notes: existing?.notes ?? '',
+      ...fields,
+    };
+    const { error } = await sb.from('hr_salaries').upsert(payload, { onConflict: 'employee_id,month,year' });
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    load();
+  };
+
+  const togglePaid = async (empId, currentStatus) => {
+    const newStatus = currentStatus === 'paid' ? 'pending' : 'paid';
+    await upsertRow(empId, { status: newStatus, paid_at: newStatus==='paid' ? new Date().toISOString() : null });
+    toast(newStatus==='paid' ? 'تم تسجيل صرف الراتب' : 'تم إلغاء الصرف', 'success');
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    const payloads = employees.map(emp => ({
+      employee_id: emp.id, month, year,
+      base_salary: emp.base_salary ?? 0, bonus: 0, deductions: 0, status: 'pending',
+    }));
+    const { error } = await sb.from('hr_salaries').upsert(payloads, { onConflict: 'employee_id,month,year', ignoreDuplicates: true });
+    setGenerating(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم توليد مسير الرواتب', 'success');
+    load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10}}>
+        <div style={{display:'flex', gap:10}}>
+          <select className="form-control" style={{width:130}} value={month} onChange={e => setMonth(Number(e.target.value))}>
+            {MONTHS_AR.map((m,i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+          <select className="form-control" style={{width:90}} value={year} onChange={e => setYear(Number(e.target.value))}>
+            {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+          {generating ? 'جاري التوليد...' : '⚙ توليد مسير الرواتب'}
+        </button>
+      </div>
+
+      <div style={{display:'flex', gap:10, marginBottom:18, flexWrap:'wrap'}}>
+        {[
+          { label:'إجمالي الرواتب',  value:totals.base,       color:'#6366f1' },
+          { label:'إجمالي البدلات',  value:totals.bonus,      color:'#16a34a' },
+          { label:'إجمالي الخصومات',value:totals.deductions,  color:'#dc2626' },
+          { label:'صافي المدفوعات', value:totals.net,         color:'#0284c7' },
+        ].map(s => (
+          <div key={s.label} style={{background:'white', border:'1px solid var(--gray-200)', borderRadius:8, padding:'10px 18px', minWidth:150}}>
+            <div style={{fontSize:11, color:'var(--gray-400)', marginBottom:3}}>{s.label}</div>
+            <div style={{fontSize:17, fontWeight:700, color:s.color, direction:'ltr', textAlign:'right'}}>
+              {Number(s.value).toLocaleString('ar')} د.أ
+            </div>
+          </div>
+        ))}
+        <div style={{background:'white', border:'1px solid var(--gray-200)', borderRadius:8, padding:'10px 18px', minWidth:110}}>
+          <div style={{fontSize:11, color:'var(--gray-400)', marginBottom:3}}>تم الصرف</div>
+          <div style={{fontSize:17, fontWeight:700, color:'#16a34a'}}>{totals.paid} / {rows.length}</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr>
+              <th>الموظف</th><th>المسمى</th>
+              <th>الراتب الأساسي</th><th>البدلات</th><th>الخصومات</th>
+              <th>الصافي</th><th>الحالة</th><th>ملاحظات</th>
+            </tr></thead>
+            <tbody>
+              {rows.length===0 ? (
+                <tr><td colSpan={8} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>
+                  لا يوجد موظفون نشطون — أضف موظفين من تبويب الموظفين
+                </td></tr>
+              ) : rows.map(({ emp, base, bonus, deductions, net, status, notes }) => (
+                <tr key={emp.id} style={{background: status==='paid' ? '#f0fdf4' : 'inherit'}}>
+                  <td style={{fontWeight:600}}>{emp.full_name}</td>
+                  <td style={{fontSize:12, color:'var(--gray-500)'}}>{emp.job_title||'—'}</td>
+                  <td><SalaryCell value={base} onSave={v => upsertRow(emp.id, { base_salary: v })}/></td>
+                  <td><SalaryCell value={bonus} onSave={v => upsertRow(emp.id, { bonus: v })} color="#16a34a"/></td>
+                  <td><SalaryCell value={deductions} onSave={v => upsertRow(emp.id, { deductions: v })} color="#dc2626"/></td>
+                  <td style={{fontWeight:700, color:'#0284c7', direction:'ltr', textAlign:'right'}}>
+                    {Number(net).toLocaleString('ar')} د.أ
+                  </td>
+                  <td>
+                    <button className="btn btn-sm"
+                      style={status==='paid'
+                        ? {background:'#dcfce7', color:'#16a34a', border:'1px solid #86efac'}
+                        : {background:'var(--primary)', color:'white'}}
+                      onClick={() => togglePaid(emp.id, status)}>
+                      {status==='paid' ? '✓ مصروف' : 'صرف'}
+                    </button>
+                  </td>
+                  <td><SalaryNoteCell value={notes} onSave={v => upsertRow(emp.id, { notes: v })}/></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SalaryCell({ value, onSave, color }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal]         = useState(value);
+  useEffect(() => { setVal(value); }, [value]);
+
+  if (editing) return (
+    <input type="number" value={val} onChange={e => setVal(e.target.value)} min="0" autoFocus
+      style={{width:85, fontSize:13, border:'1px solid var(--primary)', borderRadius:4, padding:'2px 6px', direction:'ltr'}}
+      onBlur={() => { setEditing(false); if (Number(val) !== Number(value)) onSave(Number(val)); }}
+      onKeyDown={e => {
+        if (e.key==='Enter')  { setEditing(false); onSave(Number(val)); }
+        if (e.key==='Escape') { setEditing(false); setVal(value); }
+      }}/>
+  );
+  return (
+    <span onClick={() => { setVal(value); setEditing(true); }}
+      style={{cursor:'pointer', color: color||'inherit', direction:'ltr', display:'inline-block',
+              minWidth:65, borderBottom:'1px dashed var(--gray-300)', paddingBottom:1}}>
+      {Number(value).toLocaleString('ar')} د.أ
+    </span>
+  );
+}
+
+function SalaryNoteCell({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal]         = useState(value||'');
+  useEffect(() => { setVal(value||''); }, [value]);
+
+  if (editing) return (
+    <input value={val} onChange={e => setVal(e.target.value)} autoFocus
+      style={{width:120, fontSize:12, border:'1px solid var(--primary)', borderRadius:4, padding:'2px 6px'}}
+      onBlur={() => { setEditing(false); if (val !== value) onSave(val); }}
+      onKeyDown={e => {
+        if (e.key==='Enter')  { setEditing(false); onSave(val); }
+        if (e.key==='Escape') { setEditing(false); setVal(value||''); }
+      }}/>
+  );
+  return (
+    <span onClick={() => { setVal(value||''); setEditing(true); }}
+      style={{cursor:'pointer', fontSize:12, color:'var(--gray-500)', borderBottom:'1px dashed var(--gray-300)', minWidth:50, display:'inline-block'}}>
+      {val||'—'}
+    </span>
+  );
+}
+
 /* إشعار للمدراء — تُستخدم عند إنشاء عرض جديد */
 async function notifyAdmins(title, body, linkType, linkId) {
   const { data: admins } = await sb.from('profiles').select('id').in('role', ['admin', 'manager']).eq('is_active', true);
@@ -6268,7 +7060,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية' };
 
   return (
     <div className="app-layout">
@@ -6293,6 +7085,7 @@ function App() {
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
+          {page==='hr' && hasPerm(user,'hr_access') && <HRPage user={user}/>}
         </div>
       </div>
       <Toasts/>
