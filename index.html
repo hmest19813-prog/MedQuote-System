@@ -2476,7 +2476,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>المرجع</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
@@ -2490,6 +2490,7 @@ function QuotesList({ user, quotes, onReload }) {
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>{q.reference||'—'}</td>
                   <td style={{textAlign:'center'}}>
                     <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
                       {QT[q.quote_type] || 'عرض سعر'}
@@ -2517,7 +2518,7 @@ function QuotesList({ user, quotes, onReload }) {
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canViewIssuer?9:8}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
             </tbody>
           </table>
         </div>
