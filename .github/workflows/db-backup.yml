@@ -1,0 +1,46 @@
+name: Database Backup
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # كل يوم الساعة 2 صباحاً UTC (5 صباحاً بتوقيت السعودية)
+  workflow_dispatch: # يتيح التشغيل اليدوي من GitHub
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y postgresql-client
+
+      - name: Run pg_dump
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backups
+          FILENAME="backups/backup_$(date +%Y-%m-%d).sql"
+          pg_dump "$DATABASE_URL" --no-password > "$FILENAME"
+          echo "Backup created: $FILENAME"
+          ls -lh "$FILENAME"
+
+      - name: Keep last 30 backups only
+        run: |
+          cd backups
+          COUNT=$(ls *.sql 2>/dev/null | wc -l)
+          if [ "$COUNT" -gt 30 ]; then
+            ls -t *.sql | tail -n +31 | xargs rm -f
+            echo "Cleaned old backups, kept last 30"
+          fi
+
+      - name: Commit and push backup
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add backups/
+          git diff --staged --quiet && echo "No changes to commit" || \
+            (git commit -m "db backup $(date +%Y-%m-%d)" && git push)
