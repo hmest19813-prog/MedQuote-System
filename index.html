@@ -5929,7 +5929,6 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
   };
 
   const handleSave = async () => {
-    if (!form.recipient.trim()) { toast('يجب إدخال السادة','error'); return; }
     if (!form.subject.trim()) { toast('يجب إدخال الموضوع','error'); return; }
     if (!form.body.trim()) { toast('يجب إدخال نص الكتاب','error'); return; }
     setLoading(true);
@@ -5968,7 +5967,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
         <div className="modal-body">
           <div className="form-row mb-4">
             <div className="form-group">
-              <label className="form-label">السادة *</label>
+              <label className="form-label">السادة</label>
               <div style={{display:'flex',gap:6}}>
                 <input className="form-control" list="ltr-recip-opts" value={form.recipient} onChange={e=>setF('recipient',e.target.value)} placeholder="اسم الجهة أو الشخص" style={{flex:1}}/>
                 <button type="button" onClick={()=>saveContact(form.recipient,'recipient')} style={saveBtnSt} title="حفظ للقائمة">💾</button>
