@@ -6086,7 +6086,7 @@ function LetterPrint({ letter, onClose }) {
 <body>
   ${headerHtml}
   <table class="info-table" style="margin:20px 0 0 auto;">
-    <tr><td class="info-label">السادة</td><td style="min-width:200px;">${letter.recipient}${letter.recipient ? ' المحترمين' : ''}</td></tr>
+    <tr><td class="info-label">السادة</td><td style="min-width:200px;">${letter.recipient}${letter.recipient?.trim() ? ' المحترمين' : ''}</td></tr>
     <tr><td class="info-label">عناية</td><td>${letter.attention||'—'}</td></tr>
     <tr><td class="info-label">التاريخ</td><td>${fmtD(letter.date)}</td></tr>
     <tr><td class="info-label">الموضوع</td><td><b>${letter.subject}</b></td></tr>
@@ -6143,7 +6143,7 @@ function LetterPrint({ letter, onClose }) {
 
             <table className="letter-info-table">
               <tbody>
-                <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}{letter.recipient ? ' المحترمين' : ''}</td></tr>
+                <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}{letter.recipient?.trim() ? ' المحترمين' : ''}</td></tr>
                 <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
                 <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
                 <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
