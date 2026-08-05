@@ -933,6 +933,23 @@ function Dashboard({ quotes, orders, logs, user }) {
         ))}
       </div>
 
+      {/* إحصائيات الطلبات */}
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)',marginBottom:8,letterSpacing:'.04em'}}>الطلبات</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:10}}>
+          {Object.entries(OL).map(([k,v]) => {
+            const cnt = ordersActive.filter(o=>o.status===k).length;
+            const clr = k==='delivered'?'var(--success)':k==='cancelled'?'var(--danger)':k==='pending'?'var(--warning)':'var(--primary)';
+            return (
+              <div key={k} style={{...SC, borderRightColor:clr}}>
+                <div style={{fontSize:10,color:'var(--gray-500)',fontWeight:700,marginBottom:4}}>{v}</div>
+                <div style={{fontSize:20,fontWeight:800,color:'var(--gray-900)'}}>{cnt}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid-2 mb-4">
         <div className="card"><div className="card-header"><span className="card-title">النشاط الشهري</span></div><div className="card-body"><MiniChart data={months}/></div></div>
         <div className="card"><div className="card-header"><span className="card-title">توزيع الحالات</span></div><div className="card-body">{donutItems.length>0?<Donut items={donutItems}/>:<p className="text-muted text-sm">لا توجد بيانات</p>}</div></div>
@@ -1216,6 +1233,10 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
         <div className="field-row"><label>التاريخ:</label> {doc.date}</div>
         {doc.valid_until && <div className="field-row"><label>صالح حتى:</label> <strong style={{color: new Date(doc.valid_until) < new Date() ? '#dc2626' : '#16a34a'}}>{doc.valid_until}</strong></div>}
         {docType==='invoice' && <div className="field-row" style={{gridColumn:'1/-1'}}><label>رقم التسجيل الضريبي:</label> <strong style={{color:'var(--primary)'}}>{COMPANY.tax_no}</strong></div>}
+        {docType==='order' && doc.issued_by_name    && <div className="field-row"><label>مُصدر الطلب:</label> <strong>{doc.issued_by_name}</strong></div>}
+        {docType==='order' && doc.prepared_by       && <div className="field-row"><label>جهة التجهيز:</label> <strong>{doc.prepared_by}</strong></div>}
+        {docType==='order' && doc.delivered_by      && <div className="field-row"><label>جهة التسليم:</label> <strong>{doc.delivered_by}</strong></div>}
+        {docType==='order' && doc.expected_delivery && <div className="field-row"><label>موعد التسليم:</label> <strong style={{color:'var(--primary)'}}>{doc.expected_delivery}</strong></div>}
       </div>
     </div>
   );
@@ -2225,6 +2246,12 @@ function FollowUpModal({ quote, user, onClose }) {
     setLoading(false);
   };
 
+  const deleteNote = async (id) => {
+    const { error } = await sb.from('quote_followups').delete().eq('id', id);
+    if (!error) setNotes(n => n.filter(x => x.id !== id));
+    else toast('خطأ في الحذف', 'error');
+  };
+
   const fmtDate = (iso) => {
     const d = new Date(iso);
     return d.toLocaleDateString('ar-JO') + ' — ' + d.toLocaleTimeString('ar-JO', {hour:'2-digit', minute:'2-digit'});
@@ -2242,9 +2269,16 @@ function FollowUpModal({ quote, user, onClose }) {
             <div style={{marginBottom:16, maxHeight:260, overflowY:'auto', display:'flex', flexDirection:'column', gap:8}}>
               {notes.map(n => (
                 <div key={n.id} style={{padding:'10px 14px', borderRadius:8, background:'#f8fafc', border:'1px solid var(--gray-200)'}}>
-                  <div style={{fontSize:11, color:'var(--gray-400)', marginBottom:5, display:'flex', justifyContent:'space-between'}}>
+                  <div style={{fontSize:11, color:'var(--gray-400)', marginBottom:5, display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                     <span>{profiles[n.created_by] || '—'}</span>
-                    <span>{fmtDate(n.created_at)}</span>
+                    <div style={{display:'flex', alignItems:'center', gap:8}}>
+                      <span>{fmtDate(n.created_at)}</span>
+                      {(user?.role==='admin' || n.created_by===user?.id) && (
+                        <button onClick={() => deleteNote(n.id)}
+                          style={{background:'none', border:'none', cursor:'pointer', color:'var(--danger)', fontSize:13, padding:'0 2px', lineHeight:1}}
+                          title="حذف الملاحظة">🗑️</button>
+                      )}
+                    </div>
                   </div>
                   <div style={{fontSize:13, color:'var(--gray-800)', whiteSpace:'pre-wrap'}}>{n.note}</div>
                 </div>
@@ -2477,7 +2511,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th>المرجع</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th style={{width:130}}>المرجع</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
@@ -2491,7 +2525,7 @@ function QuotesList({ user, quotes, onReload }) {
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="text-sm text-muted" style={{textAlign:'center'}}>{q.reference||'—'}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{q.reference||'—'}</td>
                   <td style={{textAlign:'center'}}>
                     <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
                       {QT[q.quote_type] || 'عرض سعر'}
@@ -2510,7 +2544,7 @@ function QuotesList({ user, quotes, onReload }) {
                       {(q.created_by === user?.id || hasPerm(user, 'quotes_edit_all')) && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
                       <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                       {q.status!=='converted' && q.status!=='invoiced' && (
-                        <button className="btn btn-success btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
                       )}
                       <button className="btn btn-ghost btn-sm" onClick={()=>{
                         if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً قبل الأرشفة','error');return;}
@@ -2615,6 +2649,8 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
     notes:             order?.notes || '',
     expected_delivery: order?.expected_delivery || '',
     status:            order?.status || 'pending',
+    prepared_by:       order?.prepared_by || '',
+    delivered_by:      order?.delivered_by || '',
   });
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
@@ -2695,6 +2731,8 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
         total_amount:      total.toFixed(3),
         notes:             form.notes || null,
         expected_delivery: form.expected_delivery || null,
+        prepared_by:       form.prepared_by || null,
+        delivered_by:      form.delivered_by || null,
       };
       let orderId, orderNo;
 
@@ -2788,6 +2826,16 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
                 </select>
               </div>
             )}
+          </div>
+          <div className="form-row mb-4">
+            <div className="form-group">
+              <label className="form-label">المعني بتجهيز الطلب</label>
+              <input className="form-control" value={form.prepared_by} onChange={e=>setF('prepared_by',e.target.value)} placeholder="اسم المسؤول عن التجهيز"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المعني بتسليم الطلب</label>
+              <input className="form-control" value={form.delivered_by} onChange={e=>setF('delivered_by',e.target.value)} placeholder="اسم المسؤول عن التسليم"/>
+            </div>
           </div>
           <div className="form-group mb-4">
             <label className="form-label">ملاحظات على الطلب</label>
@@ -3326,13 +3374,27 @@ function InvoicesPage({ user, quotes, onReload }) {
 
 /* ===================== ORDERS PAGE ===================== */
 function OrdersPage({ user, orders, onReload }) {
-  const [filter, setFilter] = useState('all');
+  const [tab, setTab]             = useState('active');
+  const [filter, setFilter]       = useState('all');
   const [printingOrder, setPrintingOrder] = useState(null);
-  const [orderDoc, setOrderDoc] = useState(null);
+  const [orderDoc, setOrderDoc]   = useState(null);
   const [orderItems, setOrderItems] = useState([]);
   const [editingOrder, setEditingOrder] = useState(null);
-  const active = orders.filter(o => !o.archived);
+  const [archiveOrderTarget, setArchiveOrderTarget] = useState(null);
+  const [editNoteTarget, setEditNoteTarget] = useState(null);
+  const [profiles, setProfiles]   = useState({});
+
+  const active   = orders.filter(o => !o.archived);
+  const archived = orders.filter(o =>  o.archived);
   const filtered = filter==='all' ? active : active.filter(o=>o.status===filter);
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').then(({ data }) => {
+      const map = {};
+      (data||[]).forEach(p => { map[p.id] = p.full_name; });
+      setProfiles(map);
+    });
+  }, []);
 
   const changeStatus = async (o, newStatus) => {
     await sb.from('orders').update({ status: newStatus }).eq('id', o.id);
@@ -3340,13 +3402,24 @@ function OrdersPage({ user, orders, onReload }) {
     toast('تم تحديث الحالة', 'success'); onReload();
   };
 
-  const [archiveOrderTarget, setArchiveOrderTarget] = useState(null);
   const doArchiveO = async (note) => {
     const o = archiveOrderTarget;
     setArchiveOrderTarget(null);
     await sb.from('orders').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', o.id);
     createLog(user, `أرشف الطلبية ${o.number||o.quotation_number||''}${note ? ` — ${note}` : ''}`, 'order', o.id, o.number||o.quotation_number);
     toast('تمت الأرشفة', 'success'); onReload();
+  };
+
+  const restore = async (id) => {
+    await sb.from('orders').update({ archived:false, archived_at:null }).eq('id', id);
+    toast('تمت الاستعادة', 'success'); onReload();
+  };
+
+  const saveNote = async (newNote) => {
+    if (!editNoteTarget) return;
+    await sb.from('orders').update({ archive_note: newNote||null }).eq('id', editNoteTarget.id);
+    setEditNoteTarget(null);
+    toast('تم حفظ السبب', 'success'); onReload();
   };
 
   const deleteO = async (o) => {
@@ -3361,8 +3434,6 @@ function OrdersPage({ user, orders, onReload }) {
     } catch(e) { toast('فشل الحذف: ' + e.message, 'error'); }
   };
 
-  /* المعاينة تعرض بنود الطلب نفسه (order_items) لأنها قد تختلف عن بنود
-     العرض بعد التعديل. الطلبات القديمة بلا بنود ترجع لبنود العرض المصدر. */
   const previewOrder = async (o) => {
     try {
       let q = null;
@@ -3380,90 +3451,132 @@ function OrdersPage({ user, orders, onReload }) {
         items = pickQuoteItems(qits || [], parseFloat(q.tax_pct ?? 16) || 0);
       }
       if (!items.length) { toast('لا توجد أصناف لعرضها في هذا الطلب', 'error'); return; }
-
-      // إعادة حساب الإجماليات من بنود الطلب حتى تطابق المعاينة قيمة الطلب
-      const defTax    = parseFloat(q?.tax_pct ?? 16) || 0;
-      const subtotal  = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
-      const disc_amt  = q?.discount_type === 'amt'
-        ? parseFloat(q?.discount_fixed || 0)
-        : subtotal * parseFloat(q?.discount_pct || 0) / 100;
-      const ratio     = subtotal > 0 ? (subtotal - disc_amt) / subtotal : 1;
-      const tax_amt   = items.reduce((s,i) => {
+      const defTax   = parseFloat(q?.tax_pct ?? 16) || 0;
+      const subtotal = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+      const disc_amt = q?.discount_type === 'amt' ? parseFloat(q?.discount_fixed || 0) : subtotal * parseFloat(q?.discount_pct || 0) / 100;
+      const ratio    = subtotal > 0 ? (subtotal - disc_amt) / subtotal : 1;
+      const tax_amt  = items.reduce((s,i) => {
         const line = parseFloat(i.quantity||0) * parseFloat(i.unit_price||0);
         return s + line * ratio * (parseFloat(i.tax_pct ?? defTax) || 0) / 100;
       }, 0);
-
       setOrderDoc({
-        ...(q || {}),
-        number:        o.number,
-        customer_name: o.customer_name,
-        currency:      o.currency || q?.currency || 'JOD',
-        date:          (o.created_at || '').slice(0,10) || q?.date || today(),
-        valid_until:   null,
-        notes:         o.notes || q?.notes || '',
-        tax_pct:       defTax,
-        subtotal:      subtotal.toFixed(3),
-        discount_amt:  disc_amt.toFixed(3),
-        tax_amt:       tax_amt.toFixed(3),
-        nett_price:    (subtotal - disc_amt + tax_amt).toFixed(3),
+        ...(q || {}), number: o.number, customer_name: o.customer_name,
+        currency: o.currency || q?.currency || 'JOD',
+        date: (o.created_at||'').slice(0,10) || q?.date || today(),
+        valid_until: null, notes: o.notes || q?.notes || '', tax_pct: defTax,
+        subtotal: subtotal.toFixed(3), discount_amt: disc_amt.toFixed(3),
+        tax_amt: tax_amt.toFixed(3), nett_price: (subtotal - disc_amt + tax_amt).toFixed(3),
+        prepared_by:       o.prepared_by || null,
+        delivered_by:      o.delivered_by || null,
+        expected_delivery: o.expected_delivery || null,
+        issued_by_name:    profiles[o.created_by] || null,
       });
       setOrderItems(items);
       setPrintingOrder(o);
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
   };
 
+  const selStyle = {fontSize:11, padding:'3px 7px', width:'auto'};
+
   return (
     <div>
-      <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
-        <h2 style={{fontSize:20,fontWeight:800}}>الطلبات</h2>
-        <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
-          <option value="all">كل الحالات</option>
-          {Object.entries(OL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+      <div style={{display:'flex', borderBottom:'2px solid var(--gray-200)', marginBottom:20}}>
+        <button onClick={()=>setTab('active')} style={{
+          padding:'8px 20px', border:'none', background:'transparent', cursor:'pointer', fontSize:14,
+          borderBottom: tab==='active' ? '2px solid var(--primary)' : '2px solid transparent',
+          color: tab==='active' ? 'var(--primary)' : 'var(--gray-500)',
+          fontWeight: tab==='active' ? 700 : 400, marginBottom:'-2px'
+        }}>الطلبات النشطة ({active.length})</button>
+        <button onClick={()=>setTab('archived')} style={{
+          padding:'8px 20px', border:'none', background:'transparent', cursor:'pointer', fontSize:14,
+          borderBottom: tab==='archived' ? '2px solid var(--primary)' : '2px solid transparent',
+          color: tab==='archived' ? 'var(--primary)' : 'var(--gray-500)',
+          fontWeight: tab==='archived' ? 700 : 400, marginBottom:'-2px'
+        }}>المؤرشفة ({archived.length})</button>
       </div>
-      <div className="stats-grid" style={{gridTemplateColumns:'repeat(5,1fr)',marginBottom:16}}>
-        {Object.entries(OL).map(([k,v]) => (
-          <div key={k} className="stat-card" style={{borderRightColor:k==='delivered'?'var(--success)':k==='cancelled'?'var(--danger)':'var(--primary)'}}>
-            <div className="stat-label" style={{fontSize:10}}>{v}</div>
-            <div className="stat-value">{active.filter(o=>o.status===k).length}</div>
-          </div>
-        ))}
-      </div>
-      <div className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>الرقم</th><th>العميل</th><th>من عرض</th><th>القيمة</th><th>الحالة</th><th>تغيير الحالة</th><th></th></tr></thead>
-            <tbody>
-              {filtered.map(o=>(
-                <tr key={o.id}>
-                  <td className="font-bold" style={{color:'var(--primary)'}}>{o.number}</td>
-                  <td>{o.customer_name}</td>
-                  <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
-                  <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
-                  <td><SBadge status={o.status} type="o"/></td>
-                  <td>{hasPerm(user,'orders_edit') ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>{Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select> : <SBadge status={o.status} type="o"/>}</td>
-                  <td style={{whiteSpace:'nowrap'}}>
-                    <div className="flex gap-2">
-                      <button className="btn btn-primary btn-sm" onClick={()=>previewOrder(o)} title="معاينة وطباعة">👁 معاينة</button>
-                      {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)} title="تعديل الطلب">✏️ تعديل</button>}
-                      <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveOrderTarget(o)} title="أرشفة">🗄️</button>
-                      {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)} title="حذف نهائي">🗑 حذف</button>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length===0&&<tr><td colSpan="7"><div className="empty-state"><p>لا توجد طلبات</p></div></td></tr>}
-            </tbody>
-          </table>
+
+      {tab==='active' && <>
+        <div style={{display:'flex', justifyContent:'flex-end', marginBottom:12}}>
+          <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
+            <option value="all">كل الحالات</option>
+            {Object.entries(OL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
         </div>
-      </div>
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>الرقم</th><th>العميل</th><th>من عرض</th><th>القيمة</th>
+                <th>المصدر</th><th>جهة التجهيز</th><th>جهة التسليم</th>
+                <th>الحالة</th><th>تغيير الحالة</th><th></th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(o => (
+                  <tr key={o.id}>
+                    <td className="font-bold" style={{color:'var(--primary)', whiteSpace:'nowrap'}}>{o.number}</td>
+                    <td>{o.customer_name}</td>
+                    <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
+                    <td className="font-bold" style={{whiteSpace:'nowrap'}}>{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
+                    <td className="text-sm text-muted">{profiles[o.created_by]||'—'}</td>
+                    <td className="text-sm text-muted">{o.prepared_by||'—'}</td>
+                    <td className="text-sm text-muted">{o.delivered_by||'—'}</td>
+                    <td><SBadge status={o.status} type="o"/></td>
+                    <td>{hasPerm(user,'orders_edit')
+                      ? <select className="form-control" style={selStyle} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>
+                          {Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                        </select>
+                      : <SBadge status={o.status} type="o"/>}
+                    </td>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>previewOrder(o)}>👁 معاينة</button>
+                        {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)}>✏️ تعديل</button>}
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveOrderTarget(o)}>🗄️ أرشفة</button>
+                        {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)}>🗑️ حذف</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length===0 && <tr><td colSpan="10"><div className="empty-state"><p>لا توجد طلبات</p></div></td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>}
+
+      {tab==='archived' && <>
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>الرقم</th><th>العميل</th><th>القيمة</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead>
+              <tbody>
+                {archived.map(o => (
+                  <tr key={o.id}>
+                    <td className="font-bold" style={{color:'var(--primary)'}}>{o.number}</td>
+                    <td>{o.customer_name}</td>
+                    <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
+                    <td><SBadge status={o.status} type="o"/></td>
+                    <td className="text-sm text-muted">{o.archive_note||'—'}</td>
+                    <td>
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>previewOrder(o)}>👁 معاينة</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setEditNoteTarget(o)}>تعديل السبب</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>restore(o.id)}>↩ استعادة</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {archived.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>لا توجد طلبات مؤرشفة</p></div></td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>}
+
       {printingOrder && orderDoc && <DocPreview doc={orderDoc} items={orderItems} docType="order" onClose={()=>setPrintingOrder(null)}/>}
-      {editingOrder && (
-        <OrderEditModal user={user} order={editingOrder}
-          onSave={()=>{ setEditingOrder(null); onReload(); }}
-          onClose={()=>setEditingOrder(null)}/>
-      )}
+      {editingOrder && <OrderEditModal user={user} order={editingOrder} onSave={()=>{ setEditingOrder(null); onReload(); }} onClose={()=>setEditingOrder(null)}/>}
       {archiveOrderTarget && <ArchiveModal label={`أرشفة الطلبية ${archiveOrderTarget.number||archiveOrderTarget.quotation_number||''}`} onConfirm={doArchiveO} onClose={()=>setArchiveOrderTarget(null)}/>}
+      {editNoteTarget && <ArchiveModal label="تعديل سبب الأرشفة" initialNote={editNoteTarget.archive_note||''} onConfirm={saveNote} onClose={()=>setEditNoteTarget(null)}/>}
     </div>
   );
 }
@@ -3471,9 +3584,17 @@ function OrdersPage({ user, orders, onReload }) {
 /* ===================== ARCHIVE PAGE ===================== */
 function ArchivePage({ user, quotes, orders, onReload }) {
   const [tab, setTab] = useState('quotes');
-  const [editNoteTarget, setEditNoteTarget] = useState(null); // {table, id, currentNote}
+  const [editNoteTarget, setEditNoteTarget] = useState(null);
+  const [previewing, setPreviewQ]   = useState(null);
+  const [previewItems, setPreviewItems] = useState([]);
   const archivedQ = quotes.filter(q=>q.archived);
   const archivedO = orders.filter(o=>o.archived);
+
+  const openPreview = async (q) => {
+    const { data } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
+    setPreviewItems(data||[]);
+    setPreviewQ(q);
+  };
 
   const restore = async (table,id) => {
     await sb.from(table).update({archived:false,archived_at:null}).eq('id',id);
@@ -3498,12 +3619,8 @@ function ArchivePage({ user, quotes, orders, onReload }) {
     toast('تم حفظ السبب','success'); onReload();
   };
 
-  const NoteCell = ({ table, id, note }) => (
-    <div className="flex gap-1" style={{alignItems:'center'}}>
-      <span className="text-sm text-muted">{note||'—'}</span>
-      <button className="btn btn-ghost btn-sm" style={{padding:'1px 5px',fontSize:11,opacity:.6}}
-        onClick={()=>setEditNoteTarget({table,id,currentNote:note||''})}>✏️</button>
-    </div>
+  const NoteCell = ({ note }) => (
+    <span className="text-sm text-muted">{note||'—'}</span>
   );
 
   const selStyle = {fontSize:11,padding:'3px 7px',width:'auto'};
@@ -3528,8 +3645,14 @@ function ArchivePage({ user, quotes, orders, onReload }) {
                   </select>
                 : <SBadge status={q.status}/>}
               </td>
-              <td style={{maxWidth:240}}><NoteCell table="quotations" id={q.id} note={q.archive_note}/></td>
-              <td><button className="btn btn-ghost btn-sm" onClick={()=>restore('quotations',q.id)}>↩ استعادة</button></td>
+              <td style={{maxWidth:240}}><NoteCell note={q.archive_note}/></td>
+              <td>
+                <div className="flex gap-2">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>معاينة</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setEditNoteTarget({table:'quotations',id:q.id,currentNote:q.archive_note||''})}>تعديل السبب</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>restore('quotations',q.id)}>↩ استعادة</button>
+                </div>
+              </td>
             </tr>)}
             {archivedQ.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
           </tbody></table>}
@@ -3544,8 +3667,13 @@ function ArchivePage({ user, quotes, orders, onReload }) {
                   </select>
                 : <SBadge status={o.status} type="o"/>}
               </td>
-              <td style={{maxWidth:240}}><NoteCell table="orders" id={o.id} note={o.archive_note}/></td>
-              <td><button className="btn btn-ghost btn-sm" onClick={()=>restore('orders',o.id)}>↩ استعادة</button></td>
+              <td style={{maxWidth:240}}><NoteCell note={o.archive_note}/></td>
+              <td>
+                <div className="flex gap-2">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setEditNoteTarget({table:'orders',id:o.id,currentNote:o.archive_note||''})}>تعديل السبب</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>restore('orders',o.id)}>↩ استعادة</button>
+                </div>
+              </td>
             </tr>)}
             {archivedO.length===0&&<tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
           </tbody></table>}
@@ -3556,6 +3684,7 @@ function ArchivePage({ user, quotes, orders, onReload }) {
         initialNote={editNoteTarget.currentNote}
         onConfirm={saveNote}
         onClose={()=>setEditNoteTarget(null)}/>}
+      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)}/>}
     </div>
   );
 }
