@@ -781,6 +781,7 @@ const NAV = [
   { id: 'customers', label: 'العملاء',        icon: '🏢', perm: 'customers_access' },
   { id: 'catalog',   label: 'الكتالوج',       icon: '🗂️', perm: 'catalog_access' },
   { id: 'letters',   label: 'الكتب الرسمية', icon: '📝', perm: 'letters_access' },
+  { id: 'forms',     label: 'النماذج',        icon: '🧾', perm: 'letters_access' },
   { id: 'archive',   label: 'الأرشيف',        icon: '🗄️', perm: 'archive_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
@@ -8876,6 +8877,423 @@ async function notifyAdmins(title, body, linkType, linkId) {
   await sb.from('notifications').insert(rows);
 }
 
+/* ===================== FORMS PAGE — النماذج الجاهزة ===================== */
+
+const VOUCHER_CURRENCIES = ['JOD','USD','EUR','SAR'];
+const VOUCHER_METHODS    = ['نقداً','شيك','تحويل بنكي','بطاقة ائتمانية'];
+
+function nextVoucherNumber(vouchers, type) {
+  const prefix = type === 'payment' ? 'SP' : 'QB';
+  const nums = vouchers
+    .filter(v => v.type === type && v.number?.startsWith(prefix + '-'))
+    .map(v => parseInt(v.number.slice(prefix.length + 1)) || 0);
+  const max = nums.length ? Math.max(...nums) : 0;
+  return `${prefix}-${String(max + 1).padStart(4, '0')}`;
+}
+
+function VoucherFormModal({ type, voucher, vouchers, user, onSave, onClose }) {
+  const isEdit = !!voucher;
+  const typeLabel = type === 'payment' ? 'صرف' : 'قبض';
+  const partyLabel = type === 'payment' ? 'المدفوع له' : 'المستلَم من';
+  const initF = () => ({
+    number:         voucher?.number       || nextVoucherNumber(vouchers, type),
+    date:           voucher?.date         || today(),
+    amount:         voucher?.amount       || '',
+    currency:       voucher?.currency     || 'JOD',
+    party:          voucher?.party        || '',
+    description:    voucher?.description  || '',
+    payment_method: voucher?.payment_method || 'نقداً',
+    reference:      voucher?.reference    || '',
+    prepared_by:    voucher?.prepared_by  || (user?.full_name || ''),
+    approved_by:    voucher?.approved_by  || '',
+    notes:          voucher?.notes        || '',
+  });
+  const [form, setForm] = useState(initF);
+  const [saving, setSaving] = useState(false);
+  const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.amount || isNaN(parseFloat(form.amount))) { toast('يجب إدخال مبلغ صحيح', 'error'); return; }
+    if (!form.party.trim())       { toast(`يجب إدخال ${partyLabel}`, 'error'); return; }
+    if (!form.description.trim()) { toast('يجب إدخال البيان', 'error'); return; }
+    setSaving(true);
+    const payload = { ...form, amount: parseFloat(form.amount), type, created_by: user?.id };
+    const { error } = isEdit
+      ? await sb.from('vouchers').update(payload).eq('id', voucher.id)
+      : await sb.from('vouchers').insert(payload);
+    setSaving(false);
+    if (error) { toast('خطأ في الحفظ: ' + error.message, 'error'); return; }
+    toast(isEdit ? 'تم التحديث' : 'تم الإنشاء', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:540}}>
+        <div className="modal-header">
+          <span className="modal-title">{isEdit ? '✏️ تعديل' : '➕ إنشاء'} سند {typeLabel}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:'20px 24px'}}>
+          <div className="form-row-2 mb-3">
+            <div className="form-group">
+              <label className="form-label">رقم السند</label>
+              <input className="form-control" value={form.number} onChange={e=>setF('number',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={form.date} onChange={e=>setF('date',e.target.value)}/>
+            </div>
+          </div>
+
+          <div className="form-row-2 mb-3">
+            <div className="form-group">
+              <label className="form-label">المبلغ <span style={{color:'var(--danger)'}}>*</span></label>
+              <input type="number" className="form-control" value={form.amount} onChange={e=>setF('amount',e.target.value)} placeholder="0.000" step="0.001"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">العملة</label>
+              <select className="form-control" value={form.currency} onChange={e=>setF('currency',e.target.value)}>
+                {VOUCHER_CURRENCIES.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group mb-3">
+            <label className="form-label">{partyLabel} <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" value={form.party} onChange={e=>setF('party',e.target.value)} placeholder={partyLabel}/>
+          </div>
+
+          <div className="form-group mb-3">
+            <label className="form-label">البيان <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" value={form.description} onChange={e=>setF('description',e.target.value)} placeholder="وصف العملية"/>
+          </div>
+
+          <div className="form-row-2 mb-3">
+            <div className="form-group">
+              <label className="form-label">طريقة الدفع</label>
+              <select className="form-control" value={form.payment_method} onChange={e=>setF('payment_method',e.target.value)}>
+                {VOUCHER_METHODS.map(m=><option key={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">رقم مرجع / شيك</label>
+              <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder="اختياري"/>
+            </div>
+          </div>
+
+          <div className="form-row-2 mb-3">
+            <div className="form-group">
+              <label className="form-label">المُعِد</label>
+              <input className="form-control" value={form.prepared_by} onChange={e=>setF('prepared_by',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المعتمد</label>
+              <input className="form-control" value={form.approved_by} onChange={e=>setF('approved_by',e.target.value)}/>
+            </div>
+          </div>
+
+          <div className="form-group mb-2">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} placeholder="اختياري"/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? '⏳ جاري الحفظ...' : isEdit ? '💾 تحديث' : '✅ إنشاء السند'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VoucherPrintModal({ voucher, onClose }) {
+  const typeLabel    = voucher.type === 'payment' ? 'سند صرف' : 'سند قبض';
+  const partyLabel   = voucher.type === 'payment' ? 'المدفوع له' : 'المستلَم من';
+  const sigLabel     = voucher.type === 'payment' ? 'التوقيع / المستلم' : 'التوقيع / الدافع';
+  const withHeader   = true;
+
+  const [showSig, setShowSig] = React.useState(false);
+  const [stampMm,  setStampMm]  = React.useState({ bottom: 20, right: 100 });
+  const [stampW,   setStampW]   = React.useState(500);
+
+  const fmtD = d => { if (!d) return ''; const p=d.split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; };
+  const fmtAmt = (a,c) => `${parseFloat(a||0).toFixed(3)} ${c||'JOD'}`;
+
+  const handlePrint = () => printDoc('voucher-print-content', `${typeLabel} ${voucher.number}`);
+
+  const sendViaOutlook = () => {
+    const after = () => {
+      window.removeEventListener('afterprint', after);
+      setTimeout(() => {
+        const subject = encodeURIComponent(`${typeLabel} رقم ${voucher.number}`);
+        const body = encodeURIComponent([
+          `${partyLabel}: ${voucher.party || ''}`,
+          `البيان: ${voucher.description || ''}`,
+          `المبلغ: ${fmtAmt(voucher.amount, voucher.currency)}`,
+          `التاريخ: ${fmtD(voucher.date)}`,
+          '',
+          'يرجى الاطلاع على المستند المرفق.',
+          '',
+          'مع التقدير،',
+          'مؤسسة الحياة العلمية الطبية الكيماوية',
+        ].join('\r\n'));
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+      }, 150);
+    };
+    window.addEventListener('afterprint', after);
+    handlePrint();
+  };
+
+  const sendViaWhatsApp = () => {
+    const after = () => {
+      window.removeEventListener('afterprint', after);
+      setTimeout(() => {
+        const lines = [
+          `${partyLabel}: ${voucher.party || ''}`,
+          `البيان: ${voucher.description || ''}`,
+          `المبلغ: ${fmtAmt(voucher.amount, voucher.currency)}`,
+          `التاريخ: ${fmtD(voucher.date)}`,
+          '',
+          'ملف PDF مرفق في هذه الرسالة.',
+          '',
+          'مع التقدير،',
+          'مؤسسة الحياة العلمية الطبية الكيماوية',
+        ].filter(l => l !== null);
+        const entered = window.prompt('أدخل رقم واتساب المستلم:', '');
+        if (entered === null) return;
+        let raw = entered.replace(/[\s\-().]/g,'');
+        if (raw.startsWith('00')) raw=raw.slice(2);
+        if (raw.startsWith('+')) raw=raw.slice(1);
+        let waPhone = raw.startsWith('962') ? raw : raw.startsWith('0') ? '962'+raw.slice(1) : raw ? '962'+raw : '';
+        const text = encodeURIComponent(lines.join('\n'));
+        const url  = waPhone ? `https://wa.me/${waPhone}?text=${text}` : `https://wa.me/?text=${text}`;
+        window.open(url,'_blank');
+      }, 200);
+    };
+    window.addEventListener('afterprint', after);
+    handlePrint();
+  };
+
+  const onStampPointerDown = e => {
+    e.preventDefault();
+    const sx=e.clientX, sy=e.clientY, sm={...stampMm};
+    const onMove = ev => setStampMm({
+      right:  Math.min(200,Math.max(0,Math.round(sm.right +(sx-ev.clientX)/PQ_MM))),
+      bottom: Math.min(280,Math.max(0,Math.round(sm.bottom+(sy-ev.clientY)/PQ_MM))),
+    });
+    const onUp = () => { window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp); };
+    window.addEventListener('pointermove',onMove); window.addEventListener('pointerup',onUp);
+  };
+  const onStampResizeDown = e => {
+    e.preventDefault(); e.stopPropagation();
+    const sx=e.clientX, sw=stampW;
+    const onMove = ev => setStampW(Math.min(760,Math.max(80,Math.round(sw+(sx-ev.clientX)))));
+    const onUp = () => { window.removeEventListener('pointermove',onMove); window.removeEventListener('pointerup',onUp); };
+    window.addEventListener('pointermove',onMove); window.addEventListener('pointerup',onUp);
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:900}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">{typeLabel} — {voucher.number}</span>
+          <div className="flex gap-2">
+            <button className={`sig-toggle-btn${showSig?' active':''}`} onClick={()=>setShowSig(s=>!s)}>
+              {showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={handlePrint}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook}>📧 إرسال بالإيميل</button>
+            <button className="btn btn-whatsapp btn-sm" onClick={sendViaWhatsApp}>💬 واتساب</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        {showSig && (
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac'}}>
+            <span style={{fontSize:11,color:'#16a34a'}}>🖱️ اسحب الختم على الورقة لتحديد مكانه — والمربع الأزرق بزاويته للتكبير/التصغير</span>
+          </div>
+        )}
+        <div className="modal-body pq-preview-body" id="voucher-print-content">
+          <div className="pq-page">
+            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+
+              <PqDocHeader/>
+
+              {/* عنوان السند */}
+              <div style={{textAlign:'center',margin:'18px 0 14px'}}>
+                <div style={{display:'inline-block',border:'2.5px double var(--primary)',borderRadius:10,padding:'8px 40px',background:'#f0f8fd'}}>
+                  <div style={{fontSize:20,fontWeight:900,color:'var(--primary)',letterSpacing:2}}>{typeLabel}</div>
+                  <div style={{fontSize:13,color:'var(--gray-600)',marginTop:2}}>رقم: {voucher.number}</div>
+                </div>
+              </div>
+
+              {/* المبلغ */}
+              <div style={{textAlign:'center',margin:'10px 0 18px',padding:'10px',background:'#f0f8fd',borderRadius:8,border:'1px solid #B8DCF0'}}>
+                <span style={{fontSize:13,color:'var(--gray-600)'}}>المبلغ: </span>
+                <span style={{fontSize:22,fontWeight:900,color:'var(--primary)'}}>{fmtAmt(voucher.amount, voucher.currency)}</span>
+              </div>
+
+              {/* جدول التفاصيل */}
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:13,marginBottom:20}}>
+                <tbody>
+                  {[
+                    [partyLabel,   voucher.party       || '—'],
+                    ['البيان',      voucher.description || '—'],
+                    ['طريقة الدفع', voucher.payment_method || '—'],
+                    voucher.reference ? ['رقم مرجع / شيك', voucher.reference] : null,
+                    ['التاريخ',     fmtD(voucher.date)],
+                    voucher.notes ? ['ملاحظات', voucher.notes] : null,
+                  ].filter(Boolean).map(([label,val],i)=>(
+                    <tr key={i}>
+                      <td style={{padding:'8px 14px',background:'#f4f6f8',fontWeight:800,width:160,border:'1.5px solid #ccc',color:'var(--gray-700)'}}>{label}</td>
+                      <td style={{padding:'8px 14px',border:'1.5px solid #ccc'}}>{val}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* منطقة التواقيع */}
+              <table style={{width:'100%',borderCollapse:'collapse',marginTop:30,fontSize:12}}>
+                <thead>
+                  <tr>
+                    {[['المُعِد', voucher.prepared_by], ['المعتمد', voucher.approved_by], [sigLabel, '']].map(([h,v],i)=>(
+                      <th key={i} style={{border:'1.5px solid #ccc',padding:'8px 10px',background:'#f4f6f8',fontWeight:800,textAlign:'center',width:'33%'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    {[voucher.prepared_by, voucher.approved_by, ''].map((v,i)=>(
+                      <td key={i} style={{border:'1.5px solid #ccc',padding:'30px 10px 12px',textAlign:'center',fontSize:13}}>{v||''}</td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+
+            </div>
+            {showSig && (
+              <div className="pq-stamp" style={{bottom:stampMm.bottom+'mm',right:stampMm.right+'mm'}}
+                   onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
+                <div className="pq-stamp-resize" onPointerDown={onStampResizeDown}></div>
+                <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width:stampW+'px'}}/>
+              </div>
+            )}
+            <PqFooterBar/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FormsPage({ user }) {
+  const [tab, setTab]           = useState('payment');
+  const [vouchers, setVouchers] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [search, setSearch]     = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing]   = useState(null);
+  const [printing, setPrinting] = useState(null);
+  const [archiving, setArchiving] = useState(null);
+
+  const load = async () => {
+    const { data } = await sb.from('vouchers').select('*').order('created_at', { ascending: false });
+    setVouchers(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = vouchers.filter(v =>
+    v.type === tab && !v.archived &&
+    (!search || [v.number,v.party,v.description,v.notes].some(f => f?.toLowerCase().includes(search.toLowerCase())))
+  );
+
+  const handleArchive = async (reason) => {
+    await sb.from('vouchers').update({ archived: true, archive_reason: reason }).eq('id', archiving.id);
+    toast('تمت الأرشفة', 'success');
+    setArchiving(null);
+    load();
+  };
+
+  const tabLabel  = tab === 'payment' ? 'سند صرف' : 'سند قبض';
+  const tabPrefix = tab === 'payment' ? 'SP' : 'QB';
+
+  const cols = [
+    { label:'الرقم',       w:110, render: v => <span style={{fontWeight:700,color:'var(--primary)'}}>{v.number}</span> },
+    { label:'التاريخ',     w:100, render: v => v.date?.slice(0,10) },
+    { label: tab==='payment' ? 'المدفوع له' : 'المستلَم من', render: v => v.party || '—' },
+    { label:'البيان',      render: v => v.description || '—' },
+    { label:'المبلغ',      w:120, render: v => <strong>{parseFloat(v.amount||0).toFixed(3)} {v.currency}</strong> },
+    { label:'طريقة الدفع', w:120, render: v => v.payment_method },
+    { label:'إجراءات',     w:130, render: v => (
+      <div className="flex gap-1">
+        <button className="btn btn-ghost btn-sm" onClick={()=>setPrinting(v)}>🖨️</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>{setEditing(v);setShowForm(true);}}>✏️</button>
+        <button className="btn btn-danger btn-sm" style={{fontSize:11}} onClick={()=>setArchiving(v)}>🗄️</button>
+      </div>
+    )},
+  ];
+
+  return (
+    <div>
+      {/* تبويبات */}
+      <div style={{display:'flex',gap:8,marginBottom:20}}>
+        {[['payment','سند صرف 💸'],['receipt','سند قبض 💰']].map(([id,lbl])=>(
+          <button key={id}
+            className={`btn btn-sm ${tab===id ? 'btn-primary' : 'btn-ghost'}`}
+            style={{fontSize:14,padding:'7px 22px',fontWeight:tab===id?800:500}}
+            onClick={()=>{setTab(id);setSearch('');}}>{lbl}
+          </button>
+        ))}
+      </div>
+
+      {/* شريط الأدوات */}
+      <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
+        <input className="form-control" style={{maxWidth:280}}
+          placeholder={`بحث في سندات ${tabLabel}...`}
+          value={search} onChange={e=>setSearch(e.target.value)}/>
+        <button className="btn btn-primary btn-sm" style={{marginRight:'auto'}}
+          onClick={()=>{setEditing(null);setShowForm(true);}}>
+          ➕ {tabLabel} جديد
+        </button>
+      </div>
+
+      {/* الجدول */}
+      {loading ? <p style={{textAlign:'center',color:'var(--gray-400)',padding:40}}>جاري التحميل...</p> : (
+        <div className="table-wrapper">
+          <table className="data-table">
+            <thead><tr>{cols.map(c=><th key={c.label} style={c.w?{width:c.w}:{}}>{c.label}</th>)}</tr></thead>
+            <tbody>
+              {filtered.length === 0
+                ? <tr><td colSpan={cols.length} style={{textAlign:'center',color:'var(--gray-400)',padding:32}}>لا توجد سندات</td></tr>
+                : filtered.map(v=>(
+                  <tr key={v.id}>{cols.map(c=><td key={c.label}>{c.render(v)}</td>)}</tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <VoucherFormModal
+          type={tab} voucher={editing} vouchers={vouchers} user={user}
+          onSave={()=>{ setShowForm(false); setEditing(null); load(); }}
+          onClose={()=>{ setShowForm(false); setEditing(null); }}/>
+      )}
+      {printing && <VoucherPrintModal voucher={printing} onClose={()=>setPrinting(null)}/>}
+      {archiving && (
+        <ArchiveModal
+          label={`أرشفة ${tabLabel} — ${archiving.number}`}
+          onConfirm={handleArchive}
+          onClose={()=>setArchiving(null)}/>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -9074,7 +9492,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', forms:'النماذج الجاهزة', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية' };
 
   return (
     <div className="app-layout">
@@ -9096,6 +9514,7 @@ function App() {
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
           {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
+          {page==='forms'   && hasPerm(user,'letters_access') && <FormsPage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
