@@ -1410,17 +1410,17 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
           '',
           `يسعدنا أن نتقدم إليكم بـ${docLabel} رقم (${doc.number}) بتاريخ ${doc.date}.`,
           '',
-          `📋 الإجمالي (قبل الضريبة): ${grandTotal} ${currency}`,
-          `💰 الصافي (شامل الضريبة): ${nett} ${currency}`,
+          `الإجمالي (قبل الضريبة): ${grandTotal} ${currency}`,
+          `الصافي (شامل الضريبة): ${nett} ${currency}`,
           '',
-          '📎 ملف PDF مرفق في هذه الرسالة.',
+          'ملف PDF مرفق في هذه الرسالة.',
           '',
           'نأمل أن يلقى عرضنا قبولكم، ونحن رهن إشارتكم لأي استفسار.',
           '',
           'مع التقدير،',
           'مؤسسة الحياة العلمية الطبية الكيماوية',
-          `📞 ${COMPANY.tel}`,
-          `🌐 ${COMPANY.website}`,
+          `هاتف: ${COMPANY.tel}`,
+          `موقع: ${COMPANY.website}`,
         ].filter(l => l !== null);
 
         // تنظيف رقم الهاتف وتحويله لتنسيق دولي أردني
