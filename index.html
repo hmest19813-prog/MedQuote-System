@@ -1796,6 +1796,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    if (!form.reference?.trim()) { toast('يجب إدخال رقم المرجع','error'); return; }
     if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
     // مدة الصلاحية إلزامية لكل عرض — ومن لا يملك الصلاحية تُفرض عليه المدة الافتراضية
     const validUntil = canOverrideValidity ? form.valid_until : addDays(form.date || today(), QUOTE_VALIDITY_DAYS);
@@ -2012,8 +2013,9 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 }}/>
             </div>
             <div className="form-group">
-              <label className="form-label">المرجع</label>
-              <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder=""/>
+              <label className="form-label">المرجع <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder=""
+                style={!form.reference?.trim() ? {borderColor:'var(--danger)'} : undefined}/>
             </div>
           </div>
           {/* مدة الصلاحية إلزامية — {QUOTE_VALIDITY_DAYS} يوم افتراضياً،
