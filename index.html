@@ -1423,8 +1423,10 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
           `موقع: ${COMPANY.website}`,
         ].filter(l => l !== null);
 
-        // تنظيف رقم الهاتف وتحويله لتنسيق دولي أردني
-        let rawPhone = (doc.phone || '').replace(/[\s\-().]/g, '');
+        const entered = window.prompt('أدخل رقم واتساب المستلم:', doc.phone || '');
+        if (entered === null) return; // ألغى المستخدم
+
+        let rawPhone = entered.replace(/[\s\-().]/g, '');
         let waPhone = '';
         if (rawPhone) {
           if (rawPhone.startsWith('00')) rawPhone = rawPhone.slice(2);
