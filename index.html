@@ -5553,7 +5553,200 @@ function CatalogPage({ user }) {
   );
 }
 
+/* ===================== PROSPECTS ===================== */
+const PROSPECT_LEVELS = {
+  lead:      { label: 'مرصود',           color: '#64748b', bg: '#f1f5f9' },
+  contact:   { label: 'تحت التواصل',     color: '#0ea5e9', bg: '#e0f2fe' },
+  qualified: { label: 'مؤهَّل',          color: '#f59e0b', bg: '#fef3c7' },
+  closing:   { label: 'جاهز للإغلاق',   color: '#16a34a', bg: '#dcfce7' },
+};
+const PROSPECT_SOURCES = ['إحالة عميل','موقع إلكتروني','معرض / فعالية','اتصال بارد','مواقع التواصل','مناقصة / إعلان','أخرى'];
+
+function ProspectBadge({ level }) {
+  const l = PROSPECT_LEVELS[level] || PROSPECT_LEVELS.lead;
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,background:l.bg,color:l.color}}>{l.label}</span>;
+}
+
+function ProspectForm({ prospect, profiles, user, onSave, onClose }) {
+  const empty = { name:'', phone:'', source:'', interest_level:'lead', notes:'', assigned_to:'' };
+  const [form, setForm] = useState({ ...empty, ...(prospect||{}) });
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast('اسم العميل المحتمل مطلوب', 'error'); return; }
+    setLoading(true);
+    const payload = {
+      name: form.name.trim(), phone: form.phone||null, source: form.source||null,
+      interest_level: form.interest_level||'lead', notes: form.notes||null,
+      assigned_to: form.assigned_to||null,
+    };
+    let error;
+    if (prospect?.id) {
+      ({ error } = await sb.from('prospects').update(payload).eq('id', prospect.id));
+    } else {
+      payload.created_by = user?.id||null;
+      ({ error } = await sb.from('prospects').insert(payload));
+    }
+    setLoading(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(prospect?.id ? 'تم التعديل' : 'تمت الإضافة', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">🎯 {prospect?.id ? 'تعديل عميل محتمل' : 'إضافة عميل محتمل'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الاسم / الشركة <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-control" value={form.name} onChange={e=>setF('name',e.target.value)} autoFocus/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الهاتف</label>
+              <input className="form-control" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">مستوى الاهتمام</label>
+              <select className="form-control" value={form.interest_level} onChange={e=>setF('interest_level',e.target.value)}>
+                {Object.entries(PROSPECT_LEVELS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المصدر</label>
+              <select className="form-control" value={form.source||''} onChange={e=>setF('source',e.target.value)}>
+                <option value="">— اختر —</option>
+                {PROSPECT_SOURCES.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">المندوب المسؤول</label>
+            <select className="form-control" value={form.assigned_to||''} onChange={e=>setF('assigned_to',e.target.value)}>
+              <option value="">— غير محدد —</option>
+              {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={3} value={form.notes||''} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!form.name.trim()}>
+            {loading ? '...' : 'حفظ'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProspectsTab({ user, profiles, onCountChange }) {
+  const [prospects, setProspects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [levelFilter, setLevelFilter] = useState('all');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [converting, setConverting] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('prospects').select('*').eq('converted', false).order('created_at', {ascending:false});
+    const list = data||[];
+    setProspects(list);
+    if (onCountChange) onCountChange(list.length);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const deleteProspect = async (p) => {
+    if (!confirm(`حذف "${p.name}"؟`)) return;
+    const { error } = await sb.from('prospects').delete().eq('id', p.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحذف', 'success'); load();
+  };
+
+  const filtered = prospects.filter(p => {
+    if (levelFilter !== 'all' && p.interest_level !== levelFilter) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return p.name?.toLowerCase().includes(q) || (p.phone||'').includes(search) || (p.source||'').toLowerCase().includes(q);
+  });
+
+  const assignedName = (p) => profiles.find(pr=>pr.id===p.assigned_to)?.full_name || '—';
+
+  const handleConvertSave = async () => {
+    if (!converting) return;
+    await sb.from('prospects').update({ converted: true }).eq('id', converting.id);
+    setConverting(null); load();
+    toast('تم التحويل وحفظ العميل ✓', 'success');
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، المصدر..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260,flex:1}}/>
+        <select className="form-control" style={{width:'auto'}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>
+          <option value="all">كل المستويات</option>
+          {Object.entries(PROSPECT_LEVELS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ عميل محتمل</button>
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 120px 130px 110px 110px 110px',padding:'10px 18px',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',fontSize:11,fontWeight:800,letterSpacing:'.05em',borderRadius:'12px 12px 0 0'}}>
+            <div>الاسم / الشركة</div><div>الهاتف</div><div>مستوى الاهتمام</div><div>المصدر</div><div>المندوب</div><div>إجراءات</div>
+          </div>
+          {filtered.length === 0 ? (
+            <div className="empty-state" style={{padding:'60px 20px'}}>
+              <div style={{fontSize:48,marginBottom:12}}>🎯</div>
+              <p>{prospects.length===0 ? 'لا يوجد عملاء محتملون بعد' : 'لا توجد نتائج مطابقة'}</p>
+            </div>
+          ) : filtered.map((p,idx)=>(
+            <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 130px 110px 110px 110px',padding:'11px 18px',borderBottom:'1px solid #f0f4f8',background:idx%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{p.name}</div>
+                {p.notes && <div style={{fontSize:11,color:'#9ca3af',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:280}}>{p.notes}</div>}
+              </div>
+              <div style={{fontSize:12,color:'#374151'}}>{p.phone||'—'}</div>
+              <div><ProspectBadge level={p.interest_level}/></div>
+              <div style={{fontSize:12,color:'#6b7280'}}>{p.source||'—'}</div>
+              <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(p)}</div>
+              <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(p); setShowForm(true); }} title="تعديل" style={{padding:'3px 7px'}}>✏️</button>
+                <button className="btn btn-primary btn-sm" onClick={()=>setConverting(p)} title="تحويل لعميل" style={{padding:'3px 7px',fontSize:11}}>🔄 تحويل</button>
+                <button className="btn btn-danger btn-sm" onClick={()=>deleteProspect(p)} style={{padding:'3px 7px'}}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showForm && <ProspectForm prospect={editing} profiles={profiles} user={user}
+        onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
+
+      {converting && <CustomerForm
+        customer={{ name: converting.name, phone: converting.phone||'' }}
+        profiles={profiles} user={user}
+        onSave={handleConvertSave}
+        onClose={()=>setConverting(null)}/>}
+    </div>
+  );
+}
+
 function CustomersPage({ user }) {
+  const [tab, setTab] = useState('customers');
   const [customers, setCustomers] = useState([]);
   const [profiles,  setProfiles]  = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -5562,14 +5755,16 @@ function CustomersPage({ user }) {
   const [editing,   setEditing]   = useState(null);
   const [selected,  setSelected]  = useState(null);
   const [showListMgr, setShowListMgr] = useState(false);
+  const [prospectCount, setProspectCount] = useState(0);
 
   const load = async () => {
     setLoading(true);
-    const [{ data: c }, { data: p }] = await Promise.all([
+    const [{ data: c }, { data: p }, { count }] = await Promise.all([
       sb.from('customers').select('*').order('customer_code', {ascending: true, nullsFirst: false}),
       sb.from('profiles').select('id,full_name,role').eq('is_active',true).order('full_name'),
+      sb.from('prospects').select('id', {count:'exact',head:true}).eq('converted',false),
     ]);
-    setCustomers(c||[]); setProfiles(p||[]); setLoading(false);
+    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setLoading(false);
   };
   useEffect(()=>{ load(); },[]);
 
@@ -5596,10 +5791,17 @@ function CustomersPage({ user }) {
 
   if (selected) return <CustomerDetail customer={selected} user={user} profiles={profiles} onBack={()=>{ setSelected(null); load(); }}/>;
 
+  const tabStyle = (t) => ({
+    padding:'8px 20px', border:'none', cursor:'pointer', fontWeight:700, fontSize:13,
+    borderBottom: tab===t ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+    color: tab===t ? 'var(--primary)' : 'var(--gray-500)',
+    background:'transparent',
+  });
+
   return (
     <div>
-      {/* ERP Toolbar */}
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:0,padding:'14px 20px',background:'#fff',borderRadius:'12px 12px 0 0',border:'1.5px solid #e2edf5',borderBottom:'none',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🏢</div>
           <div>
@@ -5608,53 +5810,58 @@ function CustomersPage({ user }) {
           </div>
         </div>
         <div style={{flex:1}}/>
-        <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة، المنطقة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:300}}/>
-        {hasPerm(user, 'customers_delete') && (
-          <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>
-        )}
-        {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
+        {tab==='customers' && <>
+          <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:280}}/>
+          {hasPerm(user, 'customers_delete') && <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>}
+          {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
+        </>}
       </div>
 
-      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
-        <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
-          {/* List Header */}
-          <div className="erp-list-header">
-            <div>رقم العميل</div>
-            <div>اسم الشركة / العميل</div>
-            <div>الهاتف</div>
-            <div>المسؤول الأول</div>
-            <div>المدينة</div>
-            <div>المندوب</div>
-            <div>إجراءات</div>
+      {/* Tabs */}
+      <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5'}}>
+        <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({customers.length})</button>
+        <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>
+      </div>
+
+      {tab === 'customers' && (
+        loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+            <div className="erp-list-header">
+              <div>رقم العميل</div><div>اسم الشركة / العميل</div><div>الهاتف</div>
+              <div>المسؤول الأول</div><div>المدينة</div><div>المندوب</div><div>إجراءات</div>
+            </div>
+            {filtered.length === 0 ? (
+              <div className="empty-state" style={{padding:'60px 20px'}}>
+                <div style={{fontSize:48,marginBottom:12}}>🏢</div>
+                <p>لا يوجد عملاء مطابقون</p>
+                <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث'}</small>
+              </div>
+            ) : filtered.map((c, idx) => (
+              <div key={c.id} className="erp-list-row" style={{background:idx%2===0?'#fff':'#fafcfd'}} onClick={()=>setSelected(c)}>
+                <div style={{fontSize:12,fontWeight:700,color:'#1C6A99'}}>{c.customer_code||'—'}</div>
+                <div>
+                  <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{c.name}</div>
+                  {c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>{c.category}</span>}
+                </div>
+                <div style={{fontSize:12,color:'#374151'}}>{c.phone||c.mobile||'—'}</div>
+                <div style={{fontSize:12,color:'#374151'}}>
+                  {c.contact1_name ? <span>{c.contact1_name}{c.contact1_title && <span style={{color:'#9ca3af',fontWeight:400}}> — {c.contact1_title}</span>}</span> : '—'}
+                </div>
+                <div style={{fontSize:12,color:'#6b7280'}}>{c.city||'—'}</div>
+                <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c)}</div>
+                <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
+                  {hasPerm(user, 'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
+                  {hasPerm(user, 'customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
+                </div>
+              </div>
+            ))}
           </div>
-          {filtered.length === 0 ? (
-            <div className="empty-state" style={{padding:'60px 20px'}}>
-              <div style={{fontSize:48,marginBottom:12}}>🏢</div>
-              <p>لا يوجد عملاء مطابقون</p>
-              <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث'}</small>
-            </div>
-          ) : filtered.map((c, idx) => (
-            <div key={c.id} className="erp-list-row" style={{background:idx%2===0?'#fff':'#fafcfd'}} onClick={()=>setSelected(c)}>
-              <div style={{fontSize:12,fontWeight:700,color:'#1C6A99'}}>{c.customer_code||'—'}</div>
-              <div>
-                <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{c.name}</div>
-                {c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>{c.category}</span>}
-              </div>
-              <div style={{fontSize:12,color:'#374151'}}>{c.phone||c.mobile||'—'}</div>
-              <div style={{fontSize:12,color:'#374151'}}>
-                {c.contact1_name ? <span>{c.contact1_name}{c.contact1_title && <span style={{color:'#9ca3af',fontWeight:400}}> — {c.contact1_title}</span>}</span> : '—'}
-              </div>
-              <div style={{fontSize:12,color:'#6b7280'}}>{c.city||'—'}</div>
-              <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c)}</div>
-              <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
-                {hasPerm(user, 'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
-                {hasPerm(user, 'customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
-              </div>
-            </div>
-          ))}
-        </div>
+        )
       )}
+
+      {tab === 'prospects' && <ProspectsTab user={user} profiles={profiles} onCountChange={setProspectCount}/>}
+
       {showForm && <CustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
       {showListMgr && <CustomerListsManager user={user} onClose={()=>setShowListMgr(false)}/>}
     </div>
