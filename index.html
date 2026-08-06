@@ -2808,8 +2808,22 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
     status:            order?.status || 'pending',
     prepared_by:       order?.prepared_by || '',
     delivered_by:      order?.delivered_by || '',
+    customer_ref:      order?.customer_ref || '',
+    po_number:         order?.po_number || '',
   });
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const [preparedSug, setPreparedSug] = useState([]);
+  const [deliveredSug, setDeliveredSug] = useState([]);
+  useEffect(() => {
+    sb.from('orders').select('prepared_by, delivered_by').not('prepared_by','is',null).neq('prepared_by','')
+      .then(({ data }) => {
+        const prep = [...new Set((data||[]).map(r=>r.prepared_by).filter(Boolean))].sort();
+        const delv = [...new Set((data||[]).map(r=>r.delivered_by).filter(Boolean))].sort();
+        setPreparedSug(prep);
+        setDeliveredSug(delv);
+      });
+  }, []);
 
   /* صف بند موحّد — order_items و quotation_items يتشاركان نفس الأعمدة تقريباً */
   const normItem = (it, defTax) => ({
@@ -2890,6 +2904,8 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
         expected_delivery: form.expected_delivery || null,
         prepared_by:       form.prepared_by || null,
         delivered_by:      form.delivered_by || null,
+        customer_ref:      form.customer_ref || null,
+        po_number:         form.po_number    || null,
       };
       let orderId, orderNo;
 
@@ -2987,11 +3003,21 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
           <div className="form-row mb-4">
             <div className="form-group">
               <label className="form-label">المعني بتجهيز الطلب</label>
-              <input className="form-control" value={form.prepared_by} onChange={e=>setF('prepared_by',e.target.value)} placeholder="اسم المسؤول عن التجهيز"/>
+              <ComboInput className="form-control" value={form.prepared_by} onChange={v=>setF('prepared_by',v)} suggestions={preparedSug} placeholder="اسم المسؤول عن التجهيز"/>
             </div>
             <div className="form-group">
               <label className="form-label">المعني بتسليم الطلب</label>
-              <input className="form-control" value={form.delivered_by} onChange={e=>setF('delivered_by',e.target.value)} placeholder="اسم المسؤول عن التسليم"/>
+              <ComboInput className="form-control" value={form.delivered_by} onChange={v=>setF('delivered_by',v)} suggestions={deliveredSug} placeholder="اسم المسؤول عن التسليم"/>
+            </div>
+          </div>
+          <div className="form-row mb-4">
+            <div className="form-group">
+              <label className="form-label">مرجع الزبون <span style={{fontSize:11,color:'var(--gray-400)',fontWeight:400}}>(يُعبَّأ حسب ما زوّده الزبون)</span></label>
+              <input className="form-control" value={form.customer_ref} onChange={e=>setF('customer_ref',e.target.value)} placeholder="رقم المرجع / الطلب الداخلي للزبون"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">رقم الشراء (PO Number) <span style={{fontSize:11,color:'var(--gray-400)',fontWeight:400}}>(يُعبَّأ حسب ما زوّده الزبون)</span></label>
+              <input className="form-control" value={form.po_number} onChange={e=>setF('po_number',e.target.value)} placeholder="رقم أمر الشراء"/>
             </div>
           </div>
           <div className="form-group mb-4">
@@ -3534,6 +3560,94 @@ function InvoicesPage({ user, quotes, onReload }) {
   );
 }
 
+/* ===================== DELIVERY RECEIPT MODAL (سند استلام) ===================== */
+function DeliveryReceiptModal({ order, items, onClose }) {
+  const receiptId = 'delivery-receipt-print';
+
+  const doPrint = () => printDoc(receiptId, `سند استلام - ${order.number}`);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth: 860}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">📦 سند استلام — {order.number}</span>
+          <div className="flex gap-2">
+            <button className="btn btn-primary btn-sm" onClick={doPrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="modal-body pq-preview-body" id={receiptId}>
+          <div className="pq-page" style={{minHeight:'unset'}}>
+            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+
+              {/* ترويسة الشركة */}
+              <PqDocHeader/>
+
+              {/* عنوان السند */}
+              <div className="print-doc-title" style={{fontSize:16, letterSpacing:2}}>
+                سند استلام بضاعة
+              </div>
+
+              {/* بيانات الطلب — عربي ثابت */}
+              <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+                <div className="print-client-grid">
+                  <div className="field-row"><label>السادة:</label> <strong>{order.customer_name}{order.customer_name ? ' المحترمين' : ''}</strong></div>
+                  <div className="field-row"><label>رقم الطلب:</label> <strong style={{color:'var(--primary)'}}>{order.number}</strong></div>
+                  <div className="field-row"><label>التاريخ:</label> {(order.created_at||'').slice(0,10) || order.date || ''}</div>
+                  {order.quotation_number && <div className="field-row"><label>رقم العرض:</label> {order.quotation_number}</div>}
+                  {order.customer_ref && <div className="field-row"><label>مرجع الزبون:</label> <strong>{order.customer_ref}</strong></div>}
+                  {order.po_number    && <div className="field-row"><label>رقم الشراء (PO):</label> <strong>{order.po_number}</strong></div>}
+                </div>
+              </div>
+
+              {/* جدول الأصناف */}
+              <table className="print-items" style={{marginTop:12}}>
+                <colgroup>
+                  <col style={{width:'6%'}}/><col/><col style={{width:'12%'}}/><col style={{width:'12%'}}/>
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>م</th>
+                    <th>اسم الصنف</th>
+                    <th>الوحدة</th>
+                    <th>الكمية</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, i) => (
+                    <tr key={i}>
+                      <td style={{textAlign:'center'}}>{i+1}</td>
+                      <td>{it.item_name}</td>
+                      <td style={{textAlign:'center'}}>{it.unit||'EACH'}</td>
+                      <td style={{textAlign:'center', fontWeight:700}}>{it.quantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* توقيع الاستلام */}
+              <div style={{display:'flex', justifyContent:'space-between', marginTop:40, padding:'0 20px', fontSize:12, color:'#555'}}>
+                <div style={{textAlign:'center', minWidth:160}}>
+                  <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:30}}>توقيع المستلم</div>
+                </div>
+                <div style={{textAlign:'center', minWidth:160}}>
+                  <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:30}}>ختم الجهة المستلمة</div>
+                </div>
+                <div style={{textAlign:'center', minWidth:160}}>
+                  <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:30}}>توقيع المُسلِّم</div>
+                </div>
+              </div>
+
+            </div>
+            <PqFooterBar/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== ORDERS PAGE ===================== */
 function OrdersPage({ user, orders, onReload }) {
   const [tab, setTab]             = useState('active');
@@ -3541,6 +3655,8 @@ function OrdersPage({ user, orders, onReload }) {
   const [printingOrder, setPrintingOrder] = useState(null);
   const [orderDoc, setOrderDoc]   = useState(null);
   const [orderItems, setOrderItems] = useState([]);
+  const [receiptOrder, setReceiptOrder] = useState(null);
+  const [receiptItems, setReceiptItems] = useState([]);
   const [editingOrder, setEditingOrder] = useState(null);
   const [archiveOrderTarget, setArchiveOrderTarget] = useState(null);
   const [editNoteTarget, setEditNoteTarget] = useState(null);
@@ -3638,6 +3754,20 @@ function OrdersPage({ user, orders, onReload }) {
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
   };
 
+  const openReceipt = async (o) => {
+    try {
+      const { data: oits } = await sb.from('order_items').select('item_name,unit,quantity').eq('order_id', o.id).order('sort_order');
+      let items = oits || [];
+      if (!items.length && o.quotation_id) {
+        const { data: qits } = await sb.from('quotation_items').select('item_name,unit,quantity').eq('quotation_id', o.quotation_id).order('sort_order');
+        items = qits || [];
+      }
+      if (!items.length) { toast('لا توجد أصناف في هذا الطلب', 'error'); return; }
+      setReceiptItems(items);
+      setReceiptOrder(o);
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+  };
+
   const selStyle = {fontSize:11, padding:'3px 7px', width:'auto'};
 
   return (
@@ -3692,6 +3822,9 @@ function OrdersPage({ user, orders, onReload }) {
                     <td style={{whiteSpace:'nowrap'}}>
                       <div className="flex gap-2">
                         <button className="btn btn-ghost btn-sm" onClick={()=>previewOrder(o)}>👁 معاينة</button>
+                        {['confirmed','processing','delivered'].includes(o.status) && (
+                          <button className="btn btn-ghost btn-sm" style={{color:'#0369a1'}} onClick={()=>openReceipt(o)} title="سند استلام">📦 سند</button>
+                        )}
                         {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)}>✏️ تعديل</button>}
                         <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveOrderTarget(o)}>🗄️ أرشفة</button>
                         {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)}>🗑️ حذف</button>}
@@ -3736,6 +3869,7 @@ function OrdersPage({ user, orders, onReload }) {
       </>}
 
       {printingOrder && orderDoc && <DocPreview doc={orderDoc} items={orderItems} docType="order" onClose={()=>setPrintingOrder(null)}/>}
+      {receiptOrder && <DeliveryReceiptModal order={receiptOrder} items={receiptItems} onClose={()=>setReceiptOrder(null)}/>}
       {editingOrder && <OrderEditModal user={user} order={editingOrder} onSave={()=>{ setEditingOrder(null); onReload(); }} onClose={()=>setEditingOrder(null)}/>}
       {archiveOrderTarget && <ArchiveModal label={`أرشفة الطلبية ${archiveOrderTarget.number||archiveOrderTarget.quotation_number||''}`} onConfirm={doArchiveO} onClose={()=>setArchiveOrderTarget(null)}/>}
       {editNoteTarget && <ArchiveModal label="تعديل سبب الأرشفة" initialNote={editNoteTarget.archive_note||''} onConfirm={saveNote} onClose={()=>setEditNoteTarget(null)}/>}
