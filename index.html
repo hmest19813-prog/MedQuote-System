@@ -775,6 +775,7 @@ const NAV = [
   { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋' },
   { id: 'orders',    label: 'الطلبات',        icon: '📦', perm: 'orders_access' },
   { id: 'invoices',  label: 'الفواتير',       icon: '🧾' },
+  { id: 'procurement', label: 'المشتريات',   icon: '🏭', perm: 'suppliers_access' },
   { id: 'customers', label: 'العملاء',        icon: '🏢', perm: 'customers_access' },
   { id: 'catalog',   label: 'الكتالوج',       icon: '🗂️', perm: 'catalog_access' },
   { id: 'letters',   label: 'الكتب الرسمية', icon: '📝', perm: 'letters_access' },
@@ -3929,6 +3930,14 @@ const PERM_GROUPS = [
     { key: 'activity_access',       label: 'سجل النشاط' },
     { key: 'deleted_quotes_access', label: 'عروض الأسعار المحذوفة' },
   ]},
+  { label: 'المشتريات والموردون', perms: [
+    { key: 'suppliers_access',          label: 'الوصول لوحدة المشتريات' },
+    { key: 'suppliers_create',          label: 'إضافة مورد / أمر شراء' },
+    { key: 'suppliers_edit',            label: 'تعديل الموردين وأوامر الشراء' },
+    { key: 'suppliers_delete',          label: 'حذف الموردين وأوامر الشراء' },
+    { key: 'supplier_invoices_create',  label: 'إنشاء فواتير الموردين' },
+    { key: 'supplier_payments_create',  label: 'تسجيل مدفوعات الموردين' },
+  ]},
   { label: 'الموارد البشرية', perms: [
     { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
   ]},
@@ -3945,6 +3954,8 @@ const DEFAULT_EMPLOYEE_PERMS = {
   archive_access: true, activity_access: false,
   payments_delete: false,
   hr_access: false,
+  suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
+  supplier_invoices_create: false, supplier_payments_create: false,
 };
 
 const DEFAULT_MANAGER_PERMS = Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: true }), {});
@@ -5867,6 +5878,1225 @@ function CustomersPage({ user }) {
     </div>
   );
 }
+/* ===================== PROCUREMENT MODULE ===================== */
+
+/* ---- SupplierDetail ---- */
+function SupplierDetail({ supplier, user, onBack, onEdit }) {
+  const [tab, setTab] = useState('info');
+  const [pos, setPos]         = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [items, setItems]     = useState([]); // أصناف من PO items
+  const [loading, setLoading] = useState(true);
+  const [viewingPO, setViewingPO] = useState(null);
+
+  useEffect(() => {
+    const loadAll = async () => {
+      setLoading(true);
+      const [r1, r2, r3] = await Promise.all([
+        sb.from('purchase_orders').select('*').eq('supplier_id', supplier.id).order('date', {ascending:false}),
+        sb.from('supplier_invoices').select('*').eq('supplier_id', supplier.id).order('date', {ascending:false}),
+        sb.from('supplier_payments').select('*').eq('supplier_id', supplier.id).order('date', {ascending:false}),
+      ]);
+      const poList = r1.data || [];
+      setPos(poList);
+      setInvoices(r2.data || []);
+      setPayments(r3.data || []);
+
+      // تحميل الأصناف من أوامر الشراء
+      if (poList.length) {
+        const poIds = poList.map(p => p.id);
+        const { data: itData } = await sb.from('purchase_order_items').select('item_name, unit, quantity, unit_price').in('po_id', poIds);
+        // تجميع الأصناف وحساب إجمالي الكمية والقيمة لكل صنف
+        const map = {};
+        (itData||[]).forEach(it => {
+          const key = it.item_name?.trim()?.toLowerCase();
+          if (!key) return;
+          if (!map[key]) map[key] = { item_name: it.item_name, unit: it.unit, total_qty: 0, total_value: 0, orders: 0 };
+          map[key].total_qty   += parseFloat(it.quantity||0);
+          map[key].total_value += parseFloat(it.quantity||0) * parseFloat(it.unit_price||0);
+          map[key].orders      += 1;
+        });
+        setItems(Object.values(map).sort((a,b) => b.total_value - a.total_value));
+      }
+      setLoading(false);
+    };
+    loadAll();
+  }, [supplier.id]);
+
+  // إحصائيات
+  const totalOrders   = pos.length;
+  const totalPOValue  = pos.reduce((s,p) => s + parseFloat(p.total||0), 0);
+  const totalInvoiced = invoices.filter(i=>i.status!=='cancelled').reduce((s,i) => s + parseFloat(i.total||0), 0);
+  const totalPaid     = payments.reduce((s,p) => s + parseFloat(p.amount||0), 0);
+  const balance       = totalInvoiced - totalPaid;
+
+  const tabStyle = (t) => ({
+    padding: '8px 16px', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12,
+    borderBottom: tab===t ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+    color: tab===t ? 'var(--primary)' : 'var(--gray-500)',
+    background: 'transparent', whiteSpace: 'nowrap',
+  });
+
+  const Field = ({label, val}) => val ? (
+    <div className="erp-field"><label>{label}</label><div className="erp-value">{val}</div></div>
+  ) : null;
+
+  const printSupplierReport = () => {
+    const poRows = pos.map(p=>`
+      <tr>
+        <td style="font-weight:700;color:#1C6A99">${p.number||'—'}</td>
+        <td>${p.date||'—'}</td>
+        <td style="font-weight:700">${parseFloat(p.total||0).toFixed(3)} ${p.currency||'JOD'}</td>
+        <td>${PO_STATUSES[p.status]||p.status||'—'}</td>
+      </tr>`).join('');
+
+    const invRows = invoices.map(i=>`
+      <tr>
+        <td>${i.supplier_invoice_no||'—'}</td>
+        <td>${i.date||'—'}</td>
+        <td style="font-weight:700">${parseFloat(i.total||0).toFixed(3)}</td>
+        <td style="color:#16a34a">${parseFloat(i.paid_amount||0).toFixed(3)}</td>
+        <td>${SI_STATUSES[i.status]||i.status||'—'}</td>
+      </tr>`).join('');
+
+    const body = document.body;
+    const allChildren = Array.from(body.children);
+    const orig = allChildren.map(c=>c.style.cssText);
+    allChildren.forEach(c=>{c.style.cssText='display:none !important;';});
+
+    const printDiv = document.createElement('div');
+    printDiv.id = 'temp-print-div';
+    printDiv.style.cssText = 'position:static;width:100%;padding:12mm 15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
+    printDiv.innerHTML = `
+      <h2 style="color:#1C6A99;margin:0 0 2px;font-size:20px;font-weight:900">🏭 ${supplier.name}</h2>
+      <div style="color:#888;font-size:11px;margin-bottom:14px">${supplier.code||''} ${supplier.city?'· '+supplier.city:''} ${supplier.phone?'· '+supplier.phone:''}</div>
+
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+        <div style="background:#f0f8fd;border:1px solid #B8DCF0;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#1C6A99">${totalOrders}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">أوامر الشراء</div></div>
+        <div style="background:#f0f8fd;border:1px solid #B8DCF0;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#1C6A99">${totalPOValue.toFixed(3)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">إجمالي الطلبات</div></div>
+        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#16a34a">${totalPaid.toFixed(3)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">إجمالي المدفوع</div></div>
+        <div style="background:${balance>0?'#fee2e2':'#dcfce7'};border:1px solid ${balance>0?'#fca5a5':'#86efac'};border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:${balance>0?'#dc2626':'#16a34a'}">${balance.toFixed(3)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">الرصيد المستحق</div></div>
+      </div>
+
+      <div style="font-size:12px;font-weight:800;color:#1C6A99;border-bottom:2px solid #1C6A99;padding-bottom:3px;margin:14px 0 8px">📋 أوامر الشراء (${pos.length})</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+        <thead><tr>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">الرقم</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">التاريخ</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">الإجمالي</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">الحالة</th>
+        </tr></thead>
+        <tbody>${poRows||'<tr><td colspan="4" style="text-align:center;color:#aaa;padding:12px">لا توجد أوامر</td></tr>'}</tbody>
+      </table>
+
+      <div style="font-size:12px;font-weight:800;color:#1C6A99;border-bottom:2px solid #1C6A99;padding-bottom:3px;margin:14px 0 8px">🧾 الفواتير (${invoices.length})</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+        <thead><tr>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">رقم الفاتورة</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">التاريخ</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">الإجمالي</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">المدفوع</th>
+          <th style="background:#1C6A99;color:#fff;padding:7px 10px;font-size:11px;text-align:right">الحالة</th>
+        </tr></thead>
+        <tbody>${invRows||'<tr><td colspan="5" style="text-align:center;color:#aaa;padding:12px">لا توجد فواتير</td></tr>'}</tbody>
+      </table>
+
+      <div style="margin-top:16px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:8px">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</div>`;
+
+    const printStyle = document.createElement('style');
+    printStyle.textContent = `
+      @media print {
+        @page { margin: 0; size: A4 portrait; }
+        #temp-print-div { display: block !important; position: static !important; width: 100% !important; }
+        #temp-print-div td { border-bottom: 1px solid #e8edf2 !important; }
+        #temp-print-div tr:nth-child(even) td { background: #f9fbfc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        #temp-print-div th, #temp-print-div div[style*="background:#1C6A99"], #temp-print-div div[style*="background:#f0f8fd"], #temp-print-div div[style*="background:#dcfce7"], #temp-print-div div[style*="background:#fee2e2"] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      }
+    `;
+    document.head.appendChild(printStyle);
+
+    const originalTitle = document.title;
+    document.title = `تقرير المورد - ${supplier.name}`;
+
+    body.appendChild(printDiv);
+    window.print();
+
+    document.title = originalTitle;
+    document.head.removeChild(printStyle);
+    body.removeChild(printDiv);
+    allChildren.forEach((c,i)=>{c.style.cssText=orig[i];});
+  };
+
+  return (
+    <div>
+      {viewingPO && <PODetail po={viewingPO} onClose={()=>setViewingPO(null)}/>}
+
+      {/* Toolbar */}
+      <div className="erp-toolbar">
+        <button className="btn btn-ghost btn-sm" onClick={onBack}>← رجوع للموردين</button>
+        <div style={{flex:1}}/>
+        {hasPerm(user,'suppliers_edit') && <button className="btn btn-ghost btn-sm" onClick={onEdit}>✏️ تعديل</button>}
+        <button className="btn btn-ghost btn-sm" onClick={printSupplierReport}>🖨️ طباعة</button>
+      </div>
+
+      {/* Header Card */}
+      <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:16,padding:'16px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 10px rgba(43,143,196,.07)'}}>
+        <div style={{width:52,height:52,borderRadius:14,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,color:'white',fontWeight:900,flexShrink:0}}>
+          {(supplier.name||'?').charAt(0)}
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:20,fontWeight:900,color:'#1a2e3d',marginBottom:6}}>{supplier.name}</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+            {supplier.code && <span className="erp-badge erp-badge-primary">{supplier.code}</span>}
+            {supplier.city && <span className="erp-badge erp-badge-gray">{supplier.city}</span>}
+            {supplier.country && <span className="erp-badge erp-badge-gray">{supplier.country}</span>}
+            {supplier.payment_terms && <span className="erp-badge erp-badge-primary">شروط دفع: {supplier.payment_terms} يوم</span>}
+          </div>
+        </div>
+        {/* Stats */}
+        {[
+          {label:'أوامر الشراء', val:totalOrders, color:'var(--primary)'},
+          {label:'إجمالي الطلبات', val:totalPOValue.toFixed(3), color:'#7c3aed'},
+          {label:'إجمالي المدفوع', val:totalPaid.toFixed(3), color:'#16a34a'},
+          {label:'الرصيد المستحق', val:balance.toFixed(3), color: balance>0?'#dc2626':'#16a34a'},
+        ].map((s,i)=>(
+          <div key={i} style={{textAlign:'center',padding:'8px 16px',borderRight:'1px solid #e2edf5'}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>{s.label}</div>
+            <div style={{fontSize:15,fontWeight:900,color:s.color}}>{s.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Sub-tabs */}
+      <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5',borderRadius:'8px 8px 0 0',overflowX:'auto'}}>
+        <button style={tabStyle('info')} onClick={()=>setTab('info')}>🏭 بيانات المورد</button>
+        <button style={tabStyle('po')} onClick={()=>setTab('po')}>📋 أوامر الشراء ({pos.length})</button>
+        <button style={tabStyle('invoices')} onClick={()=>setTab('invoices')}>🧾 الفواتير ({invoices.length})</button>
+        <button style={tabStyle('payments')} onClick={()=>setTab('payments')}>💸 المدفوعات ({payments.length})</button>
+        <button style={tabStyle('items')} onClick={()=>setTab('items')}>📦 الأصناف ({items.length})</button>
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (<>
+
+        {/* ---- INFO ---- */}
+        {tab==='info' && (
+          <div className="erp-cards">
+            <div className="erp-card main-card">
+              <div className="erp-section-header">🏭 بيانات المورد</div>
+              <Field label="الهاتف"          val={supplier.phone}/>
+              <Field label="البريد الإلكتروني" val={supplier.email}/>
+              <Field label="المدينة"         val={supplier.city}/>
+              <Field label="الدولة"          val={supplier.country}/>
+              <Field label="العنوان"         val={supplier.address}/>
+              <Field label="شروط الدفع"     val={supplier.payment_terms ? supplier.payment_terms + ' يوم' : null}/>
+              {supplier.notes && <Field label="ملاحظات" val={supplier.notes}/>}
+            </div>
+            <div className="erp-card contact-card">
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 جهة الاتصال</div>
+              <Field label="الاسم"  val={supplier.contact_name}/>
+              <Field label="الهاتف" val={supplier.contact_phone}/>
+            </div>
+            <div className="erp-card contact-card">
+              <div className="erp-section-header" style={{color:'#7c3aed'}}>📊 ملخص التعامل</div>
+              <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
+                {[
+                  {l:'عدد أوامر الشراء',   v:totalOrders,             c:'var(--primary)'},
+                  {l:'إجمالي قيمة الطلبات', v:totalPOValue.toFixed(3)+' JOD', c:'#7c3aed'},
+                  {l:'إجمالي الفواتير',    v:totalInvoiced.toFixed(3)+' JOD', c:'#0ea5e9'},
+                  {l:'إجمالي المدفوع',      v:totalPaid.toFixed(3)+' JOD',    c:'#16a34a'},
+                  {l:'الرصيد المستحق',      v:balance.toFixed(3)+' JOD',      c:balance>0?'#dc2626':'#16a34a'},
+                  {l:'أصناف يوردها',        v:items.length+' صنف',            c:'#f59e0b'},
+                ].map((row,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 10px',background:'#f8fafc',borderRadius:8}}>
+                    <span style={{fontSize:12,color:'var(--gray-600)'}}>{row.l}</span>
+                    <span style={{fontSize:13,fontWeight:800,color:row.c}}>{row.v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ---- PURCHASE ORDERS ---- */}
+        {tab==='po' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden'}}>
+            <div style={{display:'grid',gridTemplateColumns:'130px 110px 1fr 110px 120px 90px',padding:'10px 16px',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',fontSize:11,fontWeight:800}}>
+              <div>الرقم</div><div>التاريخ</div><div>ملاحظات</div><div>الإجمالي</div><div>الحالة</div><div>إجراءات</div>
+            </div>
+            {pos.length===0
+              ? <div className="empty-state" style={{padding:40}}><p>لا توجد أوامر شراء لهذا المورد</p></div>
+              : pos.map((p,i)=>(
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'130px 110px 1fr 110px 120px 90px',padding:'10px 16px',borderBottom:'1px solid #f0f4f8',background:i%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
+                  <div style={{fontWeight:800,color:'#1C6A99',fontSize:13}}>{p.number}</div>
+                  <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
+                  <div style={{fontSize:12,color:'var(--gray-400)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.notes||'—'}</div>
+                  <div style={{fontWeight:700,color:'var(--primary)'}}>{parseFloat(p.total||0).toFixed(3)} {p.currency}</div>
+                  <div><POBadge status={p.status}/></div>
+                  <div><button className="btn btn-ghost btn-sm" onClick={()=>setViewingPO(p)} style={{padding:'3px 8px'}}>👁 عرض</button></div>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {/* ---- INVOICES ---- */}
+        {tab==='invoices' && (
+          <div>
+            {/* ملخص مالي */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:14}}>
+              {[
+                {l:'إجمالي الفواتير',  v:totalInvoiced.toFixed(3)+' JOD', c:'#0ea5e9', bg:'#e0f2fe'},
+                {l:'إجمالي المدفوع',   v:totalPaid.toFixed(3)+' JOD',    c:'#16a34a', bg:'#dcfce7'},
+                {l:'الرصيد المستحق',  v:balance.toFixed(3)+' JOD',       c:balance>0?'#dc2626':'#16a34a', bg:balance>0?'#fee2e2':'#dcfce7'},
+              ].map((card,i)=>(
+                <div key={i} style={{padding:'14px 18px',background:card.bg,borderRadius:10,border:`1.5px solid ${card.c}22`}}>
+                  <div style={{fontSize:11,fontWeight:700,color:card.c,marginBottom:4}}>{card.l}</div>
+                  <div style={{fontSize:18,fontWeight:900,color:card.c}}>{card.v}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 120px 110px 110px 110px 100px',padding:'10px 16px',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',fontSize:11,fontWeight:800}}>
+                <div>رقم فاتورة المورد</div><div>أمر الشراء</div><div>التاريخ</div><div>الإجمالي</div><div>المدفوع</div><div>الحالة</div>
+              </div>
+              {invoices.length===0
+                ? <div className="empty-state" style={{padding:40}}><p>لا توجد فواتير لهذا المورد</p></div>
+                : invoices.map((inv,i)=>(
+                  <div key={inv.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 110px 110px 110px 100px',padding:'10px 16px',borderBottom:'1px solid #f0f4f8',background:i%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{inv.supplier_invoice_no||'—'}</div>
+                    <div style={{fontSize:12,color:'#0ea5e9'}}>{inv.po_number||'—'}</div>
+                    <div style={{fontSize:12,color:'var(--gray-500)'}}>{inv.date}</div>
+                    <div style={{fontWeight:700}}>{parseFloat(inv.total||0).toFixed(3)}</div>
+                    <div style={{fontWeight:700,color:'#16a34a'}}>{parseFloat(inv.paid_amount||0).toFixed(3)}</div>
+                    <div><SIBadge status={inv.status}/></div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* ---- PAYMENTS ---- */}
+        {tab==='payments' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden'}}>
+            <div style={{display:'grid',gridTemplateColumns:'110px 130px 120px 130px 1fr',padding:'10px 16px',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',fontSize:11,fontWeight:800}}>
+              <div>التاريخ</div><div>المبلغ</div><div>طريقة الدفع</div><div>المرجع</div><div>ملاحظات</div>
+            </div>
+            {payments.length===0
+              ? <div className="empty-state" style={{padding:40}}><p>لا توجد مدفوعات مسجّلة لهذا المورد</p></div>
+              : payments.map((p,i)=>(
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'110px 130px 120px 130px 1fr',padding:'10px 16px',borderBottom:'1px solid #f0f4f8',background:i%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
+                  <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
+                  <div style={{fontWeight:800,color:'#16a34a',fontSize:14}}>{parseFloat(p.amount||0).toFixed(3)} JOD</div>
+                  <div style={{fontSize:12}}>{PAYMENT_METHODS[p.method]||p.method||'—'}</div>
+                  <div style={{fontSize:12,color:'var(--gray-400)'}}>{p.reference||'—'}</div>
+                  <div style={{fontSize:12,color:'var(--gray-400)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.notes||'—'}</div>
+                </div>
+              ))}
+            {payments.length>0 && (
+              <div style={{padding:'10px 16px',background:'#f0f8fd',borderTop:'2px solid #B8DCF0',display:'flex',justifyContent:'flex-end',gap:6,fontSize:13,fontWeight:800}}>
+                <span>الإجمالي:</span>
+                <span style={{color:'#16a34a'}}>{totalPaid.toFixed(3)} JOD</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ---- ITEMS SUPPLIED ---- */}
+        {tab==='items' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 100px 120px 130px 90px',padding:'10px 16px',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',fontSize:11,fontWeight:800}}>
+              <div>اسم الصنف</div><div>الوحدة</div><div>إجمالي الكمية</div><div>إجمالي القيمة (JOD)</div><div>مرات الطلب</div>
+            </div>
+            {items.length===0
+              ? <div className="empty-state" style={{padding:40}}><p>لا توجد أصناف مسجّلة لهذا المورد</p></div>
+              : items.map((it,i)=>(
+                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 100px 120px 130px 90px',padding:'10px 16px',borderBottom:'1px solid #f0f4f8',background:i%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
+                  <div style={{fontWeight:700,fontSize:13,color:'#1a2e3d'}}>{it.item_name}</div>
+                  <div style={{fontSize:12,color:'var(--gray-500)'}}>{it.unit||'—'}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'var(--primary)',textAlign:'center'}}>{parseFloat(it.total_qty).toFixed(2)}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#7c3aed',textAlign:'center'}}>{parseFloat(it.total_value).toFixed(3)}</div>
+                  <div style={{fontSize:12,textAlign:'center',color:'var(--gray-500)'}}>{it.orders}</div>
+                </div>
+              ))}
+          </div>
+        )}
+
+      </>)}
+    </div>
+  );
+}
+
+const PO_STATUSES = { draft:'مسودة', sent:'مُرسَل', partial:'استلام جزئي', received:'مستلم', cancelled:'ملغي' };
+const SI_STATUSES = { pending:'معلّق', partial:'مدفوع جزئياً', paid:'مدفوع', cancelled:'ملغي' };
+const PAYMENT_METHODS = { cash:'نقد', bank_transfer:'تحويل بنكي', check:'شيك', credit:'آجل' };
+
+const PO_STATUS_COLORS = {
+  draft:    { bg:'#f1f5f9', color:'#64748b' },
+  sent:     { bg:'#e0f2fe', color:'#0ea5e9' },
+  partial:  { bg:'#fef3c7', color:'#d97706' },
+  received: { bg:'#dcfce7', color:'#16a34a' },
+  cancelled:{ bg:'#fee2e2', color:'#dc2626' },
+};
+const SI_STATUS_COLORS = {
+  pending:  { bg:'#fef3c7', color:'#d97706' },
+  partial:  { bg:'#e0f2fe', color:'#0ea5e9' },
+  paid:     { bg:'#dcfce7', color:'#16a34a' },
+  cancelled:{ bg:'#fee2e2', color:'#dc2626' },
+};
+
+function POBadge({ status }) {
+  const s = PO_STATUS_COLORS[status] || { bg:'#f1f5f9', color:'#64748b' };
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,background:s.bg,color:s.color}}>{PO_STATUSES[status]||status}</span>;
+}
+function SIBadge({ status }) {
+  const s = SI_STATUS_COLORS[status] || { bg:'#f1f5f9', color:'#64748b' };
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,background:s.bg,color:s.color}}>{SI_STATUSES[status]||status}</span>;
+}
+
+/* ---- SupplierForm ---- */
+function SupplierForm({ supplier, onSave, onClose }) {
+  const empty = { name:'', code:'', phone:'', email:'', address:'', city:'', country:'الأردن', contact_name:'', contact_phone:'', payment_terms:30, notes:'' };
+  const [form, setForm] = useState({ ...empty, ...(supplier||{}) });
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(() => {
+    if (!supplier?.id && !form.code) {
+      sb.from('suppliers').select('code').order('created_at',{ascending:false}).limit(1)
+        .then(({data}) => {
+          const last = data?.[0]?.code;
+          const num = last ? (parseInt(last.replace('SUP-',''))||0) + 1 : 1;
+          setF('code', 'SUP-' + String(num).padStart(4,'0'));
+        });
+    }
+  }, []);
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast('اسم المورد مطلوب','error'); return; }
+    setLoading(true);
+    const payload = { name:form.name.trim(), code:form.code||null, phone:form.phone||null, email:form.email||null, address:form.address||null, city:form.city||null, country:form.country||'الأردن', contact_name:form.contact_name||null, contact_phone:form.contact_phone||null, payment_terms:parseInt(form.payment_terms)||30, notes:form.notes||null };
+    let error;
+    if (supplier?.id) {
+      ({ error } = await sb.from('suppliers').update(payload).eq('id', supplier.id));
+    } else {
+      ({ error } = await sb.from('suppliers').insert(payload));
+    }
+    setLoading(false);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast(supplier?.id ? 'تم التعديل' : 'تمت الإضافة','success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:560}}>
+        <div className="modal-header">
+          <span className="modal-title">🏭 {supplier?.id ? 'تعديل مورد' : 'إضافة مورد جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">اسم المورد / الشركة <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-control" value={form.name} onChange={e=>setF('name',e.target.value)} autoFocus/>
+            </div>
+            <div className="form-group" style={{maxWidth:140}}>
+              <label className="form-label">الرمز</label>
+              <input className="form-control" value={form.code} onChange={e=>setF('code',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الهاتف</label>
+              <input className="form-control" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">البريد الإلكتروني</label>
+              <input className="form-control" value={form.email} onChange={e=>setF('email',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المدينة</label>
+              <input className="form-control" value={form.city} onChange={e=>setF('city',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الدولة</label>
+              <input className="form-control" value={form.country} onChange={e=>setF('country',e.target.value)}/>
+            </div>
+            <div className="form-group" style={{maxWidth:130}}>
+              <label className="form-label">شروط الدفع (يوم)</label>
+              <input type="number" className="form-control" value={form.payment_terms} onChange={e=>setF('payment_terms',e.target.value)}/>
+            </div>
+          </div>
+          <div className="section-title" style={{marginTop:4}}>جهة الاتصال</div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الاسم</label>
+              <input className="form-control" value={form.contact_name} onChange={e=>setF('contact_name',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الهاتف</label>
+              <input className="form-control" value={form.contact_phone} onChange={e=>setF('contact_phone',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">العنوان / ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!form.name.trim()}>{loading?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- POForm ---- */
+function POForm({ po, onSave, onClose }) {
+  const today = () => new Date().toISOString().slice(0,10);
+  const emptyItem = () => ({ item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:0, total:0 });
+  const [form, setForm] = useState({ date: today(), expected_delivery:'', currency:'JOD', tax_pct:0, notes:'', status:'draft', supplier_id:'', supplier_name:'', ...(po||{}) });
+  const [items, setItems] = useState([emptyItem()]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [showSupSug, setShowSupSug] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const setItem = (idx,k,v) => setItems(i=>i.map((it,j)=>j===idx?{...it,[k]:v}:it));
+
+  useEffect(() => {
+    sb.from('suppliers').select('id,name,code').eq('is_active',true).order('name').then(({data})=>setSuppliers(data||[]));
+    if (po?.id) {
+      sb.from('purchase_order_items').select('*').eq('po_id',po.id).order('sort_order').then(({data})=>{ if(data?.length) setItems(data); });
+      setSupplierSearch(po.supplier_name||'');
+    }
+  }, []);
+
+  const filteredSup = supplierSearch.trim().length >= 1
+    ? suppliers.filter(s=>s.name.toLowerCase().includes(supplierSearch.toLowerCase())||s.code?.includes(supplierSearch)).slice(0,8)
+    : suppliers.slice(0,8);
+
+  const subtotal = items.reduce((s,i)=>s+(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)),0);
+  const tax_amt  = items.reduce((s,i)=>{
+    const line = parseFloat(i.quantity||0)*parseFloat(i.unit_price||0);
+    const t = (i.tax_pct===''||i.tax_pct==null) ? parseFloat(form.tax_pct||0) : parseFloat(i.tax_pct||0);
+    return s + line*(t/100);
+  },0);
+  const total = subtotal + tax_amt;
+
+  const handleSave = async () => {
+    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+    if (items.every(i=>!i.item_name?.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
+    setLoading(true);
+    try {
+      const payload = { supplier_id:form.supplier_id, supplier_name:form.supplier_name, date:form.date, expected_delivery:form.expected_delivery||null, status:form.status||'draft', currency:form.currency||'JOD', tax_pct:parseFloat(form.tax_pct||0), subtotal:subtotal.toFixed(3), tax_amt:tax_amt.toFixed(3), total:total.toFixed(3), notes:form.notes||null };
+      let poId;
+      if (po?.id) {
+        const {error:e} = await sb.from('purchase_orders').update(payload).eq('id',po.id);
+        if(e) throw e;
+        poId = po.id;
+        await sb.from('purchase_order_items').delete().eq('po_id',poId);
+      } else {
+        const {data:newPO,error:e} = await sb.from('purchase_orders').insert(payload).select().single();
+        if(e) throw e;
+        poId = newPO.id;
+      }
+      const itemRows = items.filter(i=>i.item_name?.trim()).map((i,idx)=>({
+        po_id:poId, sort_order:idx,
+        item_name:i.item_name.trim(), description:i.description||null,
+        unit:i.unit||'EACH', quantity:parseFloat(i.quantity)||1,
+        unit_price:parseFloat(i.unit_price)||0,
+        tax_pct:(i.tax_pct===''||i.tax_pct==null)?parseFloat(form.tax_pct||0):parseFloat(i.tax_pct||0),
+        total:(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)).toFixed(3),
+      }));
+      if(itemRows.length){ const {error:ie}=await sb.from('purchase_order_items').insert(itemRows); if(ie) throw ie; }
+      toast(po?.id?'تم التعديل':'تم إنشاء أمر الشراء','success');
+      onSave();
+    } catch(err){ toast('خطأ: '+err.message,'error'); }
+    finally{ setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:980}}>
+        <div className="modal-header" style={{background:po?.id?'#EFF8FF':'#F0FFF4'}}>
+          <span className="modal-title">📋 {po?.id?`تعديل ${po.number}`:'أمر شراء جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="section-title">بيانات المورد</div>
+          <div className="form-row mb-4">
+            <div className="form-group" style={{position:'relative',flex:2}}>
+              <label className="form-label">المورد <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-control" value={supplierSearch} placeholder="ابدأ بالكتابة للبحث..."
+                onChange={e=>{ setSupplierSearch(e.target.value); setF('supplier_id',''); setF('supplier_name',e.target.value); setShowSupSug(true); }}
+                onFocus={()=>setShowSupSug(true)} onBlur={()=>setTimeout(()=>setShowSupSug(false),200)}/>
+              {showSupSug && filteredSup.length>0 && (
+                <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',maxHeight:200,overflowY:'auto',marginTop:2}}>
+                  {filteredSup.map(s=>(
+                    <div key={s.id} onMouseDown={()=>{ setF('supplier_id',s.id); setF('supplier_name',s.name); setSupplierSearch(s.name); setShowSupSug(false); }}
+                      style={{padding:'8px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between'}}
+                      onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'} onMouseLeave={e=>e.currentTarget.style.background=''}>
+                      <span style={{fontWeight:600}}>{s.name}</span>
+                      <span style={{fontSize:11,color:'var(--gray-400)'}}>{s.code}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ الأمر</label>
+              <input type="date" className="form-control" value={form.date} onChange={e=>setF('date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">التسليم المتوقع</label>
+              <input type="date" className="form-control" value={form.expected_delivery||''} onChange={e=>setF('expected_delivery',e.target.value)}/>
+            </div>
+            <div className="form-group" style={{maxWidth:110}}>
+              <label className="form-label">العملة</label>
+              <select className="form-control" value={form.currency} onChange={e=>setF('currency',e.target.value)}>
+                <option>JOD</option><option>USD</option><option>EUR</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="section-title">الأصناف</div>
+          <div className="table-wrap" style={{marginBottom:10}}>
+            <table className="items-table" style={{minWidth:800}}>
+              <thead><tr>
+                <th style={{width:28}}>#</th>
+                <th style={{minWidth:220}}>اسم الصنف</th>
+                <th style={{width:90}}>الوحدة</th>
+                <th style={{width:90}}>الكمية</th>
+                <th style={{width:110}}>سعر الوحدة</th>
+                <th style={{width:70}}>ضريبة %</th>
+                <th style={{width:110}}>الإجمالي</th>
+                <th style={{width:28}}></th>
+              </tr></thead>
+              <tbody>
+                {items.map((item,i)=>{
+                  const rowTax = (item.tax_pct===''||item.tax_pct==null)?parseFloat(form.tax_pct||0):parseFloat(item.tax_pct||0);
+                  const rowTotal = (parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)*(1+rowTax/100)).toFixed(3);
+                  return (
+                    <tr key={i}>
+                      <td>{i+1}</td>
+                      <td>
+                        <textarea rows={1} value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)}
+                          onKeyDown={e=>{if(e.key==='Enter')e.preventDefault();}}
+                          placeholder="اسم الصنف" style={{width:'100%',resize:'none'}}/>
+                      </td>
+                      <td><input value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} style={{width:'100%'}}/></td>
+                      <td><input type="number" min="0" step="any" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)} style={{width:'100%'}}/></td>
+                      <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)} style={{width:'100%'}}/></td>
+                      <td><input type="number" min="0" step="0.5" value={item.tax_pct??''} onChange={e=>setItem(i,'tax_pct',e.target.value)} style={{width:'100%'}}/></td>
+                      <td style={{fontWeight:700,color:'var(--primary)',textAlign:'center'}}>{rowTotal}</td>
+                      <td><button onClick={()=>setItems(it=>it.filter((_,j)=>j!==i))} style={{background:'none',border:'none',color:'var(--danger)',fontSize:16,cursor:'pointer'}}>×</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={()=>setItems(i=>[...i,emptyItem()])}>+ إضافة صنف</button>
+
+          <div className="form-row" style={{marginTop:16,justifyContent:'space-between',alignItems:'flex-end'}}>
+            <div className="form-group" style={{maxWidth:340}}>
+              <label className="form-label">ملاحظات</label>
+              <textarea className="form-control" rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:260,textAlign:'left',direction:'ltr'}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}><span>المجموع قبل الضريبة:</span><strong>{subtotal.toFixed(3)} {form.currency}</strong></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
+                <span>الضريبة <input type="number" min="0" max="100" value={form.tax_pct} onChange={e=>setF('tax_pct',e.target.value)} style={{width:50,padding:'2px 4px',textAlign:'center',border:'1px solid var(--gray-300)',borderRadius:4}} />%:</span>
+                <strong>{tax_amt.toFixed(3)} {form.currency}</strong>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)',borderTop:'2px solid var(--primary)',paddingTop:6}}>
+                <span>الإجمالي:</span><span>{total.toFixed(3)} {form.currency}</span>
+              </div>
+            </div>
+          </div>
+
+          {po?.id && (
+            <div className="form-row" style={{marginTop:12}}>
+              <div className="form-group">
+                <label className="form-label">الحالة</label>
+                <select className="form-control" style={{width:'auto'}} value={form.status} onChange={e=>setF('status',e.target.value)}>
+                  {Object.entries(PO_STATUSES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!form.supplier_id}>{loading?'...':'💾 حفظ أمر الشراء'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- PODetail ---- */
+function PODetail({ po, onClose, onEdit }) {
+  const [items, setItems] = useState([]);
+  useEffect(()=>{
+    sb.from('purchase_order_items').select('*').eq('po_id',po.id).order('sort_order').then(({data})=>setItems(data||[]));
+  },[po.id]);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:800}}>
+        <div className="modal-header">
+          <span className="modal-title">📋 {po.number} — {po.supplier_name}</span>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <POBadge status={po.status}/>
+            {onEdit && <button className="btn btn-ghost btn-sm" onClick={onEdit}>✏️ تعديل</button>}
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className="modal-body">
+          <div className="form-row mb-4">
+            <div><label className="form-label">التاريخ</label><div>{po.date||'—'}</div></div>
+            <div><label className="form-label">التسليم المتوقع</label><div>{po.expected_delivery||'—'}</div></div>
+            <div><label className="form-label">العملة</label><div>{po.currency}</div></div>
+          </div>
+          <div className="table-wrap">
+            <table className="items-table">
+              <thead><tr><th>#</th><th>الصنف</th><th>الوحدة</th><th>الكمية</th><th>سعر الوحدة</th><th>ضريبة %</th><th>الإجمالي</th></tr></thead>
+              <tbody>
+                {items.map((it,i)=>(
+                  <tr key={it.id}>
+                    <td>{i+1}</td>
+                    <td style={{fontWeight:600}}>{it.item_name}</td>
+                    <td>{it.unit}</td>
+                    <td style={{textAlign:'center'}}>{it.quantity}</td>
+                    <td style={{textAlign:'center'}}>{parseFloat(it.unit_price||0).toFixed(3)}</td>
+                    <td style={{textAlign:'center'}}>{it.tax_pct||0}%</td>
+                    <td style={{fontWeight:700,color:'var(--primary)',textAlign:'center'}}>{parseFloat(it.total||0).toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{textAlign:'left',direction:'ltr',marginTop:12,padding:'10px 16px',background:'#f8fafc',borderRadius:8}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}><span>المجموع:</span><strong>{parseFloat(po.subtotal||0).toFixed(3)} {po.currency}</strong></div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}><span>الضريبة:</span><strong>{parseFloat(po.tax_amt||0).toFixed(3)} {po.currency}</strong></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}><span>الإجمالي:</span><span>{parseFloat(po.total||0).toFixed(3)} {po.currency}</span></div>
+          </div>
+          {po.notes && <div style={{marginTop:12,padding:'10px 14px',background:'#fffbeb',borderRadius:8,fontSize:13,color:'#92400e'}}>{po.notes}</div>}
+        </div>
+        <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>إغلاق</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- SupplierInvoiceForm ---- */
+function SupplierInvoiceForm({ invoice, suppliers, onSave, onClose }) {
+  const today = () => new Date().toISOString().slice(0,10);
+  const [form, setForm] = useState({
+    supplier_id:'', supplier_name:'', po_id:'', po_number:'',
+    supplier_invoice_no:'', date:today(), due_date:'', currency:'JOD',
+    total:'', notes:'', ...(invoice||{})
+  });
+  const [pos, setPos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>{
+    if (form.supplier_id) {
+      sb.from('purchase_orders').select('id,number,total,currency').eq('supplier_id',form.supplier_id).neq('status','cancelled').order('date',{ascending:false})
+        .then(({data})=>setPos(data||[]));
+    } else setPos([]);
+  },[form.supplier_id]);
+
+  const handleSave = async () => {
+    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+    if (!parseFloat(form.total)>0) { toast('يجب إدخال المبلغ الإجمالي','error'); return; }
+    setLoading(true);
+    const payload = {
+      supplier_id:form.supplier_id, supplier_name:form.supplier_name,
+      po_id:form.po_id||null, po_number:form.po_number||null,
+      supplier_invoice_no:form.supplier_invoice_no||null,
+      date:form.date, due_date:form.due_date||null,
+      currency:form.currency||'JOD',
+      total:parseFloat(form.total), paid_amount:parseFloat(invoice?.paid_amount||0),
+      status:invoice?.status||'pending', notes:form.notes||null,
+    };
+    let error;
+    if (invoice?.id) {
+      ({error} = await sb.from('supplier_invoices').update(payload).eq('id',invoice.id));
+    } else {
+      ({error} = await sb.from('supplier_invoices').insert(payload));
+    }
+    setLoading(false);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast(invoice?.id?'تم التعديل':'تم إنشاء الفاتورة','success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:520}}>
+        <div className="modal-header">
+          <span className="modal-title">🧾 {invoice?.id?'تعديل فاتورة مورد':'فاتورة مورد جديدة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المورد <span style={{color:'var(--danger)'}}>*</span></label>
+              <select className="form-control" value={form.supplier_id} onChange={e=>{
+                const s = suppliers.find(x=>x.id===e.target.value);
+                setF('supplier_id',e.target.value); setF('supplier_name',s?.name||'');
+              }}>
+                <option value="">— اختر مورداً —</option>
+                {suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">أمر الشراء (اختياري)</label>
+              <select className="form-control" value={form.po_id||''} onChange={e=>{
+                const p = pos.find(x=>x.id===e.target.value);
+                setF('po_id',e.target.value); setF('po_number',p?.number||'');
+                if(p?.total) setF('total',p.total);
+              }}>
+                <option value="">— بدون ارتباط بـ PO —</option>
+                {pos.map(p=><option key={p.id} value={p.id}>{p.number} ({parseFloat(p.total||0).toFixed(3)} {p.currency})</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">رقم فاتورة المورد</label>
+              <input className="form-control" value={form.supplier_invoice_no||''} onChange={e=>setF('supplier_invoice_no',e.target.value)} placeholder="الرقم الموجود على فاتورتهم"/>
+            </div>
+            <div className="form-group" style={{maxWidth:100}}>
+              <label className="form-label">العملة</label>
+              <select className="form-control" value={form.currency} onChange={e=>setF('currency',e.target.value)}>
+                <option>JOD</option><option>USD</option><option>EUR</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">تاريخ الفاتورة</label>
+              <input type="date" className="form-control" value={form.date} onChange={e=>setF('date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ الاستحقاق</label>
+              <input type="date" className="form-control" value={form.due_date||''} onChange={e=>setF('due_date',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">المبلغ الإجمالي <span style={{color:'var(--danger)'}}>*</span></label>
+            <input type="number" min="0" step="0.001" className="form-control" value={form.total} onChange={e=>setF('total',e.target.value)}/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!form.supplier_id||!form.total}>{loading?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- SupplierPaymentForm ---- */
+function SupplierPaymentForm({ suppliers, onSave, onClose }) {
+  const today = () => new Date().toISOString().slice(0,10);
+  const [form, setForm] = useState({ supplier_id:'', invoice_id:'', date:today(), amount:'', method:'bank_transfer', reference:'', notes:'' });
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(()=>{
+    if(form.supplier_id){
+      sb.from('supplier_invoices').select('id,supplier_invoice_no,date,total,paid_amount,status,currency').eq('supplier_id',form.supplier_id).neq('status','paid').neq('status','cancelled').order('date',{ascending:false})
+        .then(({data})=>setInvoices(data||[]));
+    } else setInvoices([]);
+  },[form.supplier_id]);
+
+  const selectedInv = invoices.find(i=>i.id===form.invoice_id);
+  const balance = selectedInv ? (parseFloat(selectedInv.total||0)-parseFloat(selectedInv.paid_amount||0)).toFixed(3) : null;
+
+  const handleSave = async () => {
+    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+    if (!form.invoice_id)  { toast('يجب اختيار فاتورة','error'); return; }
+    if (!(parseFloat(form.amount)>0)) { toast('يجب إدخال مبلغ صحيح','error'); return; }
+    setLoading(true);
+    try {
+      const {error:pe} = await sb.from('supplier_payments').insert({
+        supplier_id:form.supplier_id, invoice_id:form.invoice_id,
+        date:form.date, amount:parseFloat(form.amount),
+        method:form.method, reference:form.reference||null, notes:form.notes||null,
+      });
+      if(pe) throw pe;
+      // تحديث paid_amount في الفاتورة
+      const inv = selectedInv;
+      const newPaid = parseFloat(inv.paid_amount||0) + parseFloat(form.amount);
+      const newStatus = newPaid >= parseFloat(inv.total||0) ? 'paid' : 'partial';
+      await sb.from('supplier_invoices').update({ paid_amount: newPaid.toFixed(3), status: newStatus }).eq('id', form.invoice_id);
+      toast('تم تسجيل الدفعة','success');
+      onSave();
+    } catch(err){ toast('خطأ: '+err.message,'error'); }
+    finally{ setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:460}}>
+        <div className="modal-header">
+          <span className="modal-title">💸 تسجيل دفعة للمورد</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-group">
+            <label className="form-label">المورد <span style={{color:'var(--danger)'}}>*</span></label>
+            <select className="form-control" value={form.supplier_id} onChange={e=>{ setF('supplier_id',e.target.value); setF('invoice_id',''); }}>
+              <option value="">— اختر مورداً —</option>
+              {suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">الفاتورة <span style={{color:'var(--danger)'}}>*</span></label>
+            <select className="form-control" value={form.invoice_id} onChange={e=>{ setF('invoice_id',e.target.value); const inv=invoices.find(i=>i.id===e.target.value); if(inv) setF('amount',(parseFloat(inv.total||0)-parseFloat(inv.paid_amount||0)).toFixed(3)); }}>
+              <option value="">— اختر فاتورة —</option>
+              {invoices.map(i=>{
+                const bal = (parseFloat(i.total||0)-parseFloat(i.paid_amount||0)).toFixed(3);
+                return <option key={i.id} value={i.id}>{i.supplier_invoice_no||i.id.slice(0,8)} — المتبقي: {bal} {i.currency}</option>;
+              })}
+            </select>
+            {balance && <div style={{fontSize:12,color:'var(--primary)',marginTop:4}}>الرصيد المستحق: <strong>{balance}</strong></div>}
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">تاريخ الدفعة</label>
+              <input type="date" className="form-control" value={form.date} onChange={e=>setF('date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المبلغ <span style={{color:'var(--danger)'}}>*</span></label>
+              <input type="number" min="0" step="0.001" className="form-control" value={form.amount} onChange={e=>setF('amount',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">طريقة الدفع</label>
+              <select className="form-control" value={form.method} onChange={e=>setF('method',e.target.value)}>
+                {Object.entries(PAYMENT_METHODS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المرجع / رقم الشيك</label>
+              <input className="form-control" value={form.reference||''} onChange={e=>setF('reference',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!form.supplier_id||!form.invoice_id||!form.amount}>{loading?'...':'تسجيل الدفعة'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- ProcurementPage ---- */
+function ProcurementPage({ user }) {
+  const [tab, setTab] = useState('suppliers');
+  const [suppliers, setSuppliers] = useState([]);
+  const [pos, setPos] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [viewingSupplier, setViewingSupplier] = useState(null);
+
+  // modals
+  const [showSupForm, setShowSupForm] = useState(false);
+  const [editingSup, setEditingSup] = useState(null);
+  const [showPOForm, setShowPOForm] = useState(false);
+  const [editingPO, setEditingPO] = useState(null);
+  const [viewingPO, setViewingPO] = useState(null);
+  const [showInvForm, setShowInvForm] = useState(false);
+  const [editingInv, setEditingInv] = useState(null);
+  const [showPayForm, setShowPayForm] = useState(false);
+
+  // filters
+  const [supSearch, setSupSearch] = useState('');
+  const [poFilter, setPoFilter] = useState('all');
+  const [poSearch, setPoSearch] = useState('');
+  const [invFilter, setInvFilter] = useState('all');
+
+  const load = async () => {
+    setLoading(true);
+    const [r1,r2,r3,r4] = await Promise.all([
+      sb.from('suppliers').select('*').eq('is_active',true).order('name'),
+      sb.from('purchase_orders').select('*').order('created_at',{ascending:false}),
+      sb.from('supplier_invoices').select('*').order('date',{ascending:false}),
+      sb.from('supplier_payments').select('*').order('date',{ascending:false}),
+    ]);
+    setSuppliers(r1.data||[]); setPos(r2.data||[]); setInvoices(r3.data||[]); setPayments(r4.data||[]);
+    setLoading(false);
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const deleteSup = async (s) => {
+    if(!confirm(`حذف المورد "${s.name}"؟`)) return;
+    const {error}=await sb.from('suppliers').delete().eq('id',s.id);
+    if(error){toast('خطأ: '+error.message,'error');return;}
+    createLog(user,`حذف المورد ${s.name}`,'supplier',s.id,s.name);
+    toast('تم الحذف','success'); load();
+  };
+  const deletePO = async (p) => {
+    if(!confirm(`حذف أمر الشراء "${p.number}"؟`)) return;
+    await sb.from('purchase_order_items').delete().eq('po_id',p.id);
+    const {error}=await sb.from('purchase_orders').delete().eq('id',p.id);
+    if(error){toast('خطأ: '+error.message,'error');return;}
+    createLog(user,`حذف أمر الشراء ${p.number}`,'purchase_order',p.id,p.number);
+    toast('تم الحذف','success'); load();
+  };
+  const deleteInv = async (inv) => {
+    if(!confirm('حذف هذه الفاتورة؟')) return;
+    const {error}=await sb.from('supplier_invoices').delete().eq('id',inv.id);
+    if(error){toast('خطأ: '+error.message,'error');return;}
+    toast('تم الحذف','success'); load();
+  };
+  const deletePayment = async (p) => {
+    if(!confirm('حذف هذه الدفعة؟')) return;
+    // استرداد قيمة الدفعة وتحديث الفاتورة
+    const inv = invoices.find(i=>i.id===p.invoice_id);
+    if(inv){
+      const newPaid = Math.max(0, parseFloat(inv.paid_amount||0)-parseFloat(p.amount||0));
+      const newStatus = newPaid <= 0 ? 'pending' : newPaid >= parseFloat(inv.total||0) ? 'paid' : 'partial';
+      await sb.from('supplier_invoices').update({paid_amount:newPaid.toFixed(3),status:newStatus}).eq('id',inv.id);
+    }
+    await sb.from('supplier_payments').delete().eq('id',p.id);
+    toast('تم الحذف','success'); load();
+  };
+
+  const changePOStatus = async (p, status) => {
+    await sb.from('purchase_orders').update({status}).eq('id',p.id);
+    createLog(user,`غيّر حالة أمر الشراء ${p.number} إلى "${PO_STATUSES[status]||status}"`,'purchase_order',p.id,p.number);
+    toast('تم تحديث الحالة','success'); load();
+  };
+
+  const tabStyle = (t) => ({
+    padding:'8px 18px', border:'none', cursor:'pointer', fontWeight:700, fontSize:13,
+    borderBottom: tab===t ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+    color: tab===t ? 'var(--primary)' : 'var(--gray-500)',
+    background:'transparent', whiteSpace:'nowrap',
+  });
+
+  const hdrCell = { padding:'10px 14px', background:'linear-gradient(135deg,#1C6A99,#2B8FC4)', color:'white', fontSize:11, fontWeight:800 };
+  const rowStyle = (i) => ({ borderBottom:'1px solid #f0f4f8', background:i%2===0?'#fff':'#fafcfd', alignItems:'center' });
+
+  // فلترة
+  const filteredSup = suppliers.filter(s=>!supSearch || s.name.toLowerCase().includes(supSearch.toLowerCase()) || (s.code||'').includes(supSearch) || (s.city||'').includes(supSearch));
+  const filteredPO  = pos.filter(p=>(poFilter==='all'||p.status===poFilter)&&(!poSearch||p.number?.includes(poSearch)||p.supplier_name?.toLowerCase().includes(poSearch.toLowerCase())));
+  const filteredInv = invoices.filter(i=>invFilter==='all'||i.status===invFilter);
+
+  const totalPayable = invoices.filter(i=>i.status!=='cancelled').reduce((s,i)=>s+parseFloat(i.total||0)-parseFloat(i.paid_amount||0),0);
+
+  if (viewingSupplier) return (
+    <React.Fragment>
+      {showSupForm && <SupplierForm supplier={editingSup} onSave={async()=>{
+        setShowSupForm(false);
+        await load();
+        const{data}=await sb.from('suppliers').select('*').eq('id',editingSup.id).single();
+        if(data) setViewingSupplier(data);
+      }} onClose={()=>setShowSupForm(false)}/>}
+      <SupplierDetail
+        supplier={viewingSupplier}
+        user={user}
+        onBack={()=>setViewingSupplier(null)}
+        onEdit={()=>{ setEditingSup(viewingSupplier); setShowSupForm(true); }}
+      />
+    </React.Fragment>
+  );
+
+  return (
+    <div>
+
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 20px',background:'#fff',borderRadius:'12px 12px 0 0',border:'1.5px solid #e2edf5',borderBottom:'none',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+        <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🏭</div>
+        <div>
+          <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>وحدة المشتريات والموردين</div>
+          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{suppliers.length} مورد · {pos.length} أمر شراء · مستحق: {totalPayable.toFixed(3)} JOD</div>
+        </div>
+        <div style={{flex:1}}/>
+        {tab==='suppliers' && <>
+          <input className="search-input" placeholder="بحث في الموردين..." value={supSearch} onChange={e=>setSupSearch(e.target.value)} style={{minWidth:240}}/>
+          {hasPerm(user,'suppliers_create') && <button className="btn btn-primary" onClick={()=>{setEditingSup(null);setShowSupForm(true);}}>➕ مورد جديد</button>}
+        </>}
+        {tab==='po' && <>
+          <input className="search-input" placeholder="بحث برقم أو مورد..." value={poSearch} onChange={e=>setPoSearch(e.target.value)} style={{minWidth:220}}/>
+          <select className="form-control" style={{width:'auto'}} value={poFilter} onChange={e=>setPoFilter(e.target.value)}>
+            <option value="all">كل الحالات</option>
+            {Object.entries(PO_STATUSES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+          {hasPerm(user,'suppliers_create') && <button className="btn btn-primary" onClick={()=>{setEditingPO(null);setShowPOForm(true);}}>➕ أمر شراء</button>}
+        </>}
+        {tab==='invoices' && <>
+          <select className="form-control" style={{width:'auto'}} value={invFilter} onChange={e=>setInvFilter(e.target.value)}>
+            <option value="all">كل الحالات</option>
+            {Object.entries(SI_STATUSES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+          {hasPerm(user,'supplier_invoices_create') && <button className="btn btn-primary" onClick={()=>{setEditingInv(null);setShowInvForm(true);}}>➕ فاتورة مورد</button>}
+        </>}
+        {tab==='payments' && hasPerm(user,'supplier_payments_create') && <button className="btn btn-primary" onClick={()=>setShowPayForm(true)}>➕ دفعة جديدة</button>}
+      </div>
+
+      {/* Tabs */}
+      <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5',overflowX:'auto'}}>
+        <button style={tabStyle('suppliers')} onClick={()=>setTab('suppliers')}>🏭 الموردون ({suppliers.length})</button>
+        <button style={tabStyle('po')} onClick={()=>setTab('po')}>📋 أوامر الشراء ({pos.length})</button>
+        <button style={tabStyle('invoices')} onClick={()=>setTab('invoices')}>🧾 فواتير الموردين ({invoices.length})</button>
+        <button style={tabStyle('payments')} onClick={()=>setTab('payments')}>💸 المدفوعات ({payments.length})</button>
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (<>
+
+        {/* ===== SUPPLIERS ===== */}
+        {tab==='suppliers' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+            <div style={{display:'grid',gridTemplateColumns:'120px 1fr 130px 120px 110px 130px',padding:'10px 18px',borderRadius:'12px 12px 0 0',...hdrCell}}>
+              <div>الرمز</div><div>اسم المورد</div><div>الهاتف</div><div>جهة الاتصال</div><div>المدينة</div><div>إجراءات</div>
+            </div>
+            {filteredSup.length===0 ? (
+              <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>🏭</div><p>{suppliers.length===0?'لا يوجد موردون بعد — أضف أول مورد':'لا توجد نتائج'}</p></div>
+            ):filteredSup.map((s,i)=>(
+              <div key={s.id} style={{display:'grid',gridTemplateColumns:'120px 1fr 130px 120px 110px 130px',padding:'11px 18px',...rowStyle(i)}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#1C6A99'}}>{s.code||'—'}</div>
+                <div>
+                  <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{s.name}</div>
+                  {s.email && <div style={{fontSize:11,color:'var(--gray-400)'}}>{s.email}</div>}
+                </div>
+                <div style={{fontSize:12}}>{s.phone||'—'}</div>
+                <div style={{fontSize:12}}>{s.contact_name||'—'}</div>
+                <div style={{fontSize:12,color:'var(--gray-500)'}}>{s.city||'—'}</div>
+                <div style={{display:'flex',gap:4}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setViewingSupplier(s)} style={{padding:'3px 7px'}} title="عرض تفاصيل المورد">👁</button>
+                  {hasPerm(user,'suppliers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSup(s);setShowSupForm(true);}} style={{padding:'3px 7px'}}>✏️</button>}
+                  {hasPerm(user,'suppliers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSup(s)} style={{padding:'3px 7px'}}>🗑</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ===== PURCHASE ORDERS ===== */}
+        {tab==='po' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+            <div style={{display:'grid',gridTemplateColumns:'130px 1fr 110px 110px 130px 130px',padding:'10px 18px',borderRadius:'12px 12px 0 0',...hdrCell}}>
+              <div>الرقم</div><div>المورد</div><div>التاريخ</div><div>الإجمالي</div><div>الحالة</div><div>إجراءات</div>
+            </div>
+            {filteredPO.length===0 ? (
+              <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>📋</div><p>{pos.length===0?'لا توجد أوامر شراء — أنشئ أول أمر':'لا توجد نتائج'}</p></div>
+            ):filteredPO.map((p,i)=>(
+              <div key={p.id} style={{display:'grid',gridTemplateColumns:'130px 1fr 110px 110px 130px 130px',padding:'11px 18px',...rowStyle(i)}}>
+                <div style={{fontWeight:800,color:'#1C6A99',fontSize:13}}>{p.number}</div>
+                <div style={{fontWeight:600,fontSize:13}}>{p.supplier_name}</div>
+                <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--primary)'}}>{parseFloat(p.total||0).toFixed(3)} {p.currency}</div>
+                <div>
+                  {hasPerm(user,'suppliers_edit')
+                    ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={p.status} onChange={e=>changePOStatus(p,e.target.value)}>
+                        {Object.entries(PO_STATUSES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                      </select>
+                    : <POBadge status={p.status}/>}
+                </div>
+                <div style={{display:'flex',gap:4}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setViewingPO(p)} style={{padding:'3px 7px'}}>👁</button>
+                  {hasPerm(user,'suppliers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingPO(p);setShowPOForm(true);}} style={{padding:'3px 7px'}}>✏️</button>}
+                  {hasPerm(user,'suppliers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deletePO(p)} style={{padding:'3px 7px'}}>🗑</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ===== SUPPLIER INVOICES ===== */}
+        {tab==='invoices' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 120px 110px 110px 110px 110px 100px',padding:'10px 18px',borderRadius:'12px 12px 0 0',...hdrCell}}>
+              <div>المورد</div><div>رقم فاتورة المورد</div><div>التاريخ</div><div>الإجمالي</div><div>المدفوع</div><div>الحالة</div><div>إجراءات</div>
+            </div>
+            {filteredInv.length===0 ? (
+              <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>🧾</div><p>{invoices.length===0?'لا توجد فواتير موردين':'لا توجد نتائج'}</p></div>
+            ):filteredInv.map((inv,i)=>{
+              const bal = (parseFloat(inv.total||0)-parseFloat(inv.paid_amount||0)).toFixed(3);
+              return (
+                <div key={inv.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 110px 110px 110px 110px 100px',padding:'11px 18px',...rowStyle(i)}}>
+                  <div>
+                    <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{inv.supplier_name||'—'}</div>
+                    {inv.po_number && <div style={{fontSize:11,color:'var(--gray-400)'}}>PO: {inv.po_number}</div>}
+                  </div>
+                  <div style={{fontSize:12,fontWeight:600}}>{inv.supplier_invoice_no||'—'}</div>
+                  <div style={{fontSize:12,color:'var(--gray-500)'}}>{inv.date}</div>
+                  <div style={{fontSize:13,fontWeight:700}}>{parseFloat(inv.total||0).toFixed(3)}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#16a34a'}}>{parseFloat(inv.paid_amount||0).toFixed(3)}</div>
+                  <div><SIBadge status={inv.status}/></div>
+                  <div style={{display:'flex',gap:4}}>
+                    {hasPerm(user,'supplier_invoices_create') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingInv(inv);setShowInvForm(true);}} style={{padding:'3px 7px'}}>✏️</button>}
+                    {hasPerm(user,'suppliers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteInv(inv)} style={{padding:'3px 7px'}}>🗑</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ===== PAYMENTS ===== */}
+        {tab==='payments' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 110px 120px 100px',padding:'10px 18px',borderRadius:'12px 12px 0 0',...hdrCell}}>
+              <div>المورد</div><div>التاريخ</div><div>المبلغ</div><div>طريقة الدفع</div><div>المرجع</div><div>إجراءات</div>
+            </div>
+            {payments.length===0 ? (
+              <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>💸</div><p>لا توجد مدفوعات مسجّلة بعد</p></div>
+            ):payments.map((p,i)=>{
+              const sup = suppliers.find(s=>s.id===p.supplier_id);
+              return (
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 110px 120px 100px',padding:'11px 18px',...rowStyle(i)}}>
+                  <div style={{fontWeight:700,fontSize:13}}>{sup?.name||'—'}</div>
+                  <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>{parseFloat(p.amount||0).toFixed(3)}</div>
+                  <div style={{fontSize:12}}>{PAYMENT_METHODS[p.method]||p.method||'—'}</div>
+                  <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.reference||'—'}</div>
+                  <div>
+                    {hasPerm(user,'suppliers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deletePayment(p)} style={{padding:'3px 7px'}}>🗑</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+      </>)}
+
+      {/* Modals */}
+      {showSupForm && <SupplierForm supplier={editingSup} onSave={()=>{setShowSupForm(false);load();}} onClose={()=>setShowSupForm(false)}/>}
+      {showPOForm && <POForm po={editingPO} onSave={()=>{setShowPOForm(false);load();}} onClose={()=>setShowPOForm(false)}/>}
+      {viewingPO && <PODetail po={viewingPO} onClose={()=>setViewingPO(null)} onEdit={hasPerm(user,'suppliers_edit')?()=>{setEditingPO(viewingPO);setViewingPO(null);setShowPOForm(true);}:null}/>}
+      {showInvForm && <SupplierInvoiceForm invoice={editingInv} suppliers={suppliers} onSave={()=>{setShowInvForm(false);load();}} onClose={()=>setShowInvForm(false)}/>}
+      {showPayForm && <SupplierPaymentForm suppliers={suppliers} onSave={()=>{setShowPayForm(false);load();}} onClose={()=>setShowPayForm(false)}/>}
+    </div>
+  );
+}
+
 /* ===================== APP ===================== *//* ===================== APP ===================== */
 /* ===================== NOTIFICATION BELL ===================== */
 function NotificationBell({ userId }) {
@@ -7470,6 +8700,7 @@ function App() {
           {page==='quotes' && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
           {page==='invoices' && <InvoicesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='orders' && hasPerm(user,'orders_access') && <OrdersPage user={user} orders={orders} onReload={reload}/>}
+          {page==='procurement' && hasPerm(user,'suppliers_access') && <ProcurementPage user={user}/>}
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
           {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
