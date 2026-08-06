@@ -1058,7 +1058,7 @@ const PQ_PAGE = { h: 297, top: 6, footBottom: 5, footGap: 4 };  // أبعاد ب
 function PqDocHeader() {
   return (
     <>
-      <div className="print-header">
+      <div className="print-header" dir="rtl" style={{direction:'rtl'}}>
         <div className="print-company-right">
           <div className="co-name-ar">{COMPANY.name_ar}</div>
         </div>
@@ -1191,12 +1191,16 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
 
   // نوع العرض: مفصّل (بأعمدة الضريبة) أو مبسّط
   const detailed = doc.detailed_layout !== false;
+  // لغة العرض: ar = عربي RTL | en = إنجليزي LTR
+  const isEn = doc.quote_lang === 'en';
   // مجموعات المصادر البديلة للطباعة
   const printMeta = itemsGroupMeta(items);
   const printCounted = pickCountedIndices(items, doc.tax_pct ?? 16);
   const hasOptions = detailed && printMeta.some(m => m.groupSize > 1);
 
-  const docTitle = docType === 'invoice' ? 'فاتورة — TAX INVOICE' : docType === 'order' ? 'طلبية — PURCHASE ORDER' : 'عرض أسعار — OFFER';
+  const docTitle = isEn
+    ? (docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'PRICE QUOTATION — OFFER')
+    : (docType === 'invoice' ? 'فاتورة — TAX INVOICE' : docType === 'order' ? 'طلبية — PURCHASE ORDER' : 'عرض أسعار — OFFER');
 
   /* صف بنود واحد — يُستخدم مرتين: في حاوية القياس وفي الصفحات النهائية */
   const renderRow = (item, i) => {
@@ -1210,7 +1214,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
       <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
         <td>{detailed ? (m.no ?? '↳') : i+1}</td>
         <td className="item-name">
-          {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>مصدر بديل — </span>}
+          {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'مصدر بديل — '}</span>}
           {item.item_name}
           {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
         </td>
@@ -1233,7 +1237,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
 
   /* رأس الصفحة الأولى: ترويسة الشركة + عنوان الوثيقة + بيانات العميل */
   const clientBox = (
-    <div className="print-client-box">
+    <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
       <div className="print-client-grid">
         <div className="field-row"><label>السادة:</label> <strong>{doc.customer_name}{doc.customer_name ? ' المحترمين' : ''}</strong></div>
         <div className="field-row"><label>{docType==='order' ? 'رقم الطلب:' : 'رقم العرض:'}</label> <strong style={{color:'var(--primary)'}}>{doc.number}</strong></div>
@@ -1263,12 +1267,21 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     <>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
         <div style={{fontSize:11,color:'#888',maxWidth:380}}>
-          <p>* السعر بالدينار الأردني والأسعار شاملة ضريبة المبيعات</p>
-          {hasOptions && <p>* البنود المعلَّمة (مصدر بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)</p>}
-          <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
-          <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
-          <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
-          {docType==='invoice' && <p style={{marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included ( 16%) Reg No.{COMPANY.tax_no}</p>}
+          {isEn ? <>
+            <p style={{whiteSpace:'nowrap'}}>* Prices in JOD, inclusive of sales tax.</p>
+            {hasOptions && <p style={{whiteSpace:'nowrap'}}>* Marked items (✓) are the selected option; alternatives for reference only.</p>}
+            <p style={{whiteSpace:'nowrap'}}>* All goods imported per our quality standards.</p>
+            <p style={{whiteSpace:'nowrap'}}>* Devices: 1-year manufacturer warranty (excl. breakage, fire & misuse).</p>
+            <p style={{whiteSpace:'nowrap'}}>* For inquiries, contact us via our official channels.</p>
+            {docType==='invoice' && <p style={{whiteSpace:'nowrap',marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included (16%) — Reg No. {COMPANY.tax_no}</p>}
+          </> : <>
+            <p>* السعر بالدينار الأردني والأسعار شاملة ضريبة المبيعات</p>
+            {hasOptions && <p>* البنود المعلَّمة (مصدر بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)</p>}
+            <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
+            <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
+            <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
+            {docType==='invoice' && <p style={{marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included ( 16%) Reg No.{COMPANY.tax_no}</p>}
+          </>}
         </div>
         <div className="print-totals">
           <table>
@@ -1284,7 +1297,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
       </div>
       {doc.notes && (
         <div className="print-notes">
-          <strong>ملاحظات: </strong>{doc.notes}
+          <strong>{isEn ? 'Notes: ' : 'ملاحظات: '}</strong>{doc.notes}
         </div>
       )}
     </>
@@ -1401,7 +1414,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
         <div className="modal-body pq-preview-body" id="print-content">
           {/* حاوية قياس مخفية — بعرض منطقة المحتوى الفعلية داخل الصفحة */}
           <div className="pq-measure" ref={measureRef} aria-hidden="true">
-            <div className="pq-measure-inner">
+            <div className="pq-measure-inner" dir={isEn ? 'ltr' : 'rtl'} style={isEn ? {direction:'ltr'} : undefined}>
               <div className="pqm-head">{firstHeader}</div>
               <div className="pqm-conthead"><PqContHeader docTitle={docTitle} number={doc.number}/></div>
               <div className="pqm-rows"><PqItemsTable detailed={detailed}>{items.map((it,i)=>renderRow(it,i))}</PqItemsTable></div>
@@ -1413,7 +1426,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
           {/* الصفحات النهائية — ما تراه هنا هو ما يُطبع حرفياً */}
           {(pages || [{rows: items.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
             <div className="pq-page" key={pi}>
-              <div className="pq-page-inner">
+              <div className="pq-page-inner" dir={isEn ? 'ltr' : 'rtl'} style={isEn ? {direction:'ltr'} : undefined}>
                 {pg.first ? firstHeader : <PqContHeader docTitle={docTitle} number={doc.number}/>}
                 {pg.rows.length > 0 && <PqItemsTable detailed={detailed}>{pg.rows.map(i => renderRow(items[i], i))}</PqItemsTable>}
                 {pg.tail && tailBlock}
@@ -1426,7 +1439,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
                 </div>
               )}
               <PqFooterBar/>
-              {arr.length > 1 && <div className="pq-pageno">صفحة {pi+1} من {arr.length}</div>}
+              {arr.length > 1 && <div className="pq-pageno">{isEn ? `Page ${pi+1} of ${arr.length}` : `صفحة ${pi+1} من ${arr.length}`}</div>}
             </div>
           ))}
         </div>
@@ -1478,15 +1491,88 @@ function ComboInput({ value, onChange, suggestions, placeholder, className }) {
   );
 }
 
+/* ===================== QUOTE TYPE SELECTION DIALOG ===================== */
+function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
+  const [layout, setLayout] = useState('simple');
+  const [lang, setLang]     = useState('ar');
+
+  const card = (active) => ({
+    flex: 1, padding: '16px 12px', border: `2px solid ${active ? 'var(--primary)' : 'var(--gray-200)'}`,
+    borderRadius: 12, cursor: 'pointer', background: active ? 'var(--primary-light)' : '#fff',
+    transition: 'border-color .15s, background .15s', textAlign: 'center',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+    outline: 'none', fontFamily: 'inherit',
+  });
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth: 460}}>
+        <div className="modal-header">
+          <span className="modal-title" style={{fontSize: 16, fontWeight: 800}}>📋 عرض سعر جديد</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding: '24px 26px', display:'flex', flexDirection:'column', gap:22}}>
+
+          {/* اختيار نوع التخطيط */}
+          <div>
+            <div style={{fontSize: 13, fontWeight: 800, color: 'var(--gray-600)', marginBottom: 12, display:'flex', alignItems:'center', gap: 7}}>
+              <span>📐</span> نوع التخطيط
+            </div>
+            <div style={{display: 'flex', gap: 12}}>
+              <button type="button" onClick={() => setLayout('simple')} style={card(layout === 'simple')}>
+                <span style={{fontSize: 30}}>📄</span>
+                <span style={{fontWeight: 700, fontSize: 14, color: layout==='simple' ? 'var(--primary)' : 'var(--gray-700)'}}>مبسّط</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)', lineHeight: 1.5}}>سعر الوحدة + الإجمالي فقط</span>
+              </button>
+              <button type="button" onClick={() => setLayout('detailed')} style={card(layout === 'detailed')}>
+                <span style={{fontSize: 30}}>📊</span>
+                <span style={{fontWeight: 700, fontSize: 14, color: layout==='detailed' ? 'var(--primary)' : 'var(--gray-700)'}}>مفصّل</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)', lineHeight: 1.5}}>بأعمدة الضريبة والمصادر البديلة</span>
+              </button>
+            </div>
+          </div>
+
+          {/* اختيار اللغة */}
+          <div>
+            <div style={{fontSize: 13, fontWeight: 800, color: 'var(--gray-600)', marginBottom: 12, display:'flex', alignItems:'center', gap: 7}}>
+              <span>🌐</span> لغة العرض
+            </div>
+            <div style={{display: 'flex', gap: 12}}>
+              <button type="button" onClick={() => setLang('ar')} style={card(lang === 'ar')}>
+                <span style={{fontSize: 30}}>🇯🇴</span>
+                <span style={{fontWeight: 700, fontSize: 14, color: lang==='ar' ? 'var(--primary)' : 'var(--gray-700)'}}>عربي</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)'}}>من اليمين لليسار</span>
+              </button>
+              <button type="button" onClick={() => setLang('en')} style={card(lang === 'en')}>
+                <span style={{fontSize: 30}}>🇬🇧</span>
+                <span style={{fontWeight: 700, fontSize: 14, color: lang==='en' ? 'var(--primary)' : 'var(--gray-700)'}}>English</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)'}}>Left to Right</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button type="button" className="btn btn-primary" onClick={() => onConfirm({ layout, lang })}>
+            إنشاء العرض ←
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== QUOTE FORM (عرض + فاتورة) ===================== */
-function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
+function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave, onClose }) {
   const [form, setForm] = useState(() => {
     const base = {
       customer_name:'', attention:'قسم المشتريات المحترمين', phone:'', address:'',
       date: today(), reference:'', currency:'JOD',
       delivery:'PROMPT', notes:'', terms:'', valid_until:'',
       discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
-      quote_type: 'quote', detailed_layout: false,
+      quote_type: 'quote', detailed_layout: false, quote_lang: 'ar',
+      ...(initialValues || {}),
       ...(editQuote || {})
     };
     // مدة الصلاحية إلزامية — تُعبّأ دائماً بالمدة الافتراضية
@@ -1778,21 +1864,37 @@ function QuoteForm({ user, quote: editQuote, mode='quote', onSave, onClose }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          {/* اختيار نوع العرض قبل التعبئة — يحدّد أعمدة الجدول والطباعة */}
-          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',background:'#F0F8FD',border:'1.5px solid #B8DCF0',borderRadius:10,padding:'10px 14px',marginBottom:18}}>
-            <span style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>نوع العرض:</span>
+          {/* شريط خيارات العرض — التخطيط + اللغة */}
+          <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',background:'#F0F8FD',border:'1.5px solid #B8DCF0',borderRadius:10,padding:'10px 14px',marginBottom:18}}>
+            {/* نوع التخطيط */}
+            <span style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>التخطيط:</span>
             <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)'}}>
               <button type="button" onClick={()=>setF('detailed_layout',true)}
-                style={{padding:'7px 14px',fontSize:12.5,fontWeight:700,border:'none',cursor:'pointer',background:detailed?'var(--primary)':'#fff',color:detailed?'#fff':'var(--primary)'}}>
-                📊 مفصّل (بأعمدة الضريبة)
+                style={{padding:'6px 13px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:detailed?'var(--primary)':'#fff',color:detailed?'#fff':'var(--primary)'}}>
+                📊 مفصّل
               </button>
               <button type="button" onClick={()=>setF('detailed_layout',false)}
-                style={{padding:'7px 14px',fontSize:12.5,fontWeight:700,border:'none',cursor:'pointer',background:!detailed?'var(--primary)':'#fff',color:!detailed?'#fff':'var(--primary)'}}>
+                style={{padding:'6px 13px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:!detailed?'var(--primary)':'#fff',color:!detailed?'#fff':'var(--primary)'}}>
                 📄 مبسّط
               </button>
             </div>
+            {/* فاصل */}
+            <span style={{color:'var(--gray-300)',fontSize:20,lineHeight:1}}>|</span>
+            {/* اللغة */}
+            <span style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>اللغة:</span>
+            <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)'}}>
+              <button type="button" onClick={()=>setF('quote_lang','ar')}
+                style={{padding:'6px 13px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.quote_lang!=='en'?'var(--primary)':'#fff',color:form.quote_lang!=='en'?'#fff':'var(--primary)'}}>
+                🇯🇴 عربي
+              </button>
+              <button type="button" onClick={()=>setF('quote_lang','en')}
+                style={{padding:'6px 13px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.quote_lang==='en'?'var(--primary)':'#fff',color:form.quote_lang==='en'?'#fff':'var(--primary)'}}>
+                🇬🇧 English
+              </button>
+            </div>
             <span style={{fontSize:11,color:'var(--gray-500)'}}>
-              {detailed ? 'سعر بدون ضريبة + الضريبة% + سعر شامل + إجمالي شامل + مصادر بديلة' : 'سعر الوحدة + الإجمالي فقط (الشكل المبسّط)'}
+              {detailed ? 'مفصّل: بأعمدة الضريبة والمصادر البديلة' : 'مبسّط: سعر الوحدة + الإجمالي'}
+              {form.quote_lang==='en' ? ' — English LTR' : ' — عربي'}
             </span>
           </div>
           {/* بيانات العميل */}
@@ -2370,6 +2472,8 @@ function QuotesList({ user, quotes, onReload }) {
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [showTypeDialog, setShowTypeDialog] = useState(false);
+  const [newQuoteDefaults, setNewQuoteDefaults] = useState(null);
   const [tab, setTab] = useState('official'); // 'official' | 'drafts'
 
   const canViewIssuer = hasPerm(user, 'quotes_view_issuer');
@@ -2518,7 +2622,7 @@ function QuotesList({ user, quotes, onReload }) {
       )}
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>عروض الأسعار</h2>
-        {hasPerm(user, 'quotes_create') && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ عرض جديد</button>}
+        {hasPerm(user, 'quotes_create') && <button className="btn btn-primary" onClick={()=>setShowTypeDialog(true)}>+ عرض جديد</button>}
       </div>
 
       {/* تبويبات */}
@@ -2656,7 +2760,17 @@ function QuotesList({ user, quotes, onReload }) {
       </div>
       )}
 
-      {showForm && <QuoteForm user={user} onSave={()=>{setShowForm(false);onReload();}} onClose={()=>setShowForm(false)}/>}
+      {showTypeDialog && (
+        <QuoteTypeSelectionDialog
+          onConfirm={({layout, lang}) => {
+            setNewQuoteDefaults({ detailed_layout: layout === 'detailed', quote_lang: lang });
+            setShowTypeDialog(false);
+            setShowForm(true);
+          }}
+          onClose={() => setShowTypeDialog(false)}
+        />
+      )}
+      {showForm && <QuoteForm user={user} initialValues={newQuoteDefaults} onSave={()=>{setShowForm(false);setNewQuoteDefaults(null);onReload();}} onClose={()=>{setShowForm(false);setNewQuoteDefaults(null);}}/>}
       {editing && !editing._convertToInvoice && (
         <QuoteForm user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
