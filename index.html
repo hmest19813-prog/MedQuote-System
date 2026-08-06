@@ -206,6 +206,8 @@ a { text-decoration: none; color: inherit; }
 .btn-purple { background: #7c3aed; color: white; }
 .btn-ghost { background: transparent; color: var(--gray-600); border: 1px solid var(--gray-200); }
 .btn-ghost:hover { background: var(--gray-50); }
+.btn-whatsapp { background: #25d366; color: white; border: none; }
+.btn-whatsapp:hover { background: #1ebe5d; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 
 /* ===================== TABLE ===================== */
@@ -1391,6 +1393,60 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     printDoc('print-content', pdfTitle);
   };
 
+  const sendViaWhatsApp = () => {
+    const handleAfterPrint = () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      setTimeout(() => {
+        const grandTotal = (parseFloat(doc.subtotal||0) - parseFloat(doc.discount_amt||0)).toFixed(2);
+        const nett      = parseFloat(doc.nett_price||0).toFixed(3);
+        const currency  = doc.currency || 'JOD';
+        const docLabel  = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
+
+        const lines = [
+          `السادة ${doc.customer_name || ''} المحترمين،`,
+          doc.attention ? `عناية: ${doc.attention}` : '',
+          '',
+          'تحية طيبة وبعد،',
+          '',
+          `يسعدنا أن نتقدم إليكم بـ${docLabel} رقم (${doc.number}) بتاريخ ${doc.date}.`,
+          '',
+          `📋 الإجمالي (قبل الضريبة): ${grandTotal} ${currency}`,
+          `💰 الصافي (شامل الضريبة): ${nett} ${currency}`,
+          '',
+          '📎 ملف PDF مرفق في هذه الرسالة.',
+          '',
+          'نأمل أن يلقى عرضنا قبولكم، ونحن رهن إشارتكم لأي استفسار.',
+          '',
+          'مع التقدير،',
+          'مؤسسة الحياة العلمية الطبية الكيماوية',
+          `📞 ${COMPANY.tel}`,
+          `🌐 ${COMPANY.website}`,
+        ].filter(l => l !== null);
+
+        // تنظيف رقم الهاتف وتحويله لتنسيق دولي أردني
+        let rawPhone = (doc.phone || '').replace(/[\s\-().]/g, '');
+        let waPhone = '';
+        if (rawPhone) {
+          if (rawPhone.startsWith('00')) rawPhone = rawPhone.slice(2);
+          if (rawPhone.startsWith('+'))  rawPhone = rawPhone.slice(1);
+          if (rawPhone.startsWith('962')) waPhone = rawPhone;
+          else if (rawPhone.startsWith('0')) waPhone = '962' + rawPhone.slice(1);
+          else waPhone = '962' + rawPhone;
+        }
+
+        const text = encodeURIComponent(lines.join('\n'));
+        const url  = waPhone
+          ? `https://wa.me/${waPhone}?text=${text}`
+          : `https://wa.me/?text=${text}`;
+        window.open(url, '_blank');
+      }, 200);
+    };
+
+    window.addEventListener('afterprint', handleAfterPrint);
+    const pdfTitle = `${doc.customer_name || 'عميل'} - ${doc.number || ''}`.trim().replace(/\s+/g,' ');
+    printDoc('print-content', pdfTitle);
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920}}>
@@ -1403,6 +1459,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             {onConfirmDraft && <button className="btn btn-success btn-sm" onClick={onConfirmDraft}>✅ اعتماد العرض</button>}
             <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
+            <button className="btn btn-whatsapp btn-sm" onClick={sendViaWhatsApp} title="احفظ PDF من نافذة الطباعة ثم سيفتح واتساب مع رسالة جاهزة — أرفق الملف يدوياً">💬 واتساب</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
