@@ -235,7 +235,7 @@ th:last-child, td:last-child { border-left: none; }
 .sig-toggle-btn.active { background: #15803d; color: white; border-color: #15803d; }
 /* الختم */
 .stamp-layer-main { display: block; width: 300px; opacity: 0.90; pointer-events: none; }
-.letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; }
+.letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; border: 1.5px solid #999; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
 .letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; direction: rtl; }
@@ -7827,7 +7827,7 @@ function LetterPrint({ letter, onClose }) {
 <body>
   ${headerHtml}
   <table class="info-table" style="margin:20px 0 0 auto;">
-    <tr><td class="info-label">السادة</td><td style="min-width:200px;">${letter.recipient}${letter.recipient?.trim() ? ' المحترمين' : ''}</td></tr>
+    <tr><td class="info-label">السادة</td><td style="min-width:200px;">${letter.recipient}</td></tr>
     <tr><td class="info-label">عناية</td><td>${letter.attention||'—'}</td></tr>
     <tr><td class="info-label">التاريخ</td><td>${fmtD(letter.date)}</td></tr>
     <tr><td class="info-label">الموضوع</td><td><b>${letter.subject}</b></td></tr>
@@ -7852,78 +7852,43 @@ function LetterPrint({ letter, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:850}}>
-        <div className="modal-header">
+      <div className="modal" style={{maxWidth:900}}>
+        <div className="modal-header no-print">
           <span className="modal-title">كتاب رسمي — {letter.number}</span>
           <div className="flex gap-2">
             <button className="btn btn-primary btn-sm" onClick={handlePrint}>🖨️ طباعة / PDF</button>
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
-        <div className="modal-body" id="letter-print-content" style={{padding:0}}>
-          <div style={{display:'flex',flexDirection:'column',minHeight:'277mm',padding:'14px 36px 28px',background:'white'}}><div style={{flex:1}}>
-            {withHeader ? (
-              <>
-                <div className="print-header">
-                  <div className="print-company-right">
-                    <div className="co-name-ar">{COMPANY.name_ar}</div>
-                  </div>
-                  <div className="print-center">
-                    <img src={LOGO_SRC} className="hayat-logo" alt="Logo"/>
-                  </div>
-                  <div className="print-company-left">
-                    <div className="co-name-hayat" dir="ltr">HAYAT</div>
-                    <div className="co-name-en" dir="ltr">Scientific Medical &amp; Chemical Corp.</div>
-                  </div>
-                </div>
-                <hr className="print-divider"/>
-              </>
-            ) : (
-              <div className="letter-preprinted-spacer-top"/>
-            )}
+        <div className="modal-body pq-preview-body" id="letter-print-content">
+          <div className="pq-page">
+            <div className="pq-page-inner">
 
-            <table className="letter-info-table">
-              <tbody>
-                <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}{letter.recipient?.trim() ? ' المحترمين' : ''}</td></tr>
-                <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
-                <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
-                <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
-                <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
-              </tbody>
-            </table>
+              {withHeader
+                ? <PqDocHeader/>
+                : <div className="letter-preprinted-spacer-top"/>}
 
-            <div className="letter-body" dangerouslySetInnerHTML={{__html: letter.body}}/>
+              <table className="letter-info-table">
+                <tbody>
+                  <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
+                  <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
+                  <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
+                  <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
+                  <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
+                </tbody>
+              </table>
 
-            <div className="letter-sig">
-              {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
-              {letter.signer_name && <div className="sig-name">{letter.signer_name}</div>}
-            </div>
-          </div>
+              <div className="letter-body" dangerouslySetInnerHTML={{__html: letter.body}}/>
 
-          <div>
-            {withHeader ? (
-              <div className="print-footer-bar">
-                <div className="print-footer-right">
-                  <div className="print-footer-label"></div>
-                  <div>Amman - King Hussein Street, Building 22</div>
-                  <div>P.O Box 927817, Zip 11190, Jordan</div>
-                </div>
-                <div className="print-footer-center">
-                  <div className="print-footer-label">تواصل معنا</div>
-                  <div>{COMPANY.website}</div>
-                  <div>{COMPANY.email}</div>
-                </div>
-                <div className="print-footer-left">
-                  <div className="print-footer-label"></div>
-                  <div className="footer-contact-row"><span className="fc-label">Tel</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.tel}</span></div>
-                  <div className="footer-contact-row"><span className="fc-label">Fax</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.fax}</span></div>
-                  <div className="footer-contact-row"><span className="fc-label">Mobile</span><span className="fc-sep">:</span><span className="fc-value">{COMPANY.mobile}</span></div>
-                </div>
+              <div className="letter-sig">
+                {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
+                {letter.signer_name  && <div className="sig-name">{letter.signer_name}</div>}
               </div>
-            ) : (
-              <div className="letter-preprinted-spacer-bottom"/>
-            )}
-          </div>
+
+            </div>
+            {withHeader
+              ? <PqFooterBar/>
+              : <div className="letter-preprinted-spacer-bottom"/>}
           </div>
         </div>
       </div>
