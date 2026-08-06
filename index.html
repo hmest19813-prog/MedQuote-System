@@ -2370,7 +2370,9 @@ function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
             <label className="form-label">سبب الأرشفة <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" value={note} onChange={e=>handleChange(e.target.value)}
               onBlur={()=>setTimeout(()=>setShowSug(false),150)}
-              placeholder="مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة..." autoComplete="off"/>
+              placeholder="مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة..." autoComplete="off"
+              style={!note.trim() ? {borderColor:'var(--danger)'} : undefined}/>
+            {!note.trim() && <p style={{color:'var(--danger)',fontSize:12,marginTop:5,marginBottom:0}}>⚠️ هذا الحقل إلزامي — لا يمكن الأرشفة بدون سبب</p>}
             {showSug && (
               <div style={{position:'absolute',top:'100%',marginTop:4,right:0,left:0,background:'var(--white)',border:'1px solid var(--gray-200)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.1)',zIndex:999,maxHeight:180,overflowY:'auto'}}>
                 {suggestions.map((r,i)=>(
