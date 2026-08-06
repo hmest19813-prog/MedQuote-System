@@ -1941,7 +1941,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
               <ComboInput className="form-control" value={form.attention} onChange={v=>setF('attention',v)} suggestions={ATTENTION_SUGGESTIONS} placeholder="ابدأ بالكتابة أو اضغط ▾ للخيارات..."/>
             </div>
           </div>
-          <div className="form-row-3 mb-4">
+          <div className="form-row-3 mb-4" style={{gridTemplateColumns:'1fr 1fr 0.55fr'}}>
             <div className="form-group">
               <label className="form-label">هاتف</label>
               <input className="form-control" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
@@ -2658,13 +2658,13 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>العميل</th><th>التاريخ</th><th style={{width:130}}>المرجع</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th style={{width:110}}>المرجع</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
                 <tr key={q.id}>
                   <td className="font-bold" style={{color:'var(--primary)', whiteSpace:'nowrap'}}>{q.number}</td>
-                  <td>{q.customer_name}</td>
+                  <td style={{width:160, whiteSpace:'normal', wordBreak:'break-word'}}>{q.customer_name}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>
                     {q.date}
                     {q.valid_until && (() => {
@@ -2672,7 +2672,7 @@ function QuotesList({ user, quotes, onReload }) {
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="text-sm text-muted" style={{textAlign:'center', maxWidth:130, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{q.reference||'—'}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center', width:110}}>{q.reference||'—'}</td>
                   <td style={{textAlign:'center'}}>
                     <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
                       {QT[q.quote_type] || 'عرض سعر'}
