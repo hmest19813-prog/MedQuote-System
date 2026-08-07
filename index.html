@@ -547,6 +547,31 @@ th:last-child, td:last-child { border-left: none; }
   .qcard-actions .btn { flex: 1 1 calc(33% - 7px); justify-content: center; font-size: 13px; padding: 10px 6px; min-width: 82px; }
   .filter-bar { flex-direction: column; gap: 8px; }
   .filter-bar .search-input, .filter-bar .form-control { width: 100% !important; max-width: 100% !important; }
+
+  /* Toast above bottom nav */
+  .toast-container { bottom: 76px !important; left: 10px !important; right: 10px !important; }
+
+  /* More bottom padding so last card isn't hidden */
+  .content { padding-bottom: 100px; }
+
+  /* Preview modal: full width, no border-radius */
+  .modal[style*="920"] { max-width: 100% !important; border-radius: 16px 16px 0 0; }
+
+  /* Preview header: wrap buttons on mobile */
+  .modal-header { flex-wrap: wrap; padding: 10px 12px; gap: 6px; }
+  .modal-header .modal-title { font-size: 13px; flex: 1 1 auto; }
+  .modal-header .modal-close { order: -1; margin-left: auto; }
+  .modal-header .flex { flex-wrap: wrap; gap: 5px; width: 100%; }
+  .modal-header .flex .btn, .modal-header .flex .btn-sm { flex: 1 1 calc(50% - 5px); justify-content: center; padding: 9px 4px; font-size: 12px; }
+  .modal-header .flex .sig-toggle-btn { flex: 1 1 100%; text-align: center; }
+
+  /* Scale A4 pages to fit mobile screen */
+  .pq-preview-body { padding: 8px 0 !important; overflow-x: hidden; }
+  .pq-page {
+    transform: scale(0.46);
+    transform-origin: top center;
+    margin-bottom: calc(297mm * -0.54 + 16px);
+  }
 }
 
 /* ===================== BOTTOM NAV ===================== */
