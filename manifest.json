@@ -1,0 +1,26 @@
+{
+  "name": "MedQuote Pro — مؤسسة الحياة العلمية",
+  "short_name": "Hayat Medical",
+  "description": "نظام إدارة عروض الأسعار والفواتير",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d1e2e",
+  "theme_color": "#0d1e2e",
+  "orientation": "portrait-primary",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/Hayat logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/Hayat logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

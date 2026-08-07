@@ -2,7 +2,13 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d1e2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hayat Medical">
+<link rel="manifest" href="/manifest.json">
 <title>MedQuote Pro — مؤسسة الحياة العلمية الطبية الكيماوية</title>
 <!-- المكتبات محفوظة محلياً — لا اعتماد على CDN خارجي -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -510,6 +516,125 @@ th:last-child, td:last-child { border-left: none; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .w-full { width: 100%; }
 .section-title { font-size: 12px; font-weight: 700; color: var(--gray-500); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--gray-100); text-transform: uppercase; letter-spacing: .05em; }
+
+/* ===================== MOBILE RESPONSIVE ===================== */
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1); }
+  .sidebar.mobile-open { transform: translateX(0); }
+  .main { margin-right: 0; }
+  .topbar { padding: 0 14px; }
+  .topbar-title { font-size: 15px; }
+  .topbar-date { display: none !important; }
+  .content { padding: 14px; padding-bottom: 80px; }
+  .form-row, .form-row-3 { grid-template-columns: 1fr; gap: 10px; }
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal { border-radius: 20px 20px 0 0; max-height: 90vh; max-width: 100%; }
+  .grid-2 { grid-template-columns: 1fr; gap: 12px; }
+  .notif-panel { width: calc(100vw - 24px); left: 12px; right: 12px; }
+  .stat-value { font-size: 20px; }
+  .card-body { padding: 12px; }
+  .card-header { padding: 11px 14px; }
+}
+
+/* ===================== BOTTOM NAV ===================== */
+.mobile-overlay { display: none; }
+.mobile-sheet  { display: none; }
+.bottom-nav    { display: none; }
+
+@media (max-width: 768px) {
+  .bottom-nav {
+    display: flex;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: var(--sidebar-bg);
+    border-top: 1px solid rgba(255,255,255,.08);
+    z-index: 100;
+    align-items: center;
+    justify-content: space-around;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .bn-item {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 2px; padding: 6px 2px;
+    cursor: pointer;
+    color: rgba(255,255,255,.38);
+    -webkit-tap-highlight-color: transparent;
+    transition: color .15s;
+    border-radius: 8px;
+  }
+  .bn-item.active { color: #3FA3D8; }
+  .bn-icon { font-size: 21px; line-height: 1; }
+  .bn-label { font-size: 9px; font-weight: 600; white-space: nowrap; }
+
+  .mobile-overlay {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 150;
+  }
+  .mobile-sheet {
+    display: block;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--sidebar-bg);
+    border-radius: 20px 20px 0 0;
+    padding: 14px 12px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: 151;
+    max-height: 78vh;
+    overflow-y: auto;
+  }
+  .ms-handle {
+    width: 36px; height: 4px;
+    background: rgba(255,255,255,.18);
+    border-radius: 2px;
+    margin: 0 auto 14px;
+  }
+  .ms-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .ms-item {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 5px; padding: 12px 4px;
+    border-radius: 10px;
+    cursor: pointer;
+    color: rgba(255,255,255,.65);
+    font-size: 10px; font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+    transition: background .15s;
+    text-align: center;
+  }
+  .ms-item.active { background: rgba(43,143,196,.28); color: #3FA3D8; }
+  .ms-item:active { background: rgba(255,255,255,.08); }
+  .ms-icon { font-size: 22px; line-height: 1; }
+  .ms-user-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    background: rgba(255,255,255,.06);
+    border-radius: 10px;
+    margin-bottom: 14px;
+    color: white;
+  }
+  .ms-user-name { font-size: 13px; font-weight: 600; }
+  .ms-user-role { font-size: 11px; color: rgba(255,255,255,.4); margin-top: 1px; }
+  .ms-logout {
+    width: 100%; padding: 11px;
+    background: rgba(220,38,38,.15);
+    border: 1px solid rgba(220,38,38,.28);
+    color: #fca5a5;
+    border-radius: 9px;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+    margin-top: 4px;
+  }
+}
 </style>
 </head>
 <body>
@@ -829,6 +954,63 @@ function Sidebar({ user, page, setPage, onLogout }) {
         <button className="logout-btn" onClick={onLogout}>تسجيل الخروج</button>
       </div>
     </div>
+  );
+}
+
+/* ===================== MOBILE BOTTOM NAV ===================== */
+function BottomNav({ user, page, setPage, onMoreClick }) {
+  const primary = [
+    { id: 'dashboard', label: 'الرئيسية', icon: '📊' },
+    { id: 'quotes',    label: 'عروض',     icon: '📋' },
+    { id: 'invoices',  label: 'فواتير',   icon: '🧾' },
+    { id: 'customers', label: 'عملاء',    icon: '🏢', perm: 'customers_access' },
+  ].filter(i => !i.perm || hasPerm(user, i.perm));
+
+  return (
+    <nav className="bottom-nav">
+      {primary.map(item => (
+        <div key={item.id} className={`bn-item ${page===item.id?'active':''}`} onClick={() => setPage(item.id)}>
+          <span className="bn-icon">{item.icon}</span>
+          <span className="bn-label">{item.label}</span>
+        </div>
+      ))}
+      <div className="bn-item" onClick={onMoreClick}>
+        <span className="bn-icon">☰</span>
+        <span className="bn-label">المزيد</span>
+      </div>
+    </nav>
+  );
+}
+
+function MobileSheet({ user, page, setPage, onClose, onLogout }) {
+  const allNav = NAV.filter(item => !item.perm || hasPerm(user, item.perm));
+  if (hasPerm(user, 'deleted_quotes_access')) allNav.push({ id:'deleted-quotes', label:'محذوفة', icon:'🗑️' });
+  if (user?.role === 'admin') allNav.push({ id:'users', label:'المستخدمون', icon:'👥' });
+
+  return (
+    <>
+      <div className="mobile-overlay" onClick={onClose}/>
+      <div className="mobile-sheet">
+        <div className="ms-handle"/>
+        <div className="ms-user-card">
+          <div className="user-avatar">{(user?.full_name||user?.email||'U').charAt(0)}</div>
+          <div>
+            <div className="ms-user-name">{user?.full_name || user?.email}</div>
+            <div className="ms-user-role">{user?.role==='admin'?'مدير النظام':user?.role==='manager'?'مدير':'موظف'}</div>
+          </div>
+        </div>
+        <div className="ms-grid">
+          {allNav.map(item => (
+            <div key={item.id} className={`ms-item ${page===item.id?'active':''}`}
+              onClick={() => { setPage(item.id); onClose(); }}>
+              <span className="ms-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
+        <button className="ms-logout" onClick={() => { onLogout(); onClose(); }}>تسجيل الخروج</button>
+      </div>
+    </>
   );
 }
 
@@ -9300,6 +9482,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [quotes, setQuotes] = useState([]);
   const [orders, setOrders] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -9503,7 +9686,7 @@ function App() {
         <div className="topbar">
           <span className="topbar-title">{titles[page]||''}</span>
           <div className="flex items-center gap-3">
-            <span style={{fontSize:12,color:'var(--gray-400)'}}>{new Date().toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span>
+            <span className="topbar-date" style={{fontSize:12,color:'var(--gray-400)'}}>{new Date().toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span>
             <NotificationBell userId={user?.id}/>
           </div>
         </div>
@@ -9524,6 +9707,8 @@ function App() {
           {page==='hr' && hasPerm(user,'hr_access') && <HRPage user={user}/>}
         </div>
       </div>
+      <BottomNav user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onMoreClick={() => setMobileMenuOpen(true)}/>
+      {mobileMenuOpen && <MobileSheet user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onClose={() => setMobileMenuOpen(false)} onLogout={handleLogout}/>}
       <Toasts/>
     </div>
   );
@@ -9550,6 +9735,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
     window.addEventListener('load', setFavicon);
   }
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
