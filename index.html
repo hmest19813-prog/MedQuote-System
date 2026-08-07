@@ -535,6 +535,18 @@ th:last-child, td:last-child { border-left: none; }
   .stat-value { font-size: 20px; }
   .card-body { padding: 12px; }
   .card-header { padding: 11px 14px; }
+  /* Mobile list cards */
+  .qcard { background: white; border-radius: 12px; border: 1px solid var(--gray-200); padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+  .qcard-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+  .qcard-num { font-size: 15px; font-weight: 800; color: var(--primary); }
+  .qcard-customer { font-size: 14px; font-weight: 600; color: var(--gray-800); margin-bottom: 6px; line-height: 1.4; }
+  .qcard-meta { font-size: 12px; color: var(--gray-500); margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .qcard-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .qcard-status-row select { flex: 1; font-size: 13px; padding: 8px 10px; border: 1.5px solid var(--gray-200); border-radius: 7px; font-family: inherit; background: white; }
+  .qcard-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+  .qcard-actions .btn { flex: 1 1 calc(33% - 7px); justify-content: center; font-size: 13px; padding: 10px 6px; min-width: 82px; }
+  .filter-bar { flex-direction: column; gap: 8px; }
+  .filter-bar .search-input, .filter-bar .form-control { width: 100% !important; max-width: 100% !important; }
 }
 
 /* ===================== BOTTOM NAV ===================== */
@@ -2720,6 +2732,13 @@ function QuotesList({ user, quotes, onReload }) {
 
   const canViewIssuer = hasPerm(user, 'quotes_view_issuer');
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
   useEffect(() => {
     sb.from('profiles').select('id,full_name').then(({data}) => {
       const map = {};
@@ -2897,6 +2916,41 @@ function QuotesList({ user, quotes, onReload }) {
           {(dateFrom||dateTo) && <button className="btn btn-ghost btn-sm" onClick={()=>{setDateFrom('');setDateTo('');}}>✕ مسح التاريخ</button>}
           <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} عرض</span>
         </div>
+        {isMobile ? (
+          <div style={{padding:'12px'}}>
+            {filtered.map(q => (
+              <div key={q.id} className="qcard">
+                <div className="qcard-top">
+                  <span className="qcard-num">{q.number}</span>
+                  <SBadge status={q.status}/>
+                </div>
+                <div className="qcard-customer">{q.customer_name}</div>
+                <div className="qcard-meta">
+                  <span>📅 {q.date}</span>
+                  {q.reference && <span>· {q.reference}</span>}
+                  <span className={q.quote_type==='tender'?'badge-type-tender':'badge-type-quote'}>{QT[q.quote_type]||'عرض سعر'}</span>
+                  {q.valid_until && (() => { const exp = new Date(q.valid_until)<new Date(); return <span style={{color:exp?'#dc2626':'#16a34a',fontWeight:600}}>{exp?'⚠️ انتهت':'✓ صالح'}</span>; })()}
+                  {canViewIssuer && profiles[q.created_by] && <span style={{color:'var(--gray-400)'}}>· {profiles[q.created_by]}</span>}
+                </div>
+                <div className="qcard-status-row">
+                  <span style={{fontSize:12,fontWeight:600,color:'var(--gray-600)',whiteSpace:'nowrap'}}>تغيير الحالة:</span>
+                  <select value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
+                    {Object.entries(SL).filter(([k])=>!['draft','approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="qcard-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                  {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
+                  {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
+                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
+                </div>
+              </div>
+            ))}
+            {filtered.length===0&&<div className="empty-state"><p>لا توجد عروض</p></div>}
+          </div>
+        ) : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -2949,6 +3003,7 @@ function QuotesList({ user, quotes, onReload }) {
             </tbody>
           </table>
         </div>
+        )}
       </div>
       )}
 
@@ -2959,6 +3014,35 @@ function QuotesList({ user, quotes, onReload }) {
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
           <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredDrafts.length} مسودة</span>
         </div>
+        {isMobile ? (
+          <div style={{padding:'12px'}}>
+            {filteredDrafts.map(q => {
+              const d = draftAge(q.created_at);
+              const ageColor = d >= 9 ? '#dc2626' : d >= 3 ? '#f59e0b' : '#16a34a';
+              return (
+                <div key={q.id} className="qcard" style={{borderRight:'3px solid #f59e0b', background:'#fffdf5'}}>
+                  <div className="qcard-top">
+                    <span className="qcard-num" style={{color:'#92400e'}}>{q.number}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:ageColor}}>{d===0?'اليوم':d!==null?`${d} يوم`:'—'}</span>
+                  </div>
+                  <div className="qcard-customer">{q.customer_name}</div>
+                  <div className="qcard-meta">
+                    <span>📅 {q.date}</span>
+                    <span className={q.quote_type==='tender'?'badge-type-tender':'badge-type-quote'}>{QT[q.quote_type]||'عرض سعر'}</span>
+                    <span style={{fontWeight:700,color:'var(--gray-700)'}}>{parseFloat(q.nett_price||0).toFixed(3)} د.أ</span>
+                  </div>
+                  <div className="qcard-actions">
+                    <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                    {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
+                    <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>
+                    {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
+                  </div>
+                </div>
+              );
+            })}
+            {filteredDrafts.length===0&&<div className="empty-state"><p>لا توجد مسودات</p></div>}
+          </div>
+        ) : (
         <div className="table-wrap">
           <table>
             <thead>
@@ -2999,6 +3083,7 @@ function QuotesList({ user, quotes, onReload }) {
             </tbody>
           </table>
         </div>
+        )}
       </div>
       )}
 
