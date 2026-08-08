@@ -19,6 +19,7 @@
 <script>
 window.BABEL_OPTIONS = { presets: ['react'], sourceMaps: false };
 </script>
+<script src="/lib/xlsx.min.js"></script>
 <script src="/lib/babel.min.js"></script>
 <style>
 :root {
@@ -2754,6 +2755,94 @@ function QuotesList({ user, quotes, onReload }) {
   const [showTypeDialog, setShowTypeDialog] = useState(false);
   const [newQuoteDefaults, setNewQuoteDefaults] = useState(null);
   const [tab, setTab] = useState('official'); // 'official' | 'drafts'
+  const [importLoading, setImportLoading] = useState(false);
+  const importFileRef = useRef(null);
+
+  const handleImportExcel = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+    if (!window.XLSX) { toast('مكتبة Excel غير محملة', 'error'); return; }
+    setImportLoading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = window.XLSX.read(buffer, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const data = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      // إيجاد صف العناوين (يحتوي "Item Description")
+      let headerRowIdx = -1;
+      for (let i = 0; i < Math.min(data.length, 15); i++) {
+        if (data[i].some(c => String(c).includes('Item Description'))) { headerRowIdx = i; break; }
+      }
+      if (headerRowIdx < 0) { toast('تعذّر قراءة الملف — تأكد من صيغة الجدول', 'error'); return; }
+
+      // استخراج بيانات الرأس (عميل، عناية، مرجع) من الصفوف فوق العناوين
+      const labelKw = ['رقم العرض','السادة','عناية','التاريخ','رقم المرجع','Financial Offer','العرض المالي','HAYAT','مؤسسة'];
+      let customer_name = '', attention = '', reference = '';
+      for (let i = 0; i < headerRowIdx; i++) {
+        const row = data[i];
+        const hasCustomer = row.some(c => String(c).includes('السادة'));
+        const hasAttention = row.some(c => String(c).includes('عناية'));
+        const hasRef = row.some(c => String(c).includes('رقم المرجع'));
+        const values = row.filter(c => { const s = String(c).trim(); return s && !labelKw.some(k => s.includes(k)); });
+        if (hasCustomer && values.length && !customer_name) customer_name = String(values[0]).trim();
+        else if (hasAttention && values.length && !attention) attention = String(values[0]).trim();
+        else if (hasRef && values.length && !reference) reference = String(values[0]).trim();
+      }
+
+      // استخراج البنود
+      const items = [];
+      for (let i = headerRowIdx + 1; i < data.length; i++) {
+        const row = data[i];
+        const no = row[0];
+        if (!no || typeof no !== 'number' || !Number.isInteger(no) || no <= 0) continue;
+        const itemName = String(row[1] || '').trim();
+        if (!itemName) continue;
+        const unit = (String(row[2] || 'EACH').trim().toUpperCase()) || 'EACH';
+        const qty = parseFloat(row[3]) || 1;
+        const rawPrice = row[4];
+        const unitPrice = (rawPrice === 'XX' || rawPrice === '' || rawPrice == null) ? 0 : (parseFloat(rawPrice) || 0);
+        const origin = (String(row[6] || 'CHINA').trim().toUpperCase()) || 'CHINA';
+        const notes = String(row[8] || '').trim();
+        items.push({ sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, origin, delivery: 'PROMPT', notes });
+      }
+      if (!items.length) { toast('لم يتم العثور على أصناف في الملف', 'error'); return; }
+
+      const subtotal = items.reduce((s, it) => s + it.quantity * it.unit_price, 0);
+      const todayStr = today();
+      const valid_until = addDays(todayStr, QUOTE_VALIDITY_DAYS);
+
+      const { data: q, error: qErr } = await sb.from('quotations').insert({
+        customer_name: customer_name || '',
+        attention: attention || '',
+        date: todayStr,
+        reference: reference || '',
+        currency: 'JOD', delivery: 'PROMPT',
+        subtotal: subtotal.toFixed(3),
+        discount_pct: 0, discount_amt: (0).toFixed(3),
+        tax_pct: 0, tax_amt: (0).toFixed(3),
+        nett_price: subtotal.toFixed(3),
+        status: 'draft', valid_until,
+        quote_type: 'quote', detailed_layout: false, quote_lang: 'ar',
+        notes: 'مستورد من Excel — بانتظار المراجعة',
+        created_by: user?.id || null,
+      }).select().single();
+      if (qErr) throw qErr;
+
+      const { error: iErr } = await sb.from('quotation_items').insert(items.map(it => ({ ...it, quotation_id: q.id })));
+      if (iErr) throw iErr;
+
+      upsertItemHistory(items.map(it => it.item_name));
+      toast(`تم استيراد ${items.length} صنف كمسودة — ${q.number}`, 'success');
+      setTab('drafts');
+      onReload();
+    } catch (err) {
+      toast('خطأ في الاستيراد: ' + err.message, 'error');
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   const canViewIssuer = hasPerm(user, 'quotes_view_issuer');
 
@@ -2778,6 +2867,10 @@ function QuotesList({ user, quotes, onReload }) {
   const active = quotes.filter(q => !q.archived && !q.deleted_at);
   const officialQuotes = active.filter(q => q.status !== 'draft');
   const draftQuotes   = active.filter(q => q.status === 'draft');
+  const archivedQuotes = quotes.filter(q => q.archived);
+  const deletedQuotes  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [deletedSearch, setDeletedSearch] = useState('');
 
   const filtered = officialQuotes.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
@@ -2789,6 +2882,42 @@ function QuotesList({ user, quotes, onReload }) {
   const filteredDrafts = draftQuotes.filter(q => {
     return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
   });
+  const filteredArchive = archivedQuotes.filter(q =>
+    !archiveSearch || q.customer_name?.toLowerCase().includes(archiveSearch.toLowerCase()) || q.number?.includes(archiveSearch)
+  );
+  const filteredDeleted = deletedQuotes.filter(q =>
+    !deletedSearch || q.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || q.number?.includes(deletedSearch)
+  );
+
+  const restoreQ = async (q) => {
+    await sb.from('quotations').update({ archived: false, archived_at: null }).eq('id', q.id);
+    toast('تمت استعادة العرض', 'success');
+    onReload();
+  };
+
+  const changeArchiveStatus = async (q, status) => {
+    await sb.from('quotations').update({ status }).eq('id', q.id);
+    toast('تم تغيير الحالة', 'success');
+    onReload();
+  };
+
+  const restoreDeleted = async (q) => {
+    if (!confirm('استعادة العرض ' + q.number + '؟')) return;
+    const {error} = await sb.from('quotations').update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq('id', q.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `استعاد العرض ${q.number}`, 'quote', q.id, q.number);
+    toast('تم استعادة العرض ✓','success'); onReload();
+  };
+
+  const hardDeleteQ = async (q) => {
+    if (!confirm('حذف نهائي لـ ' + q.number + '؟ لا يمكن التراجع')) return;
+    await sb.from('orders').update({ quotation_id: null }).eq('quotation_id', q.id);
+    await sb.from('quotation_items').delete().eq('quotation_id', q.id);
+    const {error} = await sb.from('quotations').delete().eq('id', q.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `حذف نهائي للعرض ${q.number}`, 'quote', q.id, q.number);
+    toast('تم الحذف النهائي','success'); onReload();
+  };
 
   const confirmDraft = async (q) => {
     if (!confirm(`اعتماد المسودة "${q.number}" كعرض رسمي؟\nسيتم تخصيص رقم رسمي جديد.`)) return;
@@ -2908,7 +3037,15 @@ function QuotesList({ user, quotes, onReload }) {
       )}
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>عروض الأسعار</h2>
-        {hasPerm(user, 'quotes_create') && <button className="btn btn-primary" onClick={()=>setShowTypeDialog(true)}>+ عرض جديد</button>}
+        {hasPerm(user, 'quotes_create') && (
+          <div className="flex gap-2">
+            <input ref={importFileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
+            <button className="btn btn-ghost" style={{border:'1.5px solid var(--primary)',color:'var(--primary)',display:'flex',alignItems:'center',gap:6}} onClick={()=>importFileRef.current?.click()} disabled={importLoading}>
+              {importLoading ? '⏳ جاري الاستيراد...' : '📥 استيراد Excel'}
+            </button>
+            <button className="btn btn-primary" onClick={()=>setShowTypeDialog(true)}>+ عرض جديد</button>
+          </div>
+        )}
       </div>
 
       {/* تبويبات */}
@@ -2918,6 +3055,12 @@ function QuotesList({ user, quotes, onReload }) {
         </button>
         <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
           المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
+        </button>
+        <button onClick={()=>setTab('archive')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='archive'?'3px solid #6b7280':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='archive'?'#374151':'var(--gray-500)',marginBottom:-2}}>
+          الأرشيف <span style={{background:'var(--gray-100)',color:'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{archivedQuotes.length}</span>
+        </button>
+        <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',marginBottom:-2}}>
+          المحذوفة <span style={{background:deletedQuotes.length?'#fee2e2':'var(--gray-100)',color:deletedQuotes.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deletedQuotes.length}</span>
         </button>
       </div>
 
@@ -3109,6 +3252,87 @@ function QuotesList({ user, quotes, onReload }) {
           </table>
         </div>
         )}
+      </div>
+      )}
+
+      {tab === 'archive' && (
+      <div className="card">
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={archiveSearch} onChange={e=>setArchiveSearch(e.target.value)}/>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>سبب الأرشفة</th><th></th>
+            </tr></thead>
+            <tbody>
+              {filteredArchive.map(q => (
+                <tr key={q.id}>
+                  <td className="font-bold">{q.number}</td>
+                  <td>{q.customer_name}</td>
+                  <td className="text-sm text-muted">{q.date}</td>
+                  <td>
+                    {hasPerm(user,'quotes_edit')
+                      ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={q.status} onChange={e=>changeArchiveStatus(q,e.target.value)}>
+                          {Object.entries(SL).filter(([k])=>!['approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                        </select>
+                      : <SBadge status={q.status}/>}
+                  </td>
+                  <td className="text-sm text-muted" style={{maxWidth:220}}>{q.archive_note||'—'}</td>
+                  <td>
+                    <div className="flex gap-2">
+                      <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filteredArchive.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {tab === 'deleted' && (
+      <div className="card">
+        {deletedQuotes.length === 0 ? (
+          <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
+            <div style={{fontSize:48,marginBottom:12}}>✅</div>
+            <div style={{fontWeight:600}}>لا توجد عروض محذوفة</div>
+          </div>
+        ) : (<>
+          <div className="filter-bar">
+            <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={deletedSearch} onChange={e=>setDeletedSearch(e.target.value)}/>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>الرقم</th><th>العميل</th><th>التاريخ</th><th>القيمة</th>
+                <th>تاريخ الحذف</th><th>المُصدِر</th><th>سبب الحذف</th><th></th>
+              </tr></thead>
+              <tbody>
+                {filteredDeleted.map(q=>(
+                  <tr key={q.id}>
+                    <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{q.number}</td>
+                    <td>{q.customer_name}</td>
+                    <td className="text-sm text-muted">{q.date}</td>
+                    <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                    <td className="text-sm text-muted">{q.deleted_at?.slice(0,10)}</td>
+                    <td className="text-sm">{profiles[q.created_by]||'—'}</td>
+                    <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>{q.delete_reason||'—'}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>restoreDeleted(q)} title="استعادة">↩️ استعادة</button>
+                        {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDeleteQ(q)} title="حذف نهائي">🗑️</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>)}
       </div>
       )}
 
