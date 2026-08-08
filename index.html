@@ -945,7 +945,6 @@ const NAV = [
   { id: 'catalog',   label: 'الكتالوج',       icon: '🗂️', perm: 'catalog_access' },
   { id: 'letters',   label: 'الكتب الرسمية', icon: '📝', perm: 'letters_access' },
   { id: 'forms',     label: 'النماذج',        icon: '🧾', perm: 'letters_access' },
-  { id: 'archive',   label: 'الأرشيف',        icon: '🗄️', perm: 'archive_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
 ];
@@ -969,11 +968,6 @@ function Sidebar({ user, page, setPage, onLogout }) {
             <span>{item.icon}</span>{item.label}
           </div>
         ))}
-        {hasPerm(user, 'deleted_quotes_access') && (
-          <div className={`nav-item ${page==='deleted-quotes'?'active':''}`} onClick={() => setPage('deleted-quotes')}>
-            <span>🗑️</span>عروض محذوفة
-          </div>
-        )}
         {user?.role === 'admin' && (
           <div className={`nav-item ${page==='users'?'active':''}`} onClick={() => setPage('users')}>
             <span>👥</span>إدارة المستخدمين
@@ -1022,7 +1016,6 @@ function BottomNav({ user, page, setPage, onMoreClick }) {
 
 function MobileSheet({ user, page, setPage, onClose, onLogout }) {
   const allNav = NAV.filter(item => !item.perm || hasPerm(user, item.perm));
-  if (hasPerm(user, 'deleted_quotes_access')) allNav.push({ id:'deleted-quotes', label:'محذوفة', icon:'🗑️' });
   if (user?.role === 'admin') allNav.push({ id:'users', label:'المستخدمون', icon:'👥' });
 
   return (
