@@ -4389,11 +4389,18 @@ function OrdersPage({ user, orders, onReload }) {
   const [editingOrder, setEditingOrder] = useState(null);
   const [archiveOrderTarget, setArchiveOrderTarget] = useState(null);
   const [editNoteTarget, setEditNoteTarget] = useState(null);
+  const [editDeleteTarget, setEditDeleteTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletedSearch, setDeletedSearch] = useState('');
   const [profiles, setProfiles]   = useState({});
 
-  const active   = orders.filter(o => !o.archived);
-  const archived = orders.filter(o =>  o.archived);
+  const active   = orders.filter(o => !o.archived && !o.deleted_at);
+  const archived = orders.filter(o =>  o.archived  && !o.deleted_at);
+  const deleted  = orders.filter(o =>  o.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const filtered = filter==='all' ? active : active.filter(o=>o.status===filter);
+  const filteredDeleted = deleted.filter(o =>
+    !deletedSearch || o.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || String(o.number||'').includes(deletedSearch)
+  );
 
   useEffect(() => {
     sb.from('profiles').select('id,full_name').then(({ data }) => {
@@ -4429,16 +4436,40 @@ function OrdersPage({ user, orders, onReload }) {
     toast('تم حفظ السبب', 'success'); onReload();
   };
 
-  const deleteO = async (o) => {
-    if (!confirm(`حذف الطلب "${o.number}" نهائياً؟`)) return;
+  const deleteO = async (reason) => {
+    const o = deleteTarget;
+    if (!o) return;
+    setDeleteTarget(null);
     try {
-      const {error: e1} = await sb.from('order_items').delete().eq('order_id', o.id);
-      if (e1) throw e1;
-      const {error: e2} = await sb.from('orders').delete().eq('id', o.id);
-      if (e2) throw e2;
+      const {error} = await sb.from('orders').update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user?.id || null,
+        delete_reason: reason,
+      }).eq('id', o.id);
+      if (error) throw error;
       createLog(user, `حذف الطلبية ${o.number||o.quotation_number||''}`, 'order', o.id, o.number||o.quotation_number);
       toast('تم الحذف', 'success'); onReload();
     } catch(e) { toast('فشل الحذف: ' + e.message, 'error'); }
+  };
+
+  const restoreDeleted = async (o) => {
+    if (!confirm('استعادة الطلب ' + (o.number||o.quotation_number||'') + '؟')) return;
+    await sb.from('orders').update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq('id', o.id);
+    toast('تمت الاستعادة ✓', 'success'); onReload();
+  };
+
+  const hardDeleteO = async (o) => {
+    if (!confirm('حذف نهائي لـ ' + (o.number||'') + '؟ لا يمكن التراجع')) return;
+    await sb.from('order_items').delete().eq('order_id', o.id);
+    await sb.from('orders').delete().eq('id', o.id);
+    toast('تم الحذف النهائي', 'success'); onReload();
+  };
+
+  const doEditDeleteReason = async (reason) => {
+    const o = editDeleteTarget;
+    setEditDeleteTarget(null);
+    await sb.from('orders').update({ delete_reason: reason||null }).eq('id', o.id);
+    toast('تم تحديث سبب الحذف ✓', 'success'); onReload();
   };
 
   const previewOrder = async (o) => {
@@ -4502,18 +4533,15 @@ function OrdersPage({ user, orders, onReload }) {
   return (
     <div>
       <div style={{display:'flex', borderBottom:'2px solid var(--gray-200)', marginBottom:20}}>
-        <button onClick={()=>setTab('active')} style={{
-          padding:'8px 20px', border:'none', background:'transparent', cursor:'pointer', fontSize:14,
-          borderBottom: tab==='active' ? '2px solid var(--primary)' : '2px solid transparent',
-          color: tab==='active' ? 'var(--primary)' : 'var(--gray-500)',
-          fontWeight: tab==='active' ? 700 : 400, marginBottom:'-2px'
-        }}>الطلبات النشطة ({active.length})</button>
-        <button onClick={()=>setTab('archived')} style={{
-          padding:'8px 20px', border:'none', background:'transparent', cursor:'pointer', fontSize:14,
-          borderBottom: tab==='archived' ? '2px solid var(--primary)' : '2px solid transparent',
-          color: tab==='archived' ? 'var(--primary)' : 'var(--gray-500)',
-          fontWeight: tab==='archived' ? 700 : 400, marginBottom:'-2px'
-        }}>المؤرشفة ({archived.length})</button>
+        <button onClick={()=>setTab('active')} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:14,borderBottom:tab==='active'?'3px solid var(--primary)':'3px solid transparent',color:tab==='active'?'var(--primary)':'var(--gray-500)',fontWeight:tab==='active'?700:400,marginBottom:'-2px'}}>
+          النشطة <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{active.length}</span>
+        </button>
+        <button onClick={()=>setTab('archived')} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:14,borderBottom:tab==='archived'?'3px solid #6b7280':'3px solid transparent',color:tab==='archived'?'#374151':'var(--gray-500)',fontWeight:tab==='archived'?700:400,marginBottom:'-2px'}}>
+          المؤرشفة <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{archived.length}</span>
+        </button>
+        <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:14,borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',fontWeight:tab==='deleted'?700:400,marginBottom:'-2px'}}>
+          المحذوفة <span style={{background:deleted.length?'#fee2e2':'var(--gray-100)',color:deleted.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deleted.length}</span>
+        </button>
       </div>
 
       {tab==='active' && <>
@@ -4556,7 +4584,7 @@ function OrdersPage({ user, orders, onReload }) {
                         )}
                         {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)}>✏️ تعديل</button>}
                         <button className="btn btn-ghost btn-sm" onClick={()=>setArchiveOrderTarget(o)}>🗄️ أرشفة</button>
-                        {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteO(o)}>🗑️ حذف</button>}
+                        {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(o)}>🗑️ حذف</button>}
                       </div>
                     </td>
                   </tr>
@@ -4597,11 +4625,57 @@ function OrdersPage({ user, orders, onReload }) {
         </div>
       </>}
 
+      {tab==='deleted' && (
+      <div className="card">
+        {deleted.length === 0 ? (
+          <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
+            <div style={{fontSize:48,marginBottom:12}}>✅</div>
+            <div style={{fontWeight:600}}>لا توجد طلبات محذوفة</div>
+          </div>
+        ) : (<>
+          <div className="filter-bar">
+            <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={deletedSearch} onChange={e=>setDeletedSearch(e.target.value)}/>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>الرقم</th><th>العميل</th><th>من عرض</th><th>القيمة</th>
+                <th>تاريخ الحذف</th><th>سبب الحذف</th><th></th>
+              </tr></thead>
+              <tbody>
+                {filteredDeleted.map(o=>(
+                  <tr key={o.id}>
+                    <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{o.number||'—'}</td>
+                    <td>{o.customer_name}</td>
+                    <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
+                    <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
+                    <td className="text-sm text-muted">{o.deleted_at?.slice(0,10)}</td>
+                    <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>
+                      {o.delete_reason||'—'}
+                      <button className="btn btn-ghost btn-sm" style={{marginRight:6,padding:'1px 6px',fontSize:11,color:'var(--gray-600)'}} onClick={()=>setEditDeleteTarget(o)} title="تعديل السبب">✏️</button>
+                    </td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>restoreDeleted(o)}>↩️ استعادة</button>
+                        {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDeleteO(o)}>🗑️ حذف نهائي</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>)}
+      </div>
+      )}
+
       {printingOrder && orderDoc && <DocPreview doc={orderDoc} items={orderItems} docType="order" onClose={()=>setPrintingOrder(null)}/>}
       {receiptOrder && <DeliveryReceiptModal order={receiptOrder} items={receiptItems} onClose={()=>setReceiptOrder(null)}/>}
       {editingOrder && <OrderEditModal user={user} order={editingOrder} onSave={()=>{ setEditingOrder(null); onReload(); }} onClose={()=>setEditingOrder(null)}/>}
       {archiveOrderTarget && <ArchiveModal label={`أرشفة الطلبية ${archiveOrderTarget.number||archiveOrderTarget.quotation_number||''}`} onConfirm={doArchiveO} onClose={()=>setArchiveOrderTarget(null)}/>}
       {editNoteTarget && <ArchiveModal label="تعديل سبب الأرشفة" initialNote={editNoteTarget.archive_note||''} onConfirm={saveNote} onClose={()=>setEditNoteTarget(null)}/>}
+      {deleteTarget && <DeleteReasonModal quote={deleteTarget} onConfirm={deleteO} onClose={()=>setDeleteTarget(null)}/>}
+      {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
     </div>
   );
 }
