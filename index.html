@@ -3196,13 +3196,13 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th style={{width:110}}>المرجع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th style={{width:220}}>العميل</th><th>التاريخ</th><th style={{width:160}}>المرجع</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
                 <tr key={q.id}>
                   <td className="font-bold" style={{color:'var(--primary)', whiteSpace:'nowrap'}}>{q.number}</td>
-                  <td style={{width:160, whiteSpace:'normal', wordBreak:'break-word'}}>{q.customer_name}</td>
+                  <td style={{width:220, whiteSpace:'normal', wordBreak:'break-word'}}>{q.customer_name}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>
                     {q.date}
                     {q.valid_until && (() => {
@@ -3210,8 +3210,7 @@ function QuotesList({ user, quotes, onReload }) {
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="text-sm text-muted" style={{textAlign:'center', width:110}}>{q.reference||'—'}</td>
-                  <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
+                  <td className="text-sm text-muted" style={{textAlign:'center', width:160}}>{q.reference||'—'}</td>
                   <td style={{textAlign:'center'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
@@ -3236,7 +3235,7 @@ function QuotesList({ user, quotes, onReload }) {
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canViewIssuer?7:6}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
             </tbody>
           </table>
         </div>
