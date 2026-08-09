@@ -1862,6 +1862,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       delivery:'PROMPT', notes:'', terms:'', valid_until:'',
       discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
       quote_type: 'quote', detailed_layout: false, quote_lang: 'ar',
+      requester_name:'', requester_phone:'', requester_phone2:'',
       ...(initialValues || {}),
       ...(editQuote || {})
     };
@@ -2252,6 +2253,34 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 style={!form.reference?.trim() ? {borderColor:'var(--danger)'} : undefined}/>
             </div>
           </div>
+          {/* بيانات مقدم الطلب — داخلية، لا تظهر بالطباعة */}
+          <div className="mb-4" style={{background:'#f8fafc',border:'1.5px dashed var(--gray-300)',borderRadius:10,padding:'12px 16px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+              👤 بيانات مقدم الطلب
+              <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11}}>(داخلية — لا تظهر عند الطباعة)</span>
+            </div>
+            <div className="form-group" style={{marginBottom:10}}>
+              <label className="form-label" style={{fontSize:12}}>اسم مقدم الطلب</label>
+              <input className="form-control" value={form.requester_name||''} onChange={e=>setF('requester_name',e.target.value)} placeholder="اسم الشخص الذي طلب العرض"/>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div className="form-group" style={{marginBottom:0}}>
+                <label className="form-label" style={{fontSize:12}}>رقم الهاتف</label>
+                <input className="form-control" type="tel" value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX"/>
+                {form.requester_phone && form.requester_phone.replace(/\D/g,'').length < 9 && (
+                  <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>⚠️ الرقم أقل من 9 أرقام</p>
+                )}
+              </div>
+              <div className="form-group" style={{marginBottom:0}}>
+                <label className="form-label" style={{fontSize:12}}>رقم ثاني <span style={{color:'var(--gray-400)',fontWeight:400}}>(اختياري)</span></label>
+                <input className="form-control" type="tel" value={form.requester_phone2||''} onChange={e=>setF('requester_phone2',e.target.value)} placeholder="07XXXXXXXX"/>
+                {form.requester_phone2 && form.requester_phone2.replace(/\D/g,'').length < 9 && (
+                  <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>⚠️ الرقم أقل من 9 أرقام</p>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* مدة الصلاحية إلزامية — {QUOTE_VALIDITY_DAYS} يوم افتراضياً،
               ولا تُعدَّل إلا بصلاحية quotes_validity_override */}
           <div className="mb-4" style={{display:'flex',alignItems:'flex-end',gap:12,flexWrap:'wrap'}}>
