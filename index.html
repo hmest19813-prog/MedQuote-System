@@ -1763,8 +1763,9 @@ function ComboInput({ value, onChange, suggestions, placeholder, className }) {
 
 /* ===================== QUOTE TYPE SELECTION DIALOG ===================== */
 function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
-  const [layout, setLayout] = useState('simple');
-  const [lang, setLang]     = useState('ar');
+  const [layout, setLayout]         = useState('simple');
+  const [lang, setLang]             = useState('ar');
+  const [quoteType, setQuoteType]   = useState('quote');
 
   const card = (active) => ({
     flex: 1, padding: '16px 12px', border: `2px solid ${active ? 'var(--primary)' : 'var(--gray-200)'}`,
@@ -1821,10 +1822,29 @@ function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
             </div>
           </div>
 
+          {/* تصنيف الوثيقة */}
+          <div>
+            <div style={{fontSize: 13, fontWeight: 800, color: 'var(--gray-600)', marginBottom: 12, display:'flex', alignItems:'center', gap: 7}}>
+              <span>🏷️</span> تصنيف الوثيقة
+            </div>
+            <div style={{display: 'flex', gap: 12}}>
+              <button type="button" onClick={() => setQuoteType('quote')} style={card(quoteType === 'quote')}>
+                <span style={{fontSize: 30}}>📋</span>
+                <span style={{fontWeight: 700, fontSize: 14, color: quoteType==='quote' ? 'var(--primary)' : 'var(--gray-700)'}}>عرض سعر</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)'}}>عرض سعر اعتيادي</span>
+              </button>
+              <button type="button" onClick={() => setQuoteType('tender')} style={card(quoteType === 'tender')}>
+                <span style={{fontSize: 30}}>📑</span>
+                <span style={{fontWeight: 700, fontSize: 14, color: quoteType==='tender' ? 'var(--primary)' : 'var(--gray-700)'}}>عطاء</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)'}}>مناقصة أو عطاء رسمي</span>
+              </button>
+            </div>
+          </div>
+
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button type="button" className="btn btn-primary" onClick={() => onConfirm({ layout, lang })}>
+          <button type="button" className="btn btn-primary" onClick={() => onConfirm({ layout, lang, quoteType })}>
             إنشاء العرض ←
           </button>
         </div>
@@ -2425,20 +2445,22 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 }
 
 /* ===================== DELETE REASON MODAL ===================== */
-function DeleteReasonModal({ quote, onConfirm, onClose }) {
-  const [reason,  setReason]  = useState('');
+function DeleteReasonModal({ quote, onConfirm, onClose, initialReason='', editMode=false }) {
+  const [reason,  setReason]  = useState(initialReason);
   const [loading, setLoading] = useState(false);
   return (
     <div className="modal-overlay" style={{zIndex:1100}}>
       <div className="modal" style={{maxWidth:460}}>
         <div className="modal-header">
-          <span className="modal-title">🗑️ حذف العرض {quote.number}</span>
+          <span className="modal-title">{editMode ? '✏️ تعديل سبب الحذف' : '🗑️ حذف العرض'} {quote.number}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{padding:'20px 22px'}}>
-          <div style={{background:'#fef2f2',border:'1.5px solid #fecaca',borderRadius:10,padding:'12px 16px',marginBottom:18,fontSize:13}}>
-            ⚠️ سيبقى العرض مرئياً للمدير في <strong>صفحة المحذوفات</strong> مع سبب الحذف — ويمكن استعادته لاحقاً.
-          </div>
+          {!editMode && (
+            <div style={{background:'#fef2f2',border:'1.5px solid #fecaca',borderRadius:10,padding:'12px 16px',marginBottom:18,fontSize:13}}>
+              ⚠️ سيبقى العرض مرئياً للمدير في <strong>صفحة المحذوفات</strong> مع سبب الحذف — ويمكن استعادته لاحقاً.
+            </div>
+          )}
           <div style={{marginBottom:14,fontSize:13}}>
             <strong>العميل:</strong> {quote.customer_name} &nbsp;|&nbsp; <strong>القيمة:</strong> {parseFloat(quote.nett_price||0).toFixed(3)} {quote.currency}
           </div>
@@ -2452,9 +2474,9 @@ function DeleteReasonModal({ quote, onConfirm, onClose }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-danger" disabled={!reason.trim()||loading}
+          <button className={editMode ? 'btn btn-primary' : 'btn btn-danger'} disabled={!reason.trim()||loading}
             onClick={async()=>{ setLoading(true); await onConfirm(reason.trim()); setLoading(false); }}>
-            {loading ? '...' : '🗑️ تأكيد الحذف'}
+            {loading ? '...' : editMode ? '💾 حفظ السبب' : '🗑️ تأكيد الحذف'}
           </button>
         </div>
       </div>
@@ -2742,6 +2764,8 @@ function QuotesList({ user, quotes, onReload }) {
   const [editing, setEditing] = useState(null);
   const [orderingQ, setOrderingQ] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
+  const [editArchiveTarget, setEditArchiveTarget] = useState(null);
+  const [editDeleteTarget, setEditDeleteTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
@@ -2860,7 +2884,9 @@ function QuotesList({ user, quotes, onReload }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const active = quotes.filter(q => !q.archived && !q.deleted_at);
-  const officialQuotes = active.filter(q => q.status !== 'draft');
+  const allOfficial   = active.filter(q => q.status !== 'draft');
+  const officialQuotes = allOfficial.filter(q => q.quote_type !== 'tender');
+  const tenderQuotes  = allOfficial.filter(q => q.quote_type === 'tender');
   const draftQuotes   = active.filter(q => q.status === 'draft');
   const archivedQuotes = quotes.filter(q => q.archived);
   const deletedQuotes  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
@@ -2868,6 +2894,13 @@ function QuotesList({ user, quotes, onReload }) {
   const [deletedSearch, setDeletedSearch] = useState('');
 
   const filtered = officialQuotes.filter(q => {
+    const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
+    const mf = filter === 'all' || q.status === filter;
+    const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
+    const mi = !searchIssuer || q.created_by === searchIssuer;
+    return ms && mf && md && mi;
+  });
+  const filteredTenders = tenderQuotes.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
     const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
@@ -3000,6 +3033,20 @@ function QuotesList({ user, quotes, onReload }) {
     toast('تم الأرشفة', 'success'); onReload();
   };
 
+  const doEditArchiveNote = async (note) => {
+    const q = editArchiveTarget;
+    setEditArchiveTarget(null);
+    await sb.from('quotations').update({ archive_note: note||null }).eq('id', q.id);
+    toast('تم تحديث سبب الأرشفة ✓', 'success'); onReload();
+  };
+
+  const doEditDeleteReason = async (reason) => {
+    const q = editDeleteTarget;
+    setEditDeleteTarget(null);
+    await sb.from('quotations').update({ delete_reason: reason||null }).eq('id', q.id);
+    toast('تم تحديث سبب الحذف ✓', 'success'); onReload();
+  };
+
   const deleteQ = async (reason) => {
     if (!deleteTarget) return;
     const q = deleteTarget;
@@ -3047,6 +3094,9 @@ function QuotesList({ user, quotes, onReload }) {
       <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)'}}>
         <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='official'?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='official'?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
           عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
+        </button>
+        <button onClick={()=>setTab('tenders')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='tenders'?'3px solid #854d0e':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='tenders'?'#854d0e':'var(--gray-500)',marginBottom:-2}}>
+          العطاءات <span style={{background:tenderQuotes.length?'#fef9c3':'var(--gray-100)',color:tenderQuotes.length?'#854d0e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{tenderQuotes.length}</span>
         </button>
         <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
           المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
@@ -3117,7 +3167,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th style={{width:110}}>المرجع</th><th>النوع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th style={{width:110}}>المرجع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
@@ -3132,11 +3182,6 @@ function QuotesList({ user, quotes, onReload }) {
                     })()}
                   </td>
                   <td className="text-sm text-muted" style={{textAlign:'center', width:110}}>{q.reference||'—'}</td>
-                  <td style={{textAlign:'center'}}>
-                    <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
-                      {QT[q.quote_type] || 'عرض سعر'}
-                    </span>
-                  </td>
                   <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
                   <td style={{textAlign:'center'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
@@ -3162,7 +3207,112 @@ function QuotesList({ user, quotes, onReload }) {
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={canViewIssuer?9:8}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد عروض</p></div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        )}
+      </div>
+      )}
+
+      {/* قائمة العطاءات */}
+      {tab === 'tenders' && (
+      <div className="card">
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          {canViewIssuer && (
+            <select className="form-control" style={{width:'auto',maxWidth:190}} value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)}>
+              <option value="">👤 كل المُصدِرين</option>
+              {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          )}
+          <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
+            <option value="all">كل الحالات</option>
+            {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input type="date" className="form-control" style={{width:'auto'}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} title="من تاريخ"/>
+          <input type="date" className="form-control" style={{width:'auto'}} value={dateTo} onChange={e=>setDateTo(e.target.value)} title="إلى تاريخ"/>
+          {(dateFrom||dateTo) && <button className="btn btn-ghost btn-sm" onClick={()=>{setDateFrom('');setDateTo('');}}>✕ مسح التاريخ</button>}
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredTenders.length} عطاء</span>
+        </div>
+        {isMobile ? (
+          <div style={{padding:'12px'}}>
+            {filteredTenders.map(q => (
+              <div key={q.id} className="qcard" style={{borderRight:'3px solid #854d0e'}}>
+                <div className="qcard-top">
+                  <span className="qcard-num">{q.number}</span>
+                  <SBadge status={q.status}/>
+                </div>
+                <div className="qcard-customer">{q.customer_name}</div>
+                <div className="qcard-meta">
+                  <span>📅 {q.date}</span>
+                  {q.reference && <span>· {q.reference}</span>}
+                  {q.valid_until && (() => { const exp = new Date(q.valid_until)<new Date(); return <span style={{color:exp?'#dc2626':'#16a34a',fontWeight:600}}>{exp?'⚠️ انتهت':'✓ صالح'}</span>; })()}
+                  {canViewIssuer && profiles[q.created_by] && <span style={{color:'var(--gray-400)'}}>· {profiles[q.created_by]}</span>}
+                </div>
+                <div className="qcard-status-row">
+                  <span style={{fontSize:12,fontWeight:600,color:'var(--gray-600)',whiteSpace:'nowrap'}}>تغيير الحالة:</span>
+                  <select value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
+                    {Object.entries(SL).filter(([k])=>!['draft','approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div className="qcard-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                  {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
+                  {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
+                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
+                </div>
+              </div>
+            ))}
+            {filteredTenders.length===0&&<div className="empty-state"><p>لا توجد عطاءات</p></div>}
+          </div>
+        ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th style={{width:110}}>المرجع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+            </thead>
+            <tbody>
+              {filteredTenders.map(q => (
+                <tr key={q.id}>
+                  <td className="font-bold" style={{color:'#854d0e', whiteSpace:'nowrap'}}>{q.number}</td>
+                  <td style={{width:160, whiteSpace:'normal', wordBreak:'break-word'}}>{q.customer_name}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>
+                    {q.date}
+                    {q.valid_until && (() => {
+                      const expired = new Date(q.valid_until) < new Date();
+                      return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
+                    })()}
+                  </td>
+                  <td className="text-sm text-muted" style={{textAlign:'center', width:110}}>{q.reference||'—'}</td>
+                  <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
+                  <td style={{textAlign:'center'}}>
+                    <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
+                      value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
+                      {Object.entries(SL).filter(([k])=>!['draft','approved','invoiced'].includes(k)).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <div className="flex gap-2">
+                      <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                      {(q.created_by === user?.id || hasPerm(user, 'quotes_edit_all')) && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
+                      <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
+                      {q.status!=='converted' && q.status!=='invoiced' && (
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>
+                      )}
+                      <button className="btn btn-ghost btn-sm" onClick={()=>{
+                        if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً قبل الأرشفة','error');return;}
+                        setArchiveTarget(q);
+                      }}>🗄️ أرشفة</button>
+                      {hasPerm(user,'quotes_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
+                    </div>
+                  </td>
+                  {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
+                </tr>
+              ))}
+              {filteredTenders.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد عطاءات</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -3273,7 +3423,10 @@ function QuotesList({ user, quotes, onReload }) {
                         </select>
                       : <SBadge status={q.status}/>}
                   </td>
-                  <td className="text-sm text-muted" style={{maxWidth:220}}>{q.archive_note||'—'}</td>
+                  <td className="text-sm text-muted" style={{maxWidth:220}}>
+                    {q.archive_note||'—'}
+                    <button className="btn btn-ghost btn-sm" style={{marginRight:6,padding:'1px 6px',fontSize:11}} onClick={()=>setEditArchiveTarget(q)} title="تعديل السبب">✏️</button>
+                  </td>
                   <td>
                     <div className="flex gap-2">
                       <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
@@ -3315,7 +3468,10 @@ function QuotesList({ user, quotes, onReload }) {
                     <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
                     <td className="text-sm text-muted">{q.deleted_at?.slice(0,10)}</td>
                     <td className="text-sm">{profiles[q.created_by]||'—'}</td>
-                    <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>{q.delete_reason||'—'}</td>
+                    <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>
+                      {q.delete_reason||'—'}
+                      <button className="btn btn-ghost btn-sm" style={{marginRight:6,padding:'1px 6px',fontSize:11,color:'var(--gray-600)'}} onClick={()=>setEditDeleteTarget(q)} title="تعديل السبب">✏️</button>
+                    </td>
                     <td>
                       <div className="flex gap-1">
                         <button className="btn btn-ghost btn-sm" onClick={()=>restoreDeleted(q)} title="استعادة">↩️ استعادة</button>
@@ -3333,8 +3489,8 @@ function QuotesList({ user, quotes, onReload }) {
 
       {showTypeDialog && (
         <QuoteTypeSelectionDialog
-          onConfirm={({layout, lang}) => {
-            setNewQuoteDefaults({ detailed_layout: layout === 'detailed', quote_lang: lang });
+          onConfirm={({layout, lang, quoteType}) => {
+            setNewQuoteDefaults({ detailed_layout: layout === 'detailed', quote_lang: lang, quote_type: quoteType });
             setShowTypeDialog(false);
             setShowForm(true);
           }}
@@ -3351,6 +3507,8 @@ function QuotesList({ user, quotes, onReload }) {
       {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null}/>}
       {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{setOrderingQ(null);onReload();}} onClose={()=>setOrderingQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
+      {editArchiveTarget && <ArchiveModal label={`تعديل سبب أرشفة ${editArchiveTarget.number}`} initialNote={editArchiveTarget.archive_note||''} onConfirm={doEditArchiveNote} onClose={()=>setEditArchiveTarget(null)}/>}
+      {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
       {followUpTarget && <FollowUpModal quote={followUpTarget} user={user} onClose={()=>setFollowUpTarget(null)}/>}
     </div>
   );
