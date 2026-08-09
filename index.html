@@ -8146,7 +8146,7 @@ function LettersPage({ user }) {
         </div>
       </div>
 
-      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
+      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
       {previewing && <LetterPrint letter={previewing} onClose={()=>setPreviewing(null)}/>}
     </div>
   );
@@ -8182,6 +8182,23 @@ function RichTextEditor({ value, onChange, placeholder }) {
     exec('fontSize', size);
   };
 
+  const setParagraphSpacing = (px) => {
+    editorRef.current?.focus();
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === 3) node = node.parentNode;
+    while (node && node !== editorRef.current) {
+      if (['P','DIV','H1','H2','H3','H4','LI','BLOCKQUOTE'].includes(node.nodeName)) break;
+      node = node.parentNode;
+    }
+    if (node && node !== editorRef.current) {
+      node.style.marginBottom = px + 'px';
+      node.style.marginTop = '0';
+    }
+    syncContent();
+  };
+
   return (
     <div>
       <div className="rte-toolbar">
@@ -8207,6 +8224,15 @@ function RichTextEditor({ value, onChange, placeholder }) {
         <button type="button" onClick={()=>exec('justifyRight')} title="محاذاة يمين">⫷</button>
         <button type="button" onClick={()=>exec('justifyCenter')} title="توسيط">☰</button>
         <button type="button" onClick={()=>exec('justifyLeft')} title="محاذاة يسار">⫸</button>
+        <span style={{width:1,background:'var(--gray-300)',margin:'0 4px'}}/>
+        <select onChange={e=>{if(e.target.value!=='')setParagraphSpacing(parseInt(e.target.value));e.target.value='';}} defaultValue="" title="مسافة بعد الفقرة">
+          <option value="" disabled>↕ مسافة الفقرة</option>
+          <option value="0">بدون مسافة — 0pt</option>
+          <option value="6">ضيق — 4pt</option>
+          <option value="10">عادي — 8pt</option>
+          <option value="16">مريح — 12pt</option>
+          <option value="24">واسع — 18pt</option>
+        </select>
       </div>
       <div ref={editorRef} className="rte-editor" contentEditable
         data-placeholder={placeholder||''}
@@ -8217,7 +8243,7 @@ function RichTextEditor({ value, onChange, placeholder }) {
   );
 }
 
-function LetterForm({ user, letter, contacts, onSave, onClose }) {
+function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
   const [form, setForm] = useState({
     recipient:'', attention:'', date: today(), subject:'',
     category:'correspondence', body:'',
@@ -8231,6 +8257,8 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
 
   const recipientList = contacts.filter(c=>c.contact_type==='recipient');
   const attentionList = contacts.filter(c=>c.contact_type==='attention');
+  const pastRecipients = [...new Set((letters||[]).map(l=>l.recipient).filter(Boolean))];
+  const pastSubjects   = [...new Set((letters||[]).map(l=>l.subject).filter(Boolean))];
 
   const saveContact = async (name, type) => {
     if (!name?.trim()) return;
@@ -8272,7 +8300,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:720}}>
+      <div className="modal" style={{maxWidth:1000}}>
         <div className="modal-header">
           <span className="modal-title">{letter?'تعديل كتاب':'✉️ كتاب رسمي جديد'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -8287,6 +8315,7 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
               </div>
               <datalist id="ltr-recip-opts">
                 {recipientList.map(c=><option key={c.id} value={c.name}/>)}
+                {pastRecipients.filter(r=>!recipientList.some(c=>c.name===r)).map(r=><option key={r} value={r}/>)}
               </datalist>
             </div>
             <div className="form-group">
@@ -8309,7 +8338,10 @@ function LetterForm({ user, letter, contacts, onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">الموضوع *</label>
-              <input className="form-control" value={form.subject} onChange={e=>setF('subject',e.target.value)} placeholder="شهادة خبرة، تعميم، إلخ"/>
+              <input className="form-control" list="ltr-subj-opts" value={form.subject} onChange={e=>setF('subject',e.target.value)} placeholder="شهادة خبرة، تعميم، إلخ"/>
+              <datalist id="ltr-subj-opts">
+                {pastSubjects.map(s=><option key={s} value={s}/>)}
+              </datalist>
             </div>
             {canManageLetters ? (
               <div className="form-group">
@@ -8550,9 +8582,7 @@ function LetterPrint({ letter, onClose }) {
           <div className="pq-page">
             <div className="pq-page-inner">
 
-              {withHeader
-                ? <PqDocHeader/>
-                : <div className="letter-preprinted-spacer-top"/>}
+              {withHeader && <PqDocHeader/>}
 
               <table className="letter-info-table">
                 <tbody>
@@ -8579,9 +8609,7 @@ function LetterPrint({ letter, onClose }) {
                 <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
               </div>
             )}
-            {withHeader
-              ? <PqFooterBar/>
-              : <div className="letter-preprinted-spacer-bottom"/>}
+            {withHeader && <PqFooterBar/>}
           </div>
         </div>
       </div>
