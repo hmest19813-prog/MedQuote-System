@@ -2764,10 +2764,11 @@ function QuotesList({ user, quotes, onReload }) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-      // إيجاد صف العناوين (يحتوي "Item Description")
+      // إيجاد صف العناوين
+      const ITEM_HEADER_KEYWORDS = ['item description', 'item', 'الصنف', 'المادة', 'البند', 'الوصف'];
       let headerRowIdx = -1;
       for (let i = 0; i < Math.min(data.length, 15); i++) {
-        if (data[i].some(c => String(c).includes('Item Description'))) { headerRowIdx = i; break; }
+        if (data[i].some(c => ITEM_HEADER_KEYWORDS.includes(String(c).trim().toLowerCase()))) { headerRowIdx = i; break; }
       }
       if (headerRowIdx < 0) { toast('تعذّر قراءة الملف — تأكد من صيغة الجدول', 'error'); return; }
 
