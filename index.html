@@ -2884,6 +2884,41 @@ function QuotesList({ user, quotes, onReload }) {
   const [tab, setTab] = useState('official'); // 'official' | 'drafts'
   const [importLoading, setImportLoading] = useState(false);
   const importFileRef = useRef(null);
+  const [showFilter, setShowFilter] = useState(false);
+  const [period, setPeriod] = useState('');
+  const filterRef = useRef(null);
+
+  useEffect(() => {
+    if (!showFilter) return;
+    const h = e => { if (filterRef.current && !filterRef.current.contains(e.target)) setShowFilter(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showFilter]);
+
+  const applyPeriod = (p) => {
+    setPeriod(p);
+    const now = new Date();
+    const fmt = d => d.toISOString().slice(0,10);
+    if (p === 'yesterday') {
+      const y = new Date(now); y.setDate(y.getDate()-1);
+      setDateFrom(fmt(y)); setDateTo(fmt(y));
+    } else if (p === '7d') {
+      const s = new Date(now); s.setDate(s.getDate()-6);
+      setDateFrom(fmt(s)); setDateTo(fmt(now));
+    } else if (p === '14d') {
+      const s = new Date(now); s.setDate(s.getDate()-13);
+      setDateFrom(fmt(s)); setDateTo(fmt(now));
+    } else if (p === '30d') {
+      const s = new Date(now); s.setDate(s.getDate()-29);
+      setDateFrom(fmt(s)); setDateTo(fmt(now));
+    } else {
+      setDateFrom(''); setDateTo('');
+    }
+  };
+
+  const clearAllFilters = () => {
+    setDateFrom(''); setDateTo(''); setFilter('all'); setSearchIssuer(''); setPeriod('');
+  };
 
   const handleImportExcel = async (e) => {
     const file = e.target.files[0];
@@ -3024,6 +3059,78 @@ function QuotesList({ user, quotes, onReload }) {
   );
   const filteredDeleted = deletedQuotes.filter(q =>
     !deletedSearch || q.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || q.number?.includes(deletedSearch)
+  );
+
+  const activeFilterCount = [dateFrom||dateTo, filter!=='all', searchIssuer].filter(Boolean).length;
+
+  const PERIODS = [
+    { val:'yesterday', label:'أمس' },
+    { val:'7d',        label:'7 أيام' },
+    { val:'14d',       label:'14 يوم' },
+    { val:'30d',       label:'شهر' },
+  ];
+
+  const FilterBtn = () => (
+    <div ref={filterRef} style={{position:'relative'}}>
+      <button
+        onClick={()=>setShowFilter(o=>!o)}
+        style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',border:'1.5px solid',borderColor:activeFilterCount?'var(--primary)':'#d1d5db',borderRadius:8,background:activeFilterCount?'#eff6ff':'#fff',cursor:'pointer',fontWeight:700,fontSize:13,color:activeFilterCount?'var(--primary)':'#374151',whiteSpace:'nowrap',boxShadow:'0 1px 3px rgba(0,0,0,.07)',transition:'all .15s'}}
+      >
+        🔽 فلتر {activeFilterCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:99,fontSize:11,padding:'1px 7px',marginRight:2}}>{activeFilterCount}</span>}
+      </button>
+      {showFilter && (
+        <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:300,background:'#fff',border:'1px solid #e5e7eb',borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.15)',padding:18,minWidth:300}}>
+          {/* فترة سريعة */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:8,textTransform:'uppercase',letterSpacing:.5}}>الفترة الزمنية</div>
+            <div style={{display:'flex',gap:6}}>
+              {PERIODS.map(({val,label})=>(
+                <button key={val} onClick={()=>applyPeriod(period===val?'':val)}
+                  style={{padding:'5px 12px',borderRadius:20,border:'1.5px solid',borderColor:period===val?'var(--primary)':'#e5e7eb',background:period===val?'var(--primary)':'#f9fafb',color:period===val?'#fff':'#374151',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* من / إلى */}
+          <div style={{display:'flex',gap:10,marginBottom:14}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>من تاريخ</div>
+              <input type="date" className="form-control" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod('');}} style={{width:'100%',fontSize:13}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>إلى تاريخ</div>
+              <input type="date" className="form-control" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod('');}} style={{width:'100%',fontSize:13}}/>
+            </div>
+          </div>
+          {/* الحالة */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>الحالة</div>
+            <select className="form-control" value={filter} onChange={e=>setFilter(e.target.value)} style={{width:'100%',fontSize:13}}>
+              <option value="all">كل الحالات</option>
+              {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          {/* المُصدِر */}
+          {canViewIssuer && (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>المُصدِر</div>
+              <select className="form-control" value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)} style={{width:'100%',fontSize:13}}>
+                <option value="">كل المُصدِرين</option>
+                {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+          )}
+          {/* مسح */}
+          {activeFilterCount>0 && (
+            <button onClick={()=>{clearAllFilters();setShowFilter(false);}}
+              style={{width:'100%',padding:'7px',borderRadius:8,border:'1px solid #fecaca',background:'#fff5f5',color:'var(--danger)',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+              ✕ مسح كل الفلاتر
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 
   const restoreQ = async (q) => {
@@ -3223,19 +3330,7 @@ function QuotesList({ user, quotes, onReload }) {
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
-          {canViewIssuer && (
-            <select className="form-control" style={{width:'auto',maxWidth:190}} value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)}>
-              <option value="">👤 كل المُصدِرين</option>
-              {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
-            </select>
-          )}
-          <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
-            <option value="all">كل الحالات</option>
-            {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <input type="date" className="form-control" style={{width:'auto'}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} title="من تاريخ"/>
-          <input type="date" className="form-control" style={{width:'auto'}} value={dateTo} onChange={e=>setDateTo(e.target.value)} title="إلى تاريخ"/>
-          {(dateFrom||dateTo) && <button className="btn btn-ghost btn-sm" onClick={()=>{setDateFrom('');setDateTo('');}}>✕ مسح التاريخ</button>}
+          <FilterBtn/>
           <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} عرض</span>
         </div>
         {isMobile ? (
@@ -3323,19 +3418,7 @@ function QuotesList({ user, quotes, onReload }) {
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
-          {canViewIssuer && (
-            <select className="form-control" style={{width:'auto',maxWidth:190}} value={searchIssuer} onChange={e=>setSearchIssuer(e.target.value)}>
-              <option value="">👤 كل المُصدِرين</option>
-              {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
-            </select>
-          )}
-          <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
-            <option value="all">كل الحالات</option>
-            {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <input type="date" className="form-control" style={{width:'auto'}} value={dateFrom} onChange={e=>setDateFrom(e.target.value)} title="من تاريخ"/>
-          <input type="date" className="form-control" style={{width:'auto'}} value={dateTo} onChange={e=>setDateTo(e.target.value)} title="إلى تاريخ"/>
-          {(dateFrom||dateTo) && <button className="btn btn-ghost btn-sm" onClick={()=>{setDateFrom('');setDateTo('');}}>✕ مسح التاريخ</button>}
+          <FilterBtn/>
           <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredTenders.length} عطاء</span>
         </div>
         {isMobile ? (
