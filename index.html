@@ -2032,6 +2032,8 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     if (!form.reference?.trim()) { toast('يجب إدخال رقم المرجع','error'); return; }
+    if (!form.requester_phone?.trim()) { toast('يجب إدخال رقم هاتف المتابعة','error'); return; }
+    if (form.requester_phone.replace(/\D/g,'').length < 9) { toast('رقم هاتف المتابعة غير صحيح — يجب أن يكون 9 أرقام على الأقل','error'); return; }
     if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
     // مدة الصلاحية إلزامية لكل عرض — ومن لا يملك الصلاحية تُفرض عليه المدة الافتراضية
     const validUntil = canOverrideValidity ? form.valid_until : addDays(form.date || today(), QUOTE_VALIDITY_DAYS);
@@ -2265,10 +2267,13 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
               <div className="form-group" style={{marginBottom:0}}>
-                <label className="form-label" style={{fontSize:12}}>رقم الهاتف</label>
-                <input className="form-control" type="tel" value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX"/>
+                <label className="form-label" style={{fontSize:12}}>رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
+                <input className="form-control" type="tel" value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX" style={{borderColor:!form.requester_phone?.trim()?'#fca5a5':''}}/>
                 {form.requester_phone && form.requester_phone.replace(/\D/g,'').length < 9 && (
                   <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>⚠️ الرقم أقل من 9 أرقام</p>
+                )}
+                {!form.requester_phone?.trim() && (
+                  <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>مطلوب</p>
                 )}
               </div>
               <div className="form-group" style={{marginBottom:0}}>
