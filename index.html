@@ -3608,9 +3608,11 @@ function QuotesList({ user, quotes, onReload }) {
                     {q.archive_note||'—'}
                   </td>
                   <td>
-                    <div className="flex gap-2" style={{flexWrap:'nowrap',alignItems:'center'}}>
-                      <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
-                      <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
+                    <div className="flex gap-2" style={{flexWrap:'nowrap',alignItems:'center',justifyContent:'space-between',width:'100%'}}>
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
+                      </div>
                       <button className="btn btn-ghost btn-sm" style={{color:'#6b7280',borderColor:'#d1d5db'}} onClick={()=>setEditArchiveTarget(q)} title="تعديل سبب الأرشفة">✏️ السبب</button>
                     </div>
                   </td>
@@ -3653,10 +3655,12 @@ function QuotesList({ user, quotes, onReload }) {
                       {q.delete_reason||'—'}
                     </td>
                     <td>
-                      <div className="flex gap-2" style={{flexWrap:'nowrap',alignItems:'center'}}>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>restoreDeleted(q)} title="استعادة">↩️ استعادة</button>
+                      <div className="flex gap-2" style={{flexWrap:'nowrap',alignItems:'center',justifyContent:'space-between',width:'100%'}}>
+                        <div className="flex gap-2">
+                          <button className="btn btn-ghost btn-sm" onClick={()=>restoreDeleted(q)} title="استعادة">↩️ استعادة</button>
+                          {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDeleteQ(q)} title="حذف نهائي">🗑️</button>}
+                        </div>
                         <button className="btn btn-ghost btn-sm" style={{color:'#6b7280',borderColor:'#d1d5db'}} onClick={()=>setEditDeleteTarget(q)} title="تعديل سبب الحذف">✏️ السبب</button>
-                        {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDeleteQ(q)} title="حذف نهائي">🗑️</button>}
                       </div>
                     </td>
                   </tr>
