@@ -2032,6 +2032,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
     if (!form.reference?.trim()) { toast('يجب إدخال رقم المرجع','error'); return; }
+    if (!form.requester_name?.trim()) { toast('يجب إدخال اسم مقدم الطلب','error'); return; }
     if (!form.requester_phone?.trim()) { toast('يجب إدخال رقم هاتف المتابعة','error'); return; }
     if (form.requester_phone.replace(/\D/g,'').length < 9) { toast('رقم هاتف المتابعة غير صحيح — يجب أن يكون 9 أرقام على الأقل','error'); return; }
     if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
@@ -2256,32 +2257,26 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
             </div>
           </div>
           {/* بيانات مقدم الطلب — داخلية، لا تظهر بالطباعة */}
-          <div className="mb-4" style={{background:'#f8fafc',border:'1.5px dashed var(--gray-300)',borderRadius:10,padding:'12px 16px'}}>
-            <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
-              👤 بيانات مقدم الطلب
-              <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11}}>(داخلية — لا تظهر عند الطباعة)</span>
+          <div className="mb-4" style={{background:'#f8fafc',border:'1.5px dashed #cbd5e1',borderRadius:8,padding:'10px 14px'}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--gray-400)',marginBottom:8,display:'flex',alignItems:'center',gap:5,textTransform:'uppercase',letterSpacing:.4}}>
+              👤 مقدم الطلب <span style={{fontWeight:400,fontSize:10}}>(داخلي — لا يُطبع)</span>
             </div>
-            <div className="form-group" style={{marginBottom:10}}>
-              <label className="form-label" style={{fontSize:12}}>اسم مقدم الطلب</label>
-              <input className="form-control" value={form.requester_name||''} onChange={e=>setF('requester_name',e.target.value)} placeholder="اسم الشخص الذي طلب العرض"/>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
               <div className="form-group" style={{marginBottom:0}}>
-                <label className="form-label" style={{fontSize:12}}>رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
-                <input className="form-control" type="tel" value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX" style={{borderColor:!form.requester_phone?.trim()?'#fca5a5':''}}/>
-                {form.requester_phone && form.requester_phone.replace(/\D/g,'').length < 9 && (
-                  <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>⚠️ الرقم أقل من 9 أرقام</p>
-                )}
-                {!form.requester_phone?.trim() && (
-                  <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>مطلوب</p>
-                )}
+                <label className="form-label" style={{fontSize:11,marginBottom:3}}>الاسم <span style={{color:'var(--danger)'}}>*</span></label>
+                <input className="form-control" style={{fontSize:12,padding:'5px 8px',borderColor:!form.requester_name?.trim()?'#fca5a5':''}} value={form.requester_name||''} onChange={e=>setF('requester_name',e.target.value)} placeholder="اسم مقدم الطلب"/>
+                {!form.requester_name?.trim() && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>مطلوب</p>}
               </div>
               <div className="form-group" style={{marginBottom:0}}>
-                <label className="form-label" style={{fontSize:12}}>رقم ثاني <span style={{color:'var(--gray-400)',fontWeight:400}}>(اختياري)</span></label>
-                <input className="form-control" type="tel" value={form.requester_phone2||''} onChange={e=>setF('requester_phone2',e.target.value)} placeholder="07XXXXXXXX"/>
-                {form.requester_phone2 && form.requester_phone2.replace(/\D/g,'').length < 9 && (
-                  <p style={{color:'var(--danger)',fontSize:11,marginTop:3,marginBottom:0}}>⚠️ الرقم أقل من 9 أرقام</p>
-                )}
+                <label className="form-label" style={{fontSize:11,marginBottom:3}}>رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
+                <input className="form-control" type="tel" style={{fontSize:12,padding:'5px 8px',borderColor:!form.requester_phone?.trim()?'#fca5a5':''}} value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX"/>
+                {!form.requester_phone?.trim() && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>مطلوب</p>}
+                {form.requester_phone && form.requester_phone.replace(/\D/g,'').length < 9 && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>⚠️ أقل من 9 أرقام</p>}
+              </div>
+              <div className="form-group" style={{marginBottom:0}}>
+                <label className="form-label" style={{fontSize:11,marginBottom:3,color:'var(--gray-500)'}}>رقم ثاني <span style={{fontWeight:400}}>(اختياري)</span></label>
+                <input className="form-control" type="tel" style={{fontSize:12,padding:'5px 8px'}} value={form.requester_phone2||''} onChange={e=>setF('requester_phone2',e.target.value)} placeholder="07XXXXXXXX"/>
+                {form.requester_phone2 && form.requester_phone2.replace(/\D/g,'').length < 9 && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>⚠️ أقل من 9 أرقام</p>}
               </div>
             </div>
           </div>
