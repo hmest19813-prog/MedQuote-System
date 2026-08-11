@@ -2065,6 +2065,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       delete payload._convertToInvoice;
       delete payload.grand_total;
       delete payload.number;
+      delete payload.cloneItems;
       delete payload.total_price;
       if (!payload.valid_until) payload.valid_until = null;
       if (!editQuote?.id) { payload.created_by = user?.id || null; }
