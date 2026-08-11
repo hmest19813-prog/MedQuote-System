@@ -1877,9 +1877,17 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const validityTouched = useRef(canOverrideValidity && !!editQuote?.valid_until);
   // مفصّل = بأعمدة الضريبة، مبسّط = سعر الوحدة + الإجمالي فقط
   const detailed = form.detailed_layout !== false;
-  const [items, setItems] = useState([
-    { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:16, origin:'CHINA', delivery:'PROMPT', notes:'' }
-  ]);
+  const [items, setItems] = useState(() => {
+    if (initialValues?.cloneItems?.length) {
+      return initialValues.cloneItems.map(i => ({
+        item_name: i.item_name, description: i.description||'',
+        unit: i.unit||'EACH', quantity: i.quantity||1, unit_price: i.unit_price||'',
+        tax_pct: i.tax_pct??16, origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT',
+        notes: i.notes||'', option_group: i.option_group||null,
+      }));
+    }
+    return [{ item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:16, origin:'CHINA', delivery:'PROMPT', notes:'' }];
+  });
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(!!editQuote);
   const [customers, setCustomers] = useState([]);
@@ -2897,6 +2905,23 @@ function QuotesList({ user, quotes, onReload }) {
   const [showForm, setShowForm] = useState(false);
   const [showTypeDialog, setShowTypeDialog] = useState(false);
   const [newQuoteDefaults, setNewQuoteDefaults] = useState(null);
+  const [cloneSource, setCloneSource] = useState(null);
+
+  const cloneQuote = async (q) => {
+    const { data, error } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
+    if (error) { toast('خطأ في جلب بنود العرض', 'error'); return; }
+    setCloneSource({
+      cloneItems: data || [],
+      quote_type: q.quote_type,
+      detailed_layout: q.detailed_layout,
+      quote_lang: q.quote_lang,
+      tax_pct: q.tax_pct,
+      discount_pct: q.discount_pct,
+      discount_type: q.discount_type,
+      discount_fixed: q.discount_fixed,
+      currency: q.currency,
+    });
+  };
   const [tab, setTab] = useState('official'); // 'official' | 'drafts'
   const [importLoading, setImportLoading] = useState(false);
   const importFileRef = useRef(null);
@@ -3377,7 +3402,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
-                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
+                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
               </div>
             ))}
@@ -3387,7 +3412,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th style={{width:220}}>العميل</th><th>التاريخ</th><th style={{width:160}}>المرجع</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th style={{width:220}}>العميل</th><th>التاريخ</th><th style={{width:200}}>المرجع</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th style={{width:80}}>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(q => (
@@ -3401,7 +3426,7 @@ function QuotesList({ user, quotes, onReload }) {
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="text-sm text-muted" style={{textAlign:'center', width:160}}>{q.reference||'—'}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center', width:200}}>{q.reference||'—'}</td>
                   <td style={{textAlign:'center'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
@@ -3412,10 +3437,11 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
+                      { icon:'📋', label:'نسخ لعميل آخر', onClick:()=>cloneQuote(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
-                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
+                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
                   </td>
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
@@ -3464,7 +3490,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
-                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
+                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
               </div>
             ))}
@@ -3500,10 +3526,11 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
+                      { icon:'📋', label:'نسخ لعميل آخر', onClick:()=>cloneQuote(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
-                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
+                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
                   </td>
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
@@ -3582,6 +3609,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
+                      { icon:'📋', label:'نسخ لعميل آخر', onClick:()=>cloneQuote(q) },
                       { icon:'✅', label:'اعتماد', onClick:()=>confirmDraft(q) },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
                     ]}/>
@@ -3699,6 +3727,7 @@ function QuotesList({ user, quotes, onReload }) {
         />
       )}
       {showForm && <QuoteForm user={user} initialValues={newQuoteDefaults} onSave={()=>{setShowForm(false);setNewQuoteDefaults(null);onReload();}} onClose={()=>{setShowForm(false);setNewQuoteDefaults(null);}}/>}
+      {cloneSource && <QuoteForm user={user} initialValues={cloneSource} onSave={()=>{setCloneSource(null);onReload();}} onClose={()=>setCloneSource(null)}/>}
       {editing && !editing._convertToInvoice && (
         <QuoteForm user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
