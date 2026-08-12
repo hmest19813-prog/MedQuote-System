@@ -817,7 +817,11 @@ const toast = (msg, type='info') => toastSetter && toastSetter(l => [...l, { msg
 const hasPerm = (user, key) => {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  return user.permissions?.[key] === true;
+  const perms = user.permissions || {};
+  if (key in perms) return perms[key] === true;
+  // مفتاح جديد غير موجود في DB بعد → نرجع للقيمة الافتراضية للدور
+  if (user.role === 'manager') return true;
+  return DEFAULT_EMPLOYEE_PERMS[key] === true;
 };
 
 /* ===================== BADGE ===================== */
@@ -3460,7 +3464,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
-                      { icon:'📋', label:'نسخ لعميل آخر', onClick:()=>cloneQuote(q) },
+                      { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
@@ -3549,7 +3553,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
-                      { icon:'📋', label:'نسخ لعميل آخر', onClick:()=>cloneQuote(q) },
+                      { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
@@ -3632,7 +3636,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
-                      { icon:'📋', label:'نسخ لعميل آخر', onClick:()=>cloneQuote(q) },
+                      { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'✅', label:'اعتماد', onClick:()=>confirmDraft(q) },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
                     ]}/>
@@ -5195,42 +5199,43 @@ const ROLE_LABELS = { admin:'مدير النظام', manager:'مدير', employe
 const ROLE_BADGE  = { admin:'badge-approved', manager:'badge-converted', employee:'badge-sent', user:'badge-sent' };
 
 const PERM_GROUPS = [
-  { label: 'عروض الأسعار', perms: [
-    { key: 'quotes_create',   label: 'إنشاء عرض سعر جديد' },
-    { key: 'quotes_view_all', label: 'مشاهدة عروض الموظفين الآخرين' },
-    { key: 'quotes_edit_all', label: 'تعديل عروض الموظفين الآخرين' },
-    { key: 'quotes_delete',   label: 'حذف عروض الأسعار' },
+  { label: 'عروض الأسعار', icon: '📄', perms: [
+    { key: 'quotes_create',          label: 'إنشاء عرض سعر جديد' },
+    { key: 'quotes_clone',           label: 'نسخ عرض سعر لعميل آخر' },
+    { key: 'quotes_view_all',        label: 'مشاهدة عروض الموظفين الآخرين' },
+    { key: 'quotes_edit_all',        label: 'تعديل عروض الموظفين الآخرين' },
+    { key: 'quotes_delete',          label: 'حذف عروض الأسعار' },
     { key: 'quotes_validity_override', label: `تعديل مدة صلاحية العرض (الافتراضي ${QUOTE_VALIDITY_DAYS} يوم)` },
-    { key: 'quotes_view_issuer', label: 'مشاهدة مصدر العرض والتصفية حسبه' },
+    { key: 'quotes_view_issuer',     label: 'مشاهدة مصدر العرض والتصفية حسبه' },
+    { key: 'deleted_quotes_access',  label: 'الوصول لعروض الأسعار المحذوفة' },
   ]},
-  { label: 'الطلبات', perms: [
+  { label: 'الطلبات', icon: '📦', perms: [
     { key: 'orders_access', label: 'الوصول لصفحة الطلبات' },
     { key: 'orders_create', label: 'إنشاء طلب جديد' },
     { key: 'orders_edit',   label: 'تعديل الطلبات' },
     { key: 'orders_delete', label: 'حذف الطلبات' },
   ]},
-  { label: 'الفواتير والدفعات', perms: [
+  { label: 'الفواتير والدفعات', icon: '💰', perms: [
     { key: 'payments_delete', label: 'حذف الدفعات من الفواتير' },
   ]},
-  { label: 'العملاء', perms: [
+  { label: 'العملاء', icon: '🏢', perms: [
     { key: 'customers_access', label: 'الوصول لقائمة العملاء' },
     { key: 'customers_create', label: 'إضافة عميل جديد' },
     { key: 'customers_edit',   label: 'تعديل بيانات العملاء' },
     { key: 'customers_delete', label: 'حذف العملاء وإدارة القوائم' },
   ]},
-  { label: 'الكتالوج', perms: [
+  { label: 'الكتالوج', icon: '🗂️', perms: [
     { key: 'catalog_access', label: 'الوصول للكتالوج' },
     { key: 'catalog_edit',   label: 'إضافة وتعديل الأصناف' },
     { key: 'catalog_delete', label: 'حذف الأصناف وإدارة الفئات' },
   ]},
-  { label: 'صفحات أخرى', perms: [
-    { key: 'letters_access',        label: 'الكتب الرسمية' },
-    { key: 'letters_manage',        label: 'حذف الكتب وإدارة تصنيفاتها' },
-    { key: 'archive_access',        label: 'الأرشيف' },
-    { key: 'activity_access',       label: 'سجل النشاط' },
-    { key: 'deleted_quotes_access', label: 'عروض الأسعار المحذوفة' },
+  { label: 'الكتب والنماذج', icon: '📝', perms: [
+    { key: 'letters_access',  label: 'الوصول للكتب الرسمية والنماذج' },
+    { key: 'letters_manage',  label: 'حذف الكتب وإدارة تصنيفاتها' },
+    { key: 'archive_access',  label: 'الوصول للأرشيف' },
+    { key: 'activity_access', label: 'مشاهدة سجل النشاط' },
   ]},
-  { label: 'المشتريات والموردون', perms: [
+  { label: 'المشتريات والموردون', icon: '🏭', perms: [
     { key: 'suppliers_access',          label: 'الوصول لوحدة المشتريات' },
     { key: 'suppliers_create',          label: 'إضافة مورد / أمر شراء' },
     { key: 'suppliers_edit',            label: 'تعديل الموردين وأوامر الشراء' },
@@ -5238,13 +5243,13 @@ const PERM_GROUPS = [
     { key: 'supplier_invoices_create',  label: 'إنشاء فواتير الموردين' },
     { key: 'supplier_payments_create',  label: 'تسجيل مدفوعات الموردين' },
   ]},
-  { label: 'الموارد البشرية', perms: [
+  { label: 'الموارد البشرية', icon: '👥', perms: [
     { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
   ]},
 ];
 
 const DEFAULT_EMPLOYEE_PERMS = {
-  quotes_create: true,  quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
+  quotes_create: true,  quotes_clone: true,     quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
   quotes_validity_override: false, quotes_view_issuer: false,
   deleted_quotes_access: false,
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
@@ -5349,7 +5354,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth: (form.role === 'employee' || form.role === 'manager') ? 620 : 480}}>
+      <div className="modal" style={{maxWidth: (form.role === 'employee' || form.role === 'manager') ? 700 : 480}}>
         <div className="modal-header">
           <span className="modal-title">{isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -5423,10 +5428,23 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
           </div>
 
           {/* Checklist الصلاحيات — للمديرين والموظفين */}
-          {(form.role === 'employee' || form.role === 'manager') && (
+          {(form.role === 'employee' || form.role === 'manager') && (() => {
+            const totalPerms = Object.keys(form.permissions).length;
+            const activePerms = Object.values(form.permissions).filter(Boolean).length;
+            const toggleGroup = (group, val) => {
+              const patch = {};
+              group.perms.forEach(p => { patch[p.key] = val; });
+              setF('permissions', { ...form.permissions, ...patch });
+            };
+            return (
             <div style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'12px 14px',background:'#f8fafc'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 {form.role === 'manager' ? 'صلاحيات المدير' : 'صلاحيات الموظف'}</span>
+                <div>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 {form.role === 'manager' ? 'صلاحيات المدير' : 'صلاحيات الموظف'}</span>
+                  <span style={{fontSize:11,color:'var(--primary)',fontWeight:600,marginRight:8,background:'#e0f0ff',padding:'1px 8px',borderRadius:10}}>
+                    {activePerms} / {totalPerms} مُفعّلة
+                  </span>
+                </div>
                 <div style={{display:'flex',gap:6}}>
                   <button type="button"
                     style={{fontSize:11,padding:'3px 10px',borderRadius:6,border:'1px solid var(--primary)',color:'var(--primary)',background:'white',cursor:'pointer',fontFamily:'inherit'}}
@@ -5436,10 +5454,23 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
                     onClick={()=>toggleAllPerms(false)}>إلغاء الكل</button>
                 </div>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,maxHeight:280,overflowY:'auto'}}>
-                {PERM_GROUPS.map(group => (
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,maxHeight:340,overflowY:'auto'}}>
+                {PERM_GROUPS.map(group => {
+                  const groupActive = group.perms.filter(p => form.permissions[p.key]).length;
+                  const groupTotal = group.perms.length;
+                  const allOn = groupActive === groupTotal;
+                  return (
                   <div key={group.label} style={{background:'white',borderRadius:7,padding:'8px 10px',border:'1px solid var(--gray-200)'}}>
-                    <div style={{fontSize:11,fontWeight:700,color:'var(--primary)',marginBottom:6,paddingBottom:4,borderBottom:'1px solid var(--gray-100)'}}>{group.label}</div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5,paddingBottom:4,borderBottom:'1px solid var(--gray-100)'}}>
+                      <span style={{fontSize:11,fontWeight:700,color:'var(--primary)'}}>{group.icon} {group.label}</span>
+                      <div style={{display:'flex',alignItems:'center',gap:4}}>
+                        <span style={{fontSize:10,color:'var(--gray-400)'}}>{groupActive}/{groupTotal}</span>
+                        <button type="button" onClick={()=>toggleGroup(group, !allOn)}
+                          style={{fontSize:10,padding:'1px 6px',borderRadius:4,border:'1px solid var(--gray-200)',color:allOn?'var(--danger)':'var(--primary)',background:'white',cursor:'pointer',fontFamily:'inherit',whiteSpace:'nowrap'}}>
+                          {allOn ? 'إلغاء الكل' : 'تحديد الكل'}
+                        </button>
+                      </div>
+                    </div>
                     {group.perms.map(p => (
                       <label key={p.key} style={{display:'flex',alignItems:'center',gap:7,marginBottom:4,cursor:'pointer',fontSize:12,color:'var(--gray-700)',userSelect:'none'}}>
                         <input type="checkbox"
@@ -5450,10 +5481,12 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
                       </label>
                     ))}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
-          )}
+            );
+          })()}
 
         </div>
         <div className="modal-footer">
@@ -5476,7 +5509,12 @@ function UsersPage({ currentUser }) {
   const [editing, setEditing] = useState(null);
   const [resetTarget, setResetTarget] = useState(null);
   const [newPassword, setNewPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch] = useState('');
 
   const load = () => {
     setLoading(true);
@@ -5505,21 +5543,49 @@ function UsersPage({ currentUser }) {
   const openEdit = (u) => { setEditing(u); setShowForm(true); };
   const closeForm = () => { setShowForm(false); setEditing(null); };
 
-  const openReset = (u) => { setResetTarget(u); setNewPassword(''); };
+  const openReset = (u) => { setResetTarget(u); setNewPassword(''); setShowPass(false); };
   const closeReset = () => { setResetTarget(null); setNewPassword(''); };
 
   const doResetPassword = async () => {
     if (!newPassword) { toast('أدخل كلمة المرور الجديدة','error'); return; }
+    if (newPassword.length < 6) { toast('كلمة المرور 6 أحرف على الأقل','error'); return; }
     setResetLoading(true);
     const { error } = await sb.rpc('reset_user_password', { p_user_id: resetTarget.id, p_new_password: newPassword });
     setResetLoading(false);
     if (error) { toast('خطأ: '+error.message,'error'); return; }
     toast('✅ تم تغيير كلمة المرور بنجاح','success');
     closeReset();
-  };;
+  };
 
-  const activeCount   = users.filter(u=>u.is_active).length;
-  const adminCount    = users.filter(u=>u.role==='admin').length;
+  const toggleExpand = (id) => setExpandedId(v => v === id ? null : id);
+
+  const allPermsCount = Object.keys(DEFAULT_EMPLOYEE_PERMS).length;
+
+  const filtered = users.filter(u => {
+    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+    if (statusFilter === 'active' && !u.is_active) return false;
+    if (statusFilter === 'inactive' && u.is_active) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (!(u.full_name||'').toLowerCase().includes(q) && !(u.email||'').toLowerCase().includes(q) && !(u.username||'').toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const activeCount = users.filter(u=>u.is_active).length;
+  const adminCount  = users.filter(u=>u.role==='admin').length;
+  const mgrCount    = users.filter(u=>u.role==='manager').length;
+  const empCount    = users.filter(u=>u.role==='employee'||u.role==='user').length;
+
+  const filterTab = (label, val, count) => (
+    <button onClick={()=>setRoleFilter(val)}
+      style={{padding:'5px 14px',borderRadius:20,border:'none',cursor:'pointer',fontFamily:'inherit',fontSize:12,fontWeight:600,
+        background: roleFilter===val ? 'var(--primary)' : '#f0f4f8',
+        color: roleFilter===val ? 'white' : 'var(--gray-600)',
+        transition:'all .15s'}}>
+      {label} <span style={{opacity:.75,fontSize:11}}>({count})</span>
+    </button>
+  );
 
   return (
     <div>
@@ -5528,20 +5594,26 @@ function UsersPage({ currentUser }) {
       {/* Reset Password Modal */}
       {resetTarget && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}>
-          <div className="card" style={{width:360,padding:28,borderRadius:14}}>
-            <h3 style={{margin:'0 0 6px',fontSize:16,fontWeight:800}}>🔑 إعادة تعيين كلمة المرور</h3>
+          <div className="card" style={{width:380,padding:28,borderRadius:14}}>
+            <h3 style={{margin:'0 0 4px',fontSize:16,fontWeight:800}}>🔑 إعادة تعيين كلمة المرور</h3>
             <p style={{margin:'0 0 18px',fontSize:13,color:'var(--gray-500)'}}>المستخدم: <strong>{resetTarget.full_name}</strong></p>
             <label style={{fontSize:13,fontWeight:600,display:'block',marginBottom:6}}>كلمة المرور الجديدة</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={e=>setNewPassword(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&doResetPassword()}
-              placeholder="أدخل كلمة المرور الجديدة"
-              style={{width:'100%',padding:'9px 12px',borderRadius:8,border:'1.5px solid var(--gray-200)',fontSize:14,boxSizing:'border-box',marginBottom:18}}
-              dir="ltr"
-              autoFocus
-            />
+            <div style={{display:'flex',gap:6,marginBottom:6}}>
+              <input
+                type={showPass?'text':'password'}
+                value={newPassword}
+                onChange={e=>setNewPassword(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&doResetPassword()}
+                placeholder="6 أحرف على الأقل"
+                style={{flex:1,padding:'9px 12px',borderRadius:8,border:'1.5px solid var(--gray-200)',fontSize:14,boxSizing:'border-box'}}
+                dir="ltr" autoFocus
+              />
+              <button type="button" onClick={()=>setShowPass(v=>!v)}
+                style={{background:'#f0f4f8',border:'1px solid var(--gray-200)',borderRadius:8,padding:'0 12px',cursor:'pointer',fontSize:14}}>
+                {showPass?'🙈':'👁'}
+              </button>
+            </div>
+            <div style={{fontSize:11,color:'var(--gray-400)',marginBottom:18}}>سلّم كلمة المرور الجديدة للمستخدم بشكل منفصل</div>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button className="btn btn-ghost" onClick={closeReset} disabled={resetLoading}>إلغاء</button>
               <button className="btn btn-primary" onClick={doResetPassword} disabled={resetLoading}>
@@ -5553,56 +5625,95 @@ function UsersPage({ currentUser }) {
       )}
 
       {/* Header */}
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:20}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:800,margin:0}}>إدارة المستخدمين</h2>
+          <h2 style={{fontSize:20,fontWeight:800,margin:0}}>إدارة المستخدمين والصلاحيات</h2>
           <p style={{color:'var(--gray-500)',fontSize:13,margin:'4px 0 0'}}>
-            {users.length} مستخدم إجمالاً — {activeCount} نشط — {adminCount} مدير
+            {users.length} مستخدم إجمالاً — {activeCount} نشط — {adminCount} مدير نظام — {mgrCount} مدير — {empCount} موظف
           </p>
         </div>
         <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ مستخدم جديد</button>
+      </div>
+
+      {/* Filters */}
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
+        <div style={{display:'flex',gap:6}}>
+          {filterTab('الكل', 'all', users.length)}
+          {filterTab('مدير النظام', 'admin', adminCount)}
+          {filterTab('مدير', 'manager', mgrCount)}
+          {filterTab('موظف', 'employee', empCount)}
+        </div>
+        <div style={{display:'flex',gap:6,marginRight:'auto'}}>
+          <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+            style={{padding:'5px 10px',borderRadius:8,border:'1px solid var(--gray-200)',fontSize:12,fontFamily:'inherit',background:'white',cursor:'pointer'}}>
+            <option value="all">كل الحالات</option>
+            <option value="active">نشط فقط</option>
+            <option value="inactive">غير نشط</option>
+          </select>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالاسم أو البريد..."
+            style={{padding:'5px 12px',borderRadius:8,border:'1px solid var(--gray-200)',fontSize:12,width:180,fontFamily:'inherit'}}/>
+        </div>
       </div>
 
       {/* Table */}
       <div className="card">
         {loading ? (
           <div style={{padding:40,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div>
-        ) : users.length === 0 ? (
-          <div style={{padding:40,textAlign:'center',color:'var(--gray-400)'}}>لا يوجد مستخدمون</div>
+        ) : filtered.length === 0 ? (
+          <div style={{padding:40,textAlign:'center',color:'var(--gray-400)'}}>{users.length===0?'لا يوجد مستخدمون':'لا توجد نتائج تطابق الفلتر'}</div>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>المستخدم</th>
-                  <th>البريد الإلكتروني</th>
-                  <th>الصلاحية</th>
+                  <th>الدور</th>
                   <th>الحالة</th>
+                  <th>الصلاحيات</th>
                   <th>تاريخ الإضافة</th>
-                  <th style={{width:120}}>إجراءات</th>
+                  <th style={{width:140}}>إجراءات</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map(u=>(
-                  <tr key={u.id} style={{opacity: u.is_active ? 1 : 0.5, transition:'opacity .2s'}}>
+                {filtered.map(u => {
+                  const isAdmin = u.role === 'admin';
+                  const perms = u.permissions || {};
+                  const activePerms = isAdmin ? allPermsCount : Object.values(perms).filter(Boolean).length;
+                  const isExpanded = expandedId === u.id;
+                  return (
+                  <React.Fragment key={u.id}>
+                  <tr style={{opacity: u.is_active ? 1 : 0.5, transition:'opacity .2s', background: isExpanded ? '#f0f7ff' : ''}}>
                     <td>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <div style={{width:36,height:36,borderRadius:'50%',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:15,flexShrink:0}}>
+                        <div style={{width:38,height:38,borderRadius:'50%',background: isAdmin ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : u.role==='manager' ? 'linear-gradient(135deg,#0369a1,#0ea5e9)' : 'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:15,flexShrink:0}}>
                           {(u.full_name||u.email||'؟').charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <div style={{fontWeight:600,fontSize:13}}>{u.full_name||'—'}</div>
+                          <div style={{fontSize:11,color:'var(--gray-400)',direction:'ltr',textAlign:'right'}}>{u.email||'—'}</div>
                           {u.id===currentUser?.id && <div style={{fontSize:10,color:'var(--primary)',fontWeight:700}}>● حسابك الحالي</div>}
                         </div>
                       </div>
                     </td>
-                    <td className="text-muted" style={{fontSize:13,direction:'ltr',textAlign:'right'}}>{u.email||'—'}</td>
                     <td><span className={`badge ${ROLE_BADGE[u.role]||'badge-sent'}`}>{ROLE_LABELS[u.role]||u.role}</span></td>
                     <td><span className={`badge ${u.is_active?'badge-approved':'badge-rejected'}`}>{u.is_active?'نشط':'غير نشط'}</span></td>
+                    <td>
+                      {isAdmin ? (
+                        <span style={{fontSize:12,color:'var(--gray-500)',fontStyle:'italic'}}>وصول كامل (مدير النظام)</span>
+                      ) : (
+                        <button onClick={()=>toggleExpand(u.id)}
+                          style={{background:'none',border:'none',cursor:'pointer',padding:0,display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{background:'#e0f0ff',borderRadius:10,padding:'2px 10px',fontSize:12,color:'var(--primary)',fontWeight:600}}>
+                            {activePerms} / {allPermsCount} صلاحية
+                          </div>
+                          <span style={{fontSize:11,color:'var(--primary)'}}>{isExpanded ? '▲' : '▼'}</span>
+                        </button>
+                      )}
+                    </td>
                     <td className="text-sm text-muted">{u.created_at ? new Date(u.created_at).toLocaleDateString('ar-JO') : '—'}</td>
                     <td>
                       <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>openEdit(u)} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>openEdit(u)} title="تعديل الصلاحيات والبيانات" style={{padding:'3px 8px'}}>✏️</button>
                         <button className="btn btn-ghost btn-sm" onClick={()=>openReset(u)} title="إعادة تعيين كلمة المرور" style={{padding:'3px 8px'}}>🔑</button>
                         <button className="btn btn-ghost btn-sm" onClick={()=>toggleActive(u)} title={u.is_active?'إيقاف تسجيل الدخول':'تفعيل'}
                           style={{padding:'3px 8px',color:u.is_active?'var(--warning)':'var(--success)'}}>
@@ -5614,7 +5725,50 @@ function UsersPage({ currentUser }) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  {isExpanded && !isAdmin && (
+                    <tr style={{background:'#f0f7ff'}}>
+                      <td colSpan={6} style={{padding:'10px 16px 14px'}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'var(--gray-600)',marginBottom:8}}>
+                          تفاصيل الصلاحيات — {u.full_name}
+                          <button onClick={()=>openEdit(u)}
+                            style={{marginRight:10,fontSize:11,padding:'2px 10px',borderRadius:6,border:'1px solid var(--primary)',color:'var(--primary)',background:'white',cursor:'pointer',fontFamily:'inherit'}}>
+                            ✏️ تعديل الصلاحيات
+                          </button>
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:8}}>
+                          {PERM_GROUPS.map(group => {
+                            const groupPerms = group.perms;
+                            const on = groupPerms.filter(p => u.role==='admin' || perms[p.key]);
+                            if (on.length === 0 && groupPerms.every(p => !perms[p.key])) {
+                              return (
+                                <div key={group.label} style={{background:'white',borderRadius:7,padding:'8px 10px',border:'1px solid #fee2e2',opacity:.7}}>
+                                  <div style={{fontSize:11,fontWeight:700,color:'#ef4444',marginBottom:4}}>{group.icon} {group.label}</div>
+                                  <div style={{fontSize:11,color:'var(--gray-400)'}}>لا توجد صلاحيات</div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <div key={group.label} style={{background:'white',borderRadius:7,padding:'8px 10px',border:'1px solid #d1fae5'}}>
+                                <div style={{fontSize:11,fontWeight:700,color:'#059669',marginBottom:5,paddingBottom:3,borderBottom:'1px solid #d1fae5',display:'flex',justifyContent:'space-between'}}>
+                                  <span>{group.icon} {group.label}</span>
+                                  <span style={{color:'var(--gray-400)',fontWeight:400}}>{on.length}/{groupPerms.length}</span>
+                                </div>
+                                {groupPerms.map(p => (
+                                  <div key={p.key} style={{display:'flex',alignItems:'center',gap:5,marginBottom:2,fontSize:11,color: perms[p.key] ? 'var(--gray-700)' : 'var(--gray-300)'}}>
+                                    <span style={{fontSize:10}}>{perms[p.key] ? '✅' : '✗'}</span>
+                                    {p.label}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
