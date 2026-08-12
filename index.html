@@ -1431,7 +1431,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
       <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
         <td>{detailed ? (m.no ?? '↳') : i+1}</td>
         <td className="item-name">
-          {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'مصدر بديل — '}</span>}
+          {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'خيار بديل — '}</span>}
           {item.item_name}
           {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
         </td>
@@ -1493,7 +1493,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             {docType==='invoice' && <p style={{whiteSpace:'nowrap',marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included (16%) — Reg No. {COMPANY.tax_no}</p>}
           </> : <>
             <p>* السعر بالدينار الأردني والأسعار شاملة ضريبة المبيعات</p>
-            {hasOptions && <p>* البنود المعلَّمة (مصدر بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)</p>}
+            {hasOptions && <p>* البنود المعلَّمة (خيار بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)</p>}
             <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
             <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
             <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
@@ -1798,7 +1798,7 @@ function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
               <button type="button" onClick={() => setLayout('detailed')} style={card(layout === 'detailed')}>
                 <span style={{fontSize: 30}}>📊</span>
                 <span style={{fontWeight: 700, fontSize: 14, color: layout==='detailed' ? 'var(--primary)' : 'var(--gray-700)'}}>مفصّل</span>
-                <span style={{fontSize: 11, color: 'var(--gray-500)', lineHeight: 1.5}}>بأعمدة الضريبة والمصادر البديلة</span>
+                <span style={{fontSize: 11, color: 'var(--gray-500)', lineHeight: 1.5}}>بأعمدة الضريبة والخيارات البديلة</span>
               </button>
             </div>
           </div>
@@ -1978,7 +1978,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
   const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:(parseFloat(form.tax_pct)||0), origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
-  // إضافة مصدر بديل لنفس المنتج (يربط الصفوف بنفس option_group)
+  // إضافة خيار بديل لنفس المنتج (يربط الصفوف بنفس option_group)
   const addAlternative = (idx) => setItems(list => {
     const src = list[idx] || {};
     let gid = src.option_group;
@@ -1986,7 +1986,18 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     if (!gid) { gid = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); next[idx] = { ...src, option_group: gid }; }
     let insertAt = idx;
     next.forEach((r,j) => { if (r.option_group === gid) insertAt = j; });
-    next.splice(insertAt+1, 0, { ...src, option_group: gid, unit_price:'', origin:'', notes:'' });
+    next.splice(insertAt+1, 0, {
+      item_name: src.item_name,
+      description: src.description || '',
+      unit: src.unit || 'EACH',
+      quantity: src.quantity || 1,
+      unit_price: '',
+      tax_pct: src.tax_pct,
+      origin: '',
+      delivery: src.delivery || 'PROMPT',
+      notes: '',
+      option_group: gid,
+    });
     return next;
   });
   const setItem = (idx, k, v) => setItems(i => i.map((it,j) => j===idx ? {...it,[k]:v} : it));
@@ -2197,7 +2208,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
               </button>
             </div>
             <span style={{fontSize:11,color:'var(--gray-500)'}}>
-              {detailed ? 'مفصّل: بأعمدة الضريبة والمصادر البديلة' : 'مبسّط: سعر الوحدة + الإجمالي'}
+              {detailed ? 'مفصّل: بأعمدة الضريبة والخيارات البديلة' : 'مبسّط: سعر الوحدة + الإجمالي'}
               {form.quote_lang==='en' ? ' — English LTR' : ' — عربي'}
             </span>
           </div>
@@ -2381,7 +2392,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                     <tr key={i} style={grouped ? {background: meta.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
                       <td>{meta.no ?? '↳'}</td>
                       <td>
-                        {meta.isAlt && <div style={{fontSize:10,fontWeight:700,color:'#b45309',marginBottom:2}}>↳ مصدر بديل</div>}
+                        {meta.isAlt && <div style={{fontSize:10,fontWeight:700,color:'#b45309',marginBottom:2}}>↳ خيار بديل</div>}
                         <div style={{display:'flex',gap:3,alignItems:'flex-start'}}>
                           <div style={{flex:1}}>
                             <ItemNameCell
@@ -2396,7 +2407,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                           <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)} style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
                         </div>
                         <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
-                          <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ مصدر بديل</button>
+                          <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ خيار بديل</button>
                           {grouped && (isCounted
                             ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
                             : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
