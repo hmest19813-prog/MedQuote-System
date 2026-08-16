@@ -4595,8 +4595,101 @@ function InvoicesPage({ user, quotes, onReload }) {
 /* ===================== DELIVERY RECEIPT MODAL (سند استلام) ===================== */
 function DeliveryReceiptModal({ order, items, onClose }) {
   const receiptId = 'delivery-receipt-print';
+  const [pages, setPages] = React.useState(null);
+  const measureRef = React.useRef(null);
+  const pagesSigRef = React.useRef('');
 
   const doPrint = () => printDoc(receiptId, `سند استلام - ${order.number}`);
+
+  const clientBox = (
+    <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+      <div className="print-client-grid">
+        <div className="field-row"><label>السادة:</label> <strong>{order.customer_name}{order.customer_name ? ' المحترمين' : ''}</strong></div>
+        <div className="field-row"><label>رقم الطلب:</label> <strong style={{color:'var(--primary)'}}>{order.number}</strong></div>
+        <div className="field-row"><label>التاريخ:</label> {(order.created_at||'').slice(0,10) || order.date || ''}</div>
+        {order.quotation_number && <div className="field-row"><label>رقم العرض:</label> {order.quotation_number}</div>}
+        {order.customer_ref && <div className="field-row"><label>مرجع الزبون:</label> <strong>{order.customer_ref}</strong></div>}
+        {order.po_number    && <div className="field-row"><label>رقم الشراء (PO):</label> <strong>{order.po_number}</strong></div>}
+      </div>
+    </div>
+  );
+
+  const firstHeader = (
+    <>
+      <PqDocHeader/>
+      <div className="print-doc-title" style={{fontSize:16, letterSpacing:2}}>سند استلام بضاعة</div>
+      {clientBox}
+    </>
+  );
+
+  const tableColgroup = (
+    <colgroup>
+      <col style={{width:'6%'}}/><col/><col style={{width:'12%'}}/><col style={{width:'12%'}}/>
+    </colgroup>
+  );
+  const tableThead = (
+    <thead><tr><th>م</th><th>اسم الصنف</th><th>الوحدة</th><th>الكمية</th></tr></thead>
+  );
+  const renderRow = (it, i) => (
+    <tr key={i}>
+      <td style={{textAlign:'center'}}>{i+1}</td>
+      <td className="item-name">{it.item_name}</td>
+      <td style={{textAlign:'center'}}>{it.unit||'EACH'}</td>
+      <td style={{textAlign:'center', fontWeight:700}}>{it.quantity}</td>
+    </tr>
+  );
+
+  const tailBlock = (
+    <div style={{display:'flex', justifyContent:'space-between', marginTop:36, padding:'0 10px', fontSize:12, color:'#555'}}>
+      <div style={{textAlign:'center', minWidth:140}}>
+        <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:28}}>توقيع المستلم</div>
+      </div>
+      <div style={{textAlign:'center', minWidth:140}}>
+        <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:28}}>ختم الجهة المستلمة</div>
+      </div>
+      <div style={{textAlign:'center', minWidth:140}}>
+        <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:28}}>توقيع المُسلِّم</div>
+      </div>
+    </div>
+  );
+
+  React.useLayoutEffect(() => {
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const rowsTable = mEl.querySelector('.pqm-rows table');
+      const headH  = H(mEl.querySelector('.pqm-head'));
+      const theadH = H(rowsTable && rowsTable.querySelector('thead'));
+      const rowHs  = Array.from(rowsTable ? rowsTable.querySelectorAll('tbody tr') : []).map(el => el.getBoundingClientRect().height);
+      const tailH  = H(mEl.querySelector('.pqm-tail'));
+      const footH  = H(mEl.querySelector('.pqm-footer'));
+      const tableMB = rowsTable ? (parseFloat(getComputedStyle(rowsTable).marginBottom) || 0) : 0;
+
+      const reserveMm = PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      const out = [];
+      let cur = [], used = headH + theadH, first = true;
+      rowHs.forEach((rh, i) => {
+        if (used + rh > contentPx && cur.length > 0) {
+          out.push({ rows: cur, first, tail: false });
+          cur = []; used = theadH; first = false;
+        }
+        cur.push(i); used += rh;
+      });
+      if (used + (cur.length ? tableMB : 0) + tailH <= contentPx) {
+        out.push({ rows: cur, first, tail: true });
+      } else {
+        out.push({ rows: cur, first, tail: false });
+        out.push({ rows: [], first: false, tail: true });
+      }
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  });
 
   return (
     <div className="modal-overlay">
@@ -4610,70 +4703,38 @@ function DeliveryReceiptModal({ order, items, onClose }) {
         </div>
 
         <div className="modal-body pq-preview-body" id={receiptId}>
-          <div className="pq-page" style={{minHeight:'unset'}}>
-            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
-
-              {/* ترويسة الشركة */}
-              <PqDocHeader/>
-
-              {/* عنوان السند */}
-              <div className="print-doc-title" style={{fontSize:16, letterSpacing:2}}>
-                سند استلام بضاعة
+          {/* حاوية قياس مخفية */}
+          <div className="pq-measure" ref={measureRef} aria-hidden="true">
+            <div className="pq-measure-inner" dir="rtl">
+              <div className="pqm-head">{firstHeader}</div>
+              <div className="pqm-rows">
+                <table className="print-items" style={{marginTop:12}}>
+                  {tableColgroup}{tableThead}
+                  <tbody>{items.map((it,i) => renderRow(it,i))}</tbody>
+                </table>
               </div>
-
-              {/* بيانات الطلب — عربي ثابت */}
-              <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
-                <div className="print-client-grid">
-                  <div className="field-row"><label>السادة:</label> <strong>{order.customer_name}{order.customer_name ? ' المحترمين' : ''}</strong></div>
-                  <div className="field-row"><label>رقم الطلب:</label> <strong style={{color:'var(--primary)'}}>{order.number}</strong></div>
-                  <div className="field-row"><label>التاريخ:</label> {(order.created_at||'').slice(0,10) || order.date || ''}</div>
-                  {order.quotation_number && <div className="field-row"><label>رقم العرض:</label> {order.quotation_number}</div>}
-                  {order.customer_ref && <div className="field-row"><label>مرجع الزبون:</label> <strong>{order.customer_ref}</strong></div>}
-                  {order.po_number    && <div className="field-row"><label>رقم الشراء (PO):</label> <strong>{order.po_number}</strong></div>}
-                </div>
-              </div>
-
-              {/* جدول الأصناف */}
-              <table className="print-items" style={{marginTop:12}}>
-                <colgroup>
-                  <col style={{width:'6%'}}/><col/><col style={{width:'12%'}}/><col style={{width:'12%'}}/>
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>م</th>
-                    <th>اسم الصنف</th>
-                    <th>الوحدة</th>
-                    <th>الكمية</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it, i) => (
-                    <tr key={i}>
-                      <td style={{textAlign:'center'}}>{i+1}</td>
-                      <td>{it.item_name}</td>
-                      <td style={{textAlign:'center'}}>{it.unit||'EACH'}</td>
-                      <td style={{textAlign:'center', fontWeight:700}}>{it.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* توقيع الاستلام */}
-              <div style={{display:'flex', justifyContent:'space-between', marginTop:40, padding:'0 20px', fontSize:12, color:'#555'}}>
-                <div style={{textAlign:'center', minWidth:160}}>
-                  <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:30}}>توقيع المستلم</div>
-                </div>
-                <div style={{textAlign:'center', minWidth:160}}>
-                  <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:30}}>ختم الجهة المستلمة</div>
-                </div>
-                <div style={{textAlign:'center', minWidth:160}}>
-                  <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:30}}>توقيع المُسلِّم</div>
-                </div>
-              </div>
-
+              <div className="pqm-tail">{tailBlock}</div>
+              <div className="pqm-footer"><PqFooterBar/></div>
             </div>
-            <PqFooterBar/>
           </div>
+
+          {/* الصفحات النهائية */}
+          {(pages || [{rows: items.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
+            <div className="pq-page" key={pi}>
+              <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+                {pg.first && firstHeader}
+                {pg.rows.length > 0 && (
+                  <table className="print-items" style={{marginTop: pg.first ? 12 : 0}}>
+                    {tableColgroup}{tableThead}
+                    <tbody>{pg.rows.map(i => renderRow(items[i], i))}</tbody>
+                  </table>
+                )}
+                {pg.tail && tailBlock}
+              </div>
+              <PqFooterBar/>
+              {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+            </div>
+          ))}
         </div>
       </div>
     </div>
