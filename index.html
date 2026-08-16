@@ -4691,6 +4691,7 @@ function OrdersPage({ user, orders, onReload }) {
   const [receiptItems, setReceiptItems] = useState([]);
   const [editingOrder, setEditingOrder] = useState(null);
   const [archiveOrderTarget, setArchiveOrderTarget] = useState(null);
+  const [archiveDeliveredO, setArchiveDeliveredO] = useState(null);
   const [editNoteTarget, setEditNoteTarget] = useState(null);
   const [editDeleteTarget, setEditDeleteTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -4716,12 +4717,22 @@ function OrdersPage({ user, orders, onReload }) {
   const changeStatus = async (o, newStatus) => {
     await sb.from('orders').update({ status: newStatus }).eq('id', o.id);
     createLog(user, `غيّر حالة الطلبية ${o.number||o.quotation_number||''} إلى "${OL[newStatus]||newStatus}"`, 'order', o.id, o.number||o.quotation_number);
-    toast('تم تحديث الحالة', 'success'); onReload();
+    toast('تم تحديث الحالة', 'success');
+    onReload();
+    if (newStatus === 'delivered') setArchiveDeliveredO(o);
   };
 
   const doArchiveO = async (note) => {
     const o = archiveOrderTarget;
     setArchiveOrderTarget(null);
+    await sb.from('orders').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', o.id);
+    createLog(user, `أرشف الطلبية ${o.number||o.quotation_number||''}${note ? ` — ${note}` : ''}`, 'order', o.id, o.number||o.quotation_number);
+    toast('تمت الأرشفة', 'success'); onReload();
+  };
+
+  const doArchiveDelivered = async (note) => {
+    const o = archiveDeliveredO;
+    setArchiveDeliveredO(null);
     await sb.from('orders').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', o.id);
     createLog(user, `أرشف الطلبية ${o.number||o.quotation_number||''}${note ? ` — ${note}` : ''}`, 'order', o.id, o.number||o.quotation_number);
     toast('تمت الأرشفة', 'success'); onReload();
@@ -4976,6 +4987,7 @@ function OrdersPage({ user, orders, onReload }) {
       {receiptOrder && <DeliveryReceiptModal order={receiptOrder} items={receiptItems} onClose={()=>setReceiptOrder(null)}/>}
       {editingOrder && <OrderEditModal user={user} order={editingOrder} onSave={()=>{ setEditingOrder(null); onReload(); }} onClose={()=>setEditingOrder(null)}/>}
       {archiveOrderTarget && <ArchiveModal label={`أرشفة الطلبية ${archiveOrderTarget.number||archiveOrderTarget.quotation_number||''}`} onConfirm={doArchiveO} onClose={()=>setArchiveOrderTarget(null)}/>}
+      {archiveDeliveredO && <ArchiveModal label={`أرشفة الطلبية ${archiveDeliveredO.number||archiveDeliveredO.quotation_number||''}؟`} initialNote={`تم تسليم الطلبية ${archiveDeliveredO.number||archiveDeliveredO.quotation_number||''}`} onConfirm={doArchiveDelivered} onClose={()=>setArchiveDeliveredO(null)}/>}
       {editNoteTarget && <ArchiveModal label="تعديل سبب الأرشفة" initialNote={editNoteTarget.archive_note||''} onConfirm={saveNote} onClose={()=>setEditNoteTarget(null)}/>}
       {deleteTarget && <DeleteReasonModal quote={deleteTarget} onConfirm={deleteO} onClose={()=>setDeleteTarget(null)}/>}
       {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
