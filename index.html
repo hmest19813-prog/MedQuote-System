@@ -731,6 +731,15 @@ const upsertCustomerHistory = (name) => {
   ).then(() => {});
 };
 
+const upsertReferenceHistory = (ref) => {
+  const n = ref?.trim();
+  if (!n) return;
+  sb.from('reference_history').upsert(
+    [{ name: n, last_used_at: new Date().toISOString() }],
+    { onConflict: 'name' }
+  ).then(() => {});
+};
+
 /* ===================== COMPANY INFO ===================== */
 const COMPANY = {
   name_ar: 'مؤسسة الحياة العلمية الطبية الكيماوية',
@@ -1905,10 +1914,12 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [loadingItems, setLoadingItems] = useState(!!editQuote);
   const [customers, setCustomers] = useState([]);
   const [customerHistory, setCustomerHistory] = useState([]);
+  const [referenceHistory, setReferenceHistory] = useState([]);
 
   useEffect(() => {
     sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2').order('name').then(({data})=>setCustomers(data||[]));
     sb.from('customer_name_history').select('name').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setCustomerHistory((data||[]).map(r=>r.name)));
+    sb.from('reference_history').select('name').order('last_used_at',{ascending:false}).limit(200).then(({data})=>setReferenceHistory((data||[]).map(r=>r.name)));
   }, []);
 
   const [catalogItems, setCatalogItems] = useState([]);
@@ -2134,6 +2145,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
       upsertItemHistory(itemRows.map(r => r.item_name));
       upsertCustomerHistory(form.customer_name);
+      upsertReferenceHistory(form.reference);
 
       // حفظ تلقائي للمواد الجديدة في الكتالوج (الفئة إجبارية — يُتجاهل بدونها)
       const validItems = items.filter(i=>i.item_name?.trim());
@@ -2300,8 +2312,9 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
             </div>
             <div className="form-group">
               <label className="form-label">المرجع <span style={{color:'var(--danger)'}}>*</span></label>
-              <input className="form-control" value={form.reference} onChange={e=>setF('reference',e.target.value)} placeholder=""
-                style={!form.reference?.trim() ? {borderColor:'var(--danger)'} : undefined}/>
+              <div style={!form.reference?.trim() ? {border:'1.5px solid var(--danger)',borderRadius:8} : undefined}>
+                <ComboInput className="form-control" value={form.reference||''} onChange={v=>setF('reference',v)} suggestions={referenceHistory} placeholder="ابدأ بالكتابة أو اضغط ▾"/>
+              </div>
             </div>
           </div>
           {/* معلومات العميل للمتابعة — داخلية، لا تظهر بالطباعة */}
