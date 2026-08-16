@@ -4871,7 +4871,7 @@ function OrdersPage({ user, orders, onReload }) {
               <thead><tr>
                 <th>الرقم</th><th>العميل</th><th>من عرض</th><th>القيمة</th>
                 <th>المصدر</th><th>جهة التجهيز</th><th>جهة التسليم</th>
-                <th>الحالة</th><th>تغيير الحالة</th><th></th>
+                <th>تغيير الحالة</th><th></th>
               </tr></thead>
               <tbody>
                 {filtered.map(o => (
@@ -4883,7 +4883,6 @@ function OrdersPage({ user, orders, onReload }) {
                     <td className="text-sm text-muted">{profiles[o.created_by]||'—'}</td>
                     <td className="text-sm text-muted">{o.prepared_by||'—'}</td>
                     <td className="text-sm text-muted">{o.delivered_by||'—'}</td>
-                    <td><SBadge status={o.status} type="o"/></td>
                     <td>{hasPerm(user,'orders_edit')
                       ? <select className="form-control" style={selStyle} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>
                           {Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
@@ -4903,7 +4902,7 @@ function OrdersPage({ user, orders, onReload }) {
                     </td>
                   </tr>
                 ))}
-                {filtered.length===0 && <tr><td colSpan="10"><div className="empty-state"><p>لا توجد طلبات</p></div></td></tr>}
+                {filtered.length===0 && <tr><td colSpan="9"><div className="empty-state"><p>لا توجد طلبات</p></div></td></tr>}
               </tbody>
             </table>
           </div>
