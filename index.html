@@ -811,7 +811,7 @@ const SL = {
 };
 const QT = { quote: 'عرض سعر', tender: 'عطاء محلي' };
 const OL = {
-  pending: 'معلق', confirmed: 'مؤكد', processing: 'قيد التنفيذ',
+  processing: 'قيد التنفيذ',
   delivered: 'مُسلَّم', cancelled: 'ملغي'
 };
 
@@ -1188,7 +1188,7 @@ function Dashboard({ quotes, orders, logs, user }) {
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:10}}>
           {Object.entries(OL).map(([k,v]) => {
             const cnt = ordersActive.filter(o=>o.status===k).length;
-            const clr = k==='delivered'?'var(--success)':k==='cancelled'?'var(--danger)':k==='pending'?'var(--warning)':'var(--primary)';
+            const clr = k==='delivered'?'var(--success)':k==='cancelled'?'var(--danger)':'var(--primary)';
             return (
               <div key={k} style={{...SC, borderRightColor:clr}}>
                 <div style={{fontSize:10,color:'var(--gray-500)',fontWeight:700,marginBottom:4}}>{v}</div>
@@ -3836,7 +3836,7 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
     currency:          src.currency || 'JOD',
     notes:             order?.notes || '',
     expected_delivery: order?.expected_delivery || '',
-    status:            order?.status || 'pending',
+    status:            order?.status || 'processing',
     prepared_by:       order?.prepared_by || '',
     delivered_by:      order?.delivered_by || '',
     customer_ref:      order?.customer_ref || '',
@@ -3951,7 +3951,7 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
           ...payload,
           quotation_id:     quote.id,
           quotation_number: quote.number,
-          status:           'pending',
+          status:           'processing',
           created_by:       user?.id || null,
         }).select().single();
         if (error) throw error;
@@ -4893,7 +4893,7 @@ function OrdersPage({ user, orders, onReload }) {
                     <td style={{whiteSpace:'nowrap'}}>
                       <div className="flex gap-2">
                         <button className="btn btn-ghost btn-sm" onClick={()=>previewOrder(o)}>👁 معاينة</button>
-                        {['confirmed','processing','delivered'].includes(o.status) && (
+                        {['processing','delivered'].includes(o.status) && (
                           <button className="btn btn-ghost btn-sm" style={{color:'#0369a1'}} onClick={()=>openReceipt(o)} title="سند استلام">📦 سند</button>
                         )}
                         {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)}>✏️ تعديل</button>}
