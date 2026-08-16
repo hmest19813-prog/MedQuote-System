@@ -3806,8 +3806,8 @@ function QuotesList({ user, quotes, onReload }) {
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
       {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null}/>}
-      {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{ const q=orderingQ; setOrderingQ(null); setArchiveConvertedQ(q); onReload(); }} onClose={()=>setOrderingQ(null)}/>}
-      {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote="تم تحويل العرض إلى طلب" onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
+      {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={(orderNo)=>{ const q=orderingQ; setOrderingQ(null); setArchiveConvertedQ({...q, _orderNo: orderNo||''}); onReload(); }} onClose={()=>setOrderingQ(null)}/>}
+      {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote={`تم تحويل العرض إلى طلب${archiveConvertedQ._orderNo ? ` رقم ${archiveConvertedQ._orderNo}` : ''}`} onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
       {editArchiveTarget && <ArchiveModal label={`تعديل سبب أرشفة ${editArchiveTarget.number}`} initialNote={editArchiveTarget.archive_note||''} onConfirm={doEditArchiveNote} onClose={()=>setEditArchiveTarget(null)}/>}
       {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
@@ -3980,11 +3980,12 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
         await sb.from('quotations').update({ status: 'converted' }).eq('id', quote.id);
         createLog(user, `حوّل العرض ${quote.number} إلى الطلبية ${orderNo||''}`, 'quote', quote.id, quote.number);
         toast(`تم إصدار الطلب ${orderNo||''} بنجاح`, 'success');
+        onSave(orderNo);
       } else {
         createLog(user, `عدّل الطلبية ${orderNo||''}`, 'order', orderId, orderNo);
         toast('تم حفظ تعديلات الطلب', 'success');
+        onSave();
       }
-      onSave();
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
     finally { setSaving(false); }
   };
