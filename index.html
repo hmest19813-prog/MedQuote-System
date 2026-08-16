@@ -722,6 +722,15 @@ const upsertItemHistory = (names) => {
   ).then(() => {});
 };
 
+const upsertCustomerHistory = (name) => {
+  const n = name?.trim();
+  if (!n) return;
+  sb.from('customer_name_history').upsert(
+    [{ name: n, last_used_at: new Date().toISOString() }],
+    { onConflict: 'name' }
+  ).then(() => {});
+};
+
 /* ===================== COMPANY INFO ===================== */
 const COMPANY = {
   name_ar: 'مؤسسة الحياة العلمية الطبية الكيماوية',
@@ -1895,9 +1904,11 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(!!editQuote);
   const [customers, setCustomers] = useState([]);
+  const [customerHistory, setCustomerHistory] = useState([]);
 
   useEffect(() => {
     sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2').order('name').then(({data})=>setCustomers(data||[]));
+    sb.from('customer_name_history').select('name').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setCustomerHistory((data||[]).map(r=>r.name)));
   }, []);
 
   const [catalogItems, setCatalogItems] = useState([]);
@@ -1921,10 +1932,17 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     setF('customer_name', val);
     setF('customer_id', null);
     if (val.trim().length >= 2) {
-      const matched = customers.filter(c => c.name.toLowerCase().includes(val.toLowerCase())).slice(0,6);
-      setCustSuggest(matched);
-      setShowCustSuggest(matched.length > 0);
-      setIsNewCustomer(matched.length === 0);
+      const q = val.toLowerCase();
+      const formal = customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 6);
+      const formalNames = new Set(formal.map(c => c.name.toLowerCase()));
+      const fromHistory = customerHistory
+        .filter(n => n.toLowerCase().includes(q) && !formalNames.has(n.toLowerCase()))
+        .slice(0, Math.max(0, 8 - formal.length))
+        .map(n => ({ name: n, _history: true }));
+      const all = [...formal, ...fromHistory];
+      setCustSuggest(all);
+      setShowCustSuggest(all.length > 0);
+      setIsNewCustomer(all.length === 0);
     } else {
       setShowCustSuggest(false);
       setIsNewCustomer(false);
@@ -1933,10 +1951,12 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
   const pickCustomer = (c) => {
     setF('customer_name', c.name);
-    setF('customer_id', c.id);
-    // أولوية رقم الهاتف: هاتف ← موبايل أساسي ← موبايل ثانوي
-    const phoneVal = c.alt_phone || c.phone || c.contact1_phone || c.contact1_mobile2 || '';
-    if (phoneVal) setF('phone', phoneVal);
+    setF('customer_id', c._history ? null : c.id);
+    if (!c._history) {
+      // أولوية رقم الهاتف: هاتف ← موبايل أساسي ← موبايل ثانوي
+      const phoneVal = c.alt_phone || c.phone || c.contact1_phone || c.contact1_mobile2 || '';
+      if (phoneVal) setF('phone', phoneVal);
+    }
     setShowCustSuggest(false);
     setIsNewCustomer(false);
   };
@@ -2113,6 +2133,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       if (iErr) throw iErr;
 
       upsertItemHistory(itemRows.map(r => r.item_name));
+      upsertCustomerHistory(form.customer_name);
 
       // حفظ تلقائي للمواد الجديدة في الكتالوج (الفئة إجبارية — يُتجاهل بدونها)
       const validItems = items.filter(i=>i.item_name?.trim());
@@ -2232,13 +2253,16 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 </div>
                 {showCustSuggest && (
                   <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:2}}>
-                    {custSuggest.map(c=>(
-                      <div key={c.id} onMouseDown={()=>pickCustomer(c)}
+                    {custSuggest.map((c,i)=>(
+                      <div key={c._history ? `h-${c.name}` : c.id} onMouseDown={()=>pickCustomer(c)}
                         style={{padding:'8px 14px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between',alignItems:'center'}}
                         onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'}
                         onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
                         <span style={{fontWeight:600}}>{c.name}</span>
-                        {c.phone && <span style={{fontSize:11,color:'var(--gray-400)'}}>{c.phone}</span>}
+                        {c._history
+                          ? <span style={{fontSize:10,color:'#94a3b8',background:'#f1f5f9',borderRadius:4,padding:'1px 5px'}}>سابق</span>
+                          : c.phone && <span style={{fontSize:11,color:'var(--gray-400)'}}>{c.phone}</span>
+                        }
                       </div>
                     ))}
                   </div>
@@ -3057,6 +3081,7 @@ function QuotesList({ user, quotes, onReload }) {
       if (iErr) throw iErr;
 
       upsertItemHistory(items.map(it => it.item_name));
+      upsertCustomerHistory(customer_name);
       toast(`تم استيراد ${items.length} صنف كمسودة — ${q.number}`, 'success');
       setTab('drafts');
       onReload();
@@ -3097,26 +3122,27 @@ function QuotesList({ user, quotes, onReload }) {
   const [archiveSearch, setArchiveSearch] = useState('');
   const [deletedSearch, setDeletedSearch] = useState('');
 
+  const sortByNum = (a,b) => (b.number||'').localeCompare(a.number||'');
   const filtered = officialQuotes.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
     const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
     const mi = !searchIssuer || q.created_by === searchIssuer;
     return ms && mf && md && mi;
-  });
+  }).sort(sortByNum);
   const filteredTenders = tenderQuotes.filter(q => {
     const ms = !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
     const mf = filter === 'all' || q.status === filter;
     const md = (!dateFrom || (q.date||'') >= dateFrom) && (!dateTo || (q.date||'') <= dateTo);
     const mi = !searchIssuer || q.created_by === searchIssuer;
     return ms && mf && md && mi;
-  });
+  }).sort(sortByNum);
   const filteredDrafts = draftQuotes.filter(q => {
     return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
-  });
+  }).sort(sortByNum);
   const filteredArchive = archivedQuotes.filter(q =>
     !archiveSearch || q.customer_name?.toLowerCase().includes(archiveSearch.toLowerCase()) || q.number?.includes(archiveSearch)
-  );
+  ).sort(sortByNum);
   const filteredDeleted = deletedQuotes.filter(q =>
     !deletedSearch || q.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || q.number?.includes(deletedSearch)
   );
@@ -6101,7 +6127,7 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
-    sb.from('quotations').select('*').eq('customer_id', customer.id).order('created_at',{ascending:false})
+    sb.from('quotations').select('*').eq('customer_id', customer.id).order('number',{ascending:false, nullsFirst:false})
       .then(({data})=>{ setQuotes(data||[]); setLoadingQ(false); });
   }, [customer.id]);
 
@@ -10557,7 +10583,7 @@ function App() {
       Promise.race([promise, new Promise((_,r) => setTimeout(() => r(new Error('timeout')), ms))]);
 
     try {
-      let qQ = sb.from('quotations').select('*').order('created_at', {ascending:false});
+      let qQ = sb.from('quotations').select('*').order('number', {ascending:false, nullsFirst:false});
       let oQ = sb.from('orders').select('*').order('created_at', {ascending:false});
       let lQ = sb.from('activity_logs').select('*').order('created_at', {ascending:false}).limit(60);
       // RLS في Supabase تتحكم بالصلاحيات تلقائياً
