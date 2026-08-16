@@ -2952,6 +2952,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [profiles, setProfiles] = useState({});
   const [editing, setEditing] = useState(null);
   const [orderingQ, setOrderingQ] = useState(null);
+  const [archiveConvertedQ, setArchiveConvertedQ] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
   const [editArchiveTarget, setEditArchiveTarget] = useState(null);
   const [editDeleteTarget, setEditDeleteTarget] = useState(null);
@@ -3346,6 +3347,14 @@ function QuotesList({ user, quotes, onReload }) {
     await sb.from('quotations').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', q.id);
     createLog(user, `أرشف العرض ${q.number}${note ? ` — ${note}` : ''}`, 'quote', q.id, q.number);
     toast('تم الأرشفة', 'success'); onReload();
+  };
+
+  const doArchiveConverted = async (note) => {
+    const q = archiveConvertedQ;
+    setArchiveConvertedQ(null);
+    await sb.from('quotations').update({ archived:true, archived_at:new Date().toISOString(), archive_note: note||null }).eq('id', q.id);
+    createLog(user, `أرشف العرض ${q.number}${note ? ` — ${note}` : ''}`, 'quote', q.id, q.number);
+    toast('تمت الأرشفة', 'success'); onReload();
   };
 
   const doEditArchiveNote = async (note) => {
@@ -3797,7 +3806,8 @@ function QuotesList({ user, quotes, onReload }) {
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
       {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null}/>}
-      {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{setOrderingQ(null);onReload();}} onClose={()=>setOrderingQ(null)}/>}
+      {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={()=>{ const q=orderingQ; setOrderingQ(null); setArchiveConvertedQ(q); onReload(); }} onClose={()=>setOrderingQ(null)}/>}
+      {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote="تم تحويل العرض إلى طلب" onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
       {editArchiveTarget && <ArchiveModal label={`تعديل سبب أرشفة ${editArchiveTarget.number}`} initialNote={editArchiveTarget.archive_note||''} onConfirm={doEditArchiveNote} onClose={()=>setEditArchiveTarget(null)}/>}
       {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
