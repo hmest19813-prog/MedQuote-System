@@ -3482,8 +3482,8 @@ function QuotesList({ user, quotes, onReload }) {
               <tr>
                 <th style={{width:88,whiteSpace:'nowrap'}}>الرقم</th>
                 <th style={{width:160}}>العميل</th>
-                <th style={{width:96}}>التاريخ</th>
                 <th style={{width:165}}>المرجع</th>
+                <th style={{width:96}}>التاريخ</th>
                 <th style={{width:128}}>تغيير الحالة</th>
                 <th style={{width:100}}>إجراءات</th>
                 {canViewIssuer && <th style={{width:96}}>المُصدِر</th>}
@@ -3494,6 +3494,7 @@ function QuotesList({ user, quotes, onReload }) {
                 <tr key={q.id}>
                   <td className="font-bold" style={{color:'var(--primary)',whiteSpace:'nowrap',padding:'8px 10px'}}>{q.number}</td>
                   <td style={{width:160,whiteSpace:'normal',wordBreak:'break-word',padding:'8px 10px'}}>{q.customer_name}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center',padding:'8px 6px'}}>{q.reference||'—'}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center',padding:'8px 6px'}}>
                     {q.date}
                     {q.valid_until && (() => {
@@ -3501,7 +3502,6 @@ function QuotesList({ user, quotes, onReload }) {
                       return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت':`✓ حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="text-sm text-muted" style={{textAlign:'center',padding:'8px 6px'}}>{q.reference||'—'}</td>
                   <td style={{textAlign:'center',padding:'8px 6px'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
@@ -3951,6 +3951,7 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
           ...payload,
           quotation_id:     quote.id,
           quotation_number: quote.number,
+          reference:        quote.reference || null,
           status:           'processing',
           created_by:       user?.id || null,
         }).select().single();
@@ -4930,8 +4931,8 @@ function OrdersPage({ user, orders, onReload }) {
           <div className="table-wrap">
             <table>
               <thead><tr>
-                <th>الرقم</th><th>العميل</th><th>من عرض</th><th>القيمة</th>
-                <th>المصدر</th><th>جهة التجهيز</th><th>جهة التسليم</th>
+                <th>الرقم</th><th>العميل</th><th>من عرض</th><th>المرجع</th><th>القيمة</th>
+                <th>جهة التجهيز</th><th>جهة التسليم</th>
                 <th>تغيير الحالة</th><th></th>
               </tr></thead>
               <tbody>
@@ -4940,8 +4941,8 @@ function OrdersPage({ user, orders, onReload }) {
                     <td className="font-bold" style={{color:'var(--primary)', whiteSpace:'nowrap'}}>{o.number}</td>
                     <td>{o.customer_name}</td>
                     <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
+                    <td className="text-sm text-muted">{o.reference||'—'}</td>
                     <td className="font-bold" style={{whiteSpace:'nowrap'}}>{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
-                    <td className="text-sm text-muted">{profiles[o.created_by]||'—'}</td>
                     <td className="text-sm text-muted">{o.prepared_by||'—'}</td>
                     <td className="text-sm text-muted">{o.delivered_by||'—'}</td>
                     <td>{hasPerm(user,'orders_edit')
