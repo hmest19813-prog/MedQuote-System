@@ -564,7 +564,7 @@ th:last-child, td:last-child { border-left: none; }
 }
 .chat-messages {
   flex: 1; overflow-y: auto; padding: 14px 12px;
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 0;
   direction: ltr;
 }
 .chat-msg { display: flex; align-items: flex-end; gap: 8px; }
@@ -610,6 +610,65 @@ th:last-child, td:last-child { border-left: none; }
 }
 .chat-send-btn:disabled { opacity: .38; cursor: default; }
 .chat-send-btn:not(:disabled):hover { transform: scale(1.08); }
+/* Chat enhancements */
+.chat-date-sep {
+  display: flex; align-items: center; gap: 8px;
+  margin: 10px 0 4px; font-size: 11px; font-weight: 700;
+  color: var(--gray-400); direction: rtl; user-select: none; flex-shrink: 0;
+}
+.chat-date-sep::before, .chat-date-sep::after { content: ''; flex: 1; height: 1px; background: var(--gray-200); }
+.mention-tag { color: var(--primary); font-weight: 700; }
+.reaction-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; direction: ltr; }
+.reaction-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 20px; border: 1.5px solid var(--gray-200);
+  background: var(--gray-50); cursor: pointer; font-size: 13px; transition: all .15s; line-height: 1.4;
+}
+.reaction-pill span { font-size: 11px; font-weight: 700; }
+.reaction-pill:hover { border-color: var(--primary); background: #e8f4fc; }
+.reaction-pill.mine { border-color: var(--primary); background: #e8f4fc; color: var(--primary); }
+.reaction-picker {
+  position: absolute; bottom: calc(100% + 6px);
+  background: white; border: 1px solid var(--gray-200);
+  border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.16);
+  padding: 6px 8px; display: flex; gap: 2px; z-index: 50; animation: slideUpChat .12s;
+}
+.reaction-picker-btn {
+  width: 34px; height: 34px; border: none; background: none;
+  border-radius: 8px; cursor: pointer; font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .1s, transform .1s;
+}
+.reaction-picker-btn:hover { background: var(--gray-100); transform: scale(1.2); }
+.msg-actions {
+  position: absolute; top: -14px; z-index: 20;
+  background: white; border: 1px solid var(--gray-200);
+  border-radius: 10px; box-shadow: 0 3px 14px rgba(0,0,0,.12);
+  padding: 3px 4px; display: flex; gap: 2px;
+}
+.msg-action-btn {
+  padding: 4px 7px; border: none; background: none; border-radius: 7px;
+  cursor: pointer; font-size: 14px; line-height: 1; transition: background .1s;
+}
+.msg-action-btn:hover { background: var(--gray-100); }
+.chat-edit-input {
+  width: 100%; padding: 7px 10px; border: 1.5px solid var(--primary);
+  border-radius: 8px; font-size: 13px; font-family: inherit;
+  resize: none; outline: none; direction: rtl; background: rgba(43,143,196,.04);
+}
+.mention-dropdown {
+  position: absolute; bottom: 100%; left: 12px; right: 12px;
+  background: white; border: 1px solid var(--gray-200); border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.14); overflow: hidden; z-index: 40; animation: slideUpChat .12s;
+}
+.mention-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer; transition: background .1s; }
+.mention-row:hover { background: #e8f4fc; }
+.mention-av {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), #3FA3D8);
+  color: white; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
 
 /* ===================== CHANGE REQUESTS ===================== */
 .cr-card {
@@ -8799,98 +8858,274 @@ function ProcurementPage({ user }) {
 }
 
 /* ===================== CHAT PANEL ===================== */
+const CHAT_EMOJIS = ['👍','❤️','😂','🎉','✅','🔥'];
+
 function ChatPanel({ user }) {
-  const [open, setOpen] = useState(false);
-  const [msgs, setMsgs] = useState([]);
-  const [body, setBody] = useState('');
-  const [sending, setSending] = useState(false);
-  const [profiles, setProfiles] = useState({});
-  const [unread, setUnread] = useState(0);
-  const bottomRef = useRef(null);
-  const lastReadRef = useRef(Number(localStorage.getItem('chat_last_read') || 0));
-  const openRef = useRef(false);
-  useEffect(() => { openRef.current = open; }, [open]);
+  const [open, setOpen]               = useState(false);
+  const [msgs, setMsgs]               = useState([]);
+  const [reactions, setReactions]     = useState({});
+  const [body, setBody]               = useState('');
+  const [sending, setSending]         = useState(false);
+  const [profiles, setProfiles]       = useState({});
+  const [profileList, setProfileList] = useState([]);
+  const [unread, setUnread]           = useState(0);
+  const [editingId, setEditingId]     = useState(null);
+  const [editText, setEditText]       = useState('');
+  const [hovered, setHovered]         = useState(null);
+  const [emojiFor, setEmojiFor]       = useState(null);
+  const [mentionQ, setMentionQ]       = useState('');
+  const [mentionAt, setMentionAt]     = useState(-1);
+  const [showMention, setShowMention] = useState(false);
+  const bottomRef   = useRef(null);
+  const inputRef    = useRef(null);
+  const lastReadRef = useRef(Number(localStorage.getItem('chat_last_read')||0));
+  const openRef     = useRef(false);
+  useEffect(()=>{ openRef.current=open; },[open]);
 
-  useEffect(() => {
-    sb.from('profiles').select('id,full_name').then(({ data }) => {
-      const m = {}; (data||[]).forEach(p => m[p.id]=p.full_name); setProfiles(m);
+  useEffect(()=>{
+    sb.from('profiles').select('id,full_name').then(({data})=>{
+      const m={}; (data||[]).forEach(p=>m[p.id]=p.full_name);
+      setProfiles(m); setProfileList(data||[]);
     });
-  }, []);
+  },[]);
 
-  useEffect(() => {
-    sb.from('chat_messages').select('*').order('created_at',{ascending:true}).limit(80)
-      .then(({ data }) => {
-        const rows = data||[];
-        setMsgs(rows);
-        const lr = lastReadRef.current;
-        if (lr) setUnread(rows.filter(m => new Date(m.created_at).getTime()>lr && m.user_id!==user?.id).length);
-      });
-    const ch = sb.channel('chat_global')
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'}, p => {
-        setMsgs(prev => [...prev, p.new]);
-        if (p.new.user_id !== user?.id && !openRef.current) setUnread(n => n+1);
-      }).subscribe();
-    return () => sb.removeChannel(ch);
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (open) setTimeout(() => bottomRef.current?.scrollIntoView({behavior:'smooth'}), 80);
-  }, [open, msgs.length]);
-
-  const openPanel = () => {
-    setOpen(true); setUnread(0);
-    const now = Date.now(); lastReadRef.current = now;
-    localStorage.setItem('chat_last_read', String(now));
+  const loadAll=async()=>{
+    const [{data:ms},{data:rs}]=await Promise.all([
+      sb.from('chat_messages').select('*').order('created_at',{ascending:true}).limit(100),
+      sb.from('chat_reactions').select('*'),
+    ]);
+    const rows=ms||[];
+    setMsgs(rows);
+    const rMap={};
+    (rs||[]).forEach(r=>{ if(!rMap[r.message_id]) rMap[r.message_id]=[]; rMap[r.message_id].push(r); });
+    setReactions(rMap);
+    const lr=lastReadRef.current;
+    if(lr) setUnread(rows.filter(m=>new Date(m.created_at).getTime()>lr&&m.user_id!==user?.id).length);
   };
 
-  const send = async () => {
-    if (!body.trim()||sending) return;
+  useEffect(()=>{
+    loadAll();
+    const ch=sb.channel('chat_v2')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'},
+        p=>{ setMsgs(prev=>[...prev,p.new]); if(p.new.user_id!==user?.id&&!openRef.current) setUnread(n=>n+1); })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'chat_messages'},
+        p=>setMsgs(prev=>prev.map(m=>m.id===p.new.id?p.new:m)))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'chat_messages'},
+        p=>setMsgs(prev=>prev.filter(m=>m.id!==p.old.id)))
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_reactions'},
+        p=>setReactions(prev=>({...prev,[p.new.message_id]:[...(prev[p.new.message_id]||[]),p.new]})))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'chat_reactions'},
+        p=>setReactions(prev=>({...prev,[p.old.message_id]:(prev[p.old.message_id]||[]).filter(r=>r.id!==p.old.id)})))
+      .subscribe();
+    return ()=>sb.removeChannel(ch);
+  },[user?.id]);
+
+  useEffect(()=>{
+    if(open) setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),80);
+  },[open,msgs.length]);
+
+  const openPanel=()=>{
+    setOpen(true); setUnread(0);
+    const now=Date.now(); lastReadRef.current=now; localStorage.setItem('chat_last_read',String(now));
+  };
+
+  const handleInput=e=>{
+    const val=e.target.value; setBody(val);
+    const cur=e.target.selectionStart, before=val.slice(0,cur);
+    const idx=before.lastIndexOf('@');
+    if(idx!==-1){ const q=before.slice(idx+1); if(!q.includes(' ')&&q.length<20){ setMentionQ(q.toLowerCase()); setMentionAt(idx); setShowMention(true); return; } }
+    setShowMention(false);
+  };
+
+  const insertMention=name=>{
+    const fn=name.split(' ')[0];
+    setBody(body.slice(0,mentionAt)+'@'+fn+' '+body.slice(mentionAt+1+mentionQ.length));
+    setShowMention(false); setTimeout(()=>inputRef.current?.focus(),30);
+  };
+
+  const filteredMentions=profileList.filter(p=>p.full_name.toLowerCase().includes(mentionQ)&&p.id!==user?.id).slice(0,5);
+
+  const renderBody=text=>{
+    if(!text||!profileList.length) return text;
+    const parts=text.split(/(@\S+)/g);
+    return parts.map((part,i)=>{
+      if(part.startsWith('@')){
+        const nm=part.slice(1);
+        if(profileList.some(p=>p.full_name.split(' ')[0]===nm||p.full_name===nm))
+          return React.createElement('span',{key:i,className:'mention-tag'},part);
+      }
+      return part||null;
+    });
+  };
+
+  const send=async()=>{
+    if(!body.trim()||sending) return;
     setSending(true);
-    const {error} = await sb.from('chat_messages').insert({user_id:user?.id,body:body.trim()});
-    if (error) toast('خطأ في الإرسال','error'); else setBody('');
+    const text=body.trim();
+    const {data:msg,error}=await sb.from('chat_messages').insert({user_id:user?.id,body:text}).select().single();
+    if(error){toast('خطأ في الإرسال','error');setSending(false);return;}
+    setBody(''); setShowMention(false);
+    const matches=text.match(/@(\S+)/g)||[];
+    for(const m of matches){
+      const nm=m.slice(1);
+      const target=profileList.find(p=>p.full_name.split(' ')[0]===nm||p.full_name===nm);
+      if(target&&target.id!==user?.id){
+        await sb.from('notifications').insert({
+          user_id:target.id, title:`📢 منشن من ${profiles[user?.id]||''}`,
+          body:text.slice(0,80), link_type:'chat', link_id:msg?.id||null, user_name:profiles[user?.id]||''
+        });
+      }
+    }
     setSending(false);
   };
 
-  const fmtTime = iso => new Date(iso).toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'});
+  const startEdit=m=>{setEditingId(m.id);setEditText(m.body);setHovered(null);};
+  const saveEdit=async()=>{
+    if(!editText.trim()) return;
+    await sb.from('chat_messages').update({body:editText.trim(),edited:true}).eq('id',editingId);
+    setEditingId(null); setEditText('');
+  };
+  const deleteMsg=async id=>{
+    if(!confirm('حذف الرسالة؟')) return;
+    await sb.from('chat_messages').delete().eq('id',id); setHovered(null);
+  };
+
+  const toggleReaction=async(msgId,emoji)=>{
+    const ex=(reactions[msgId]||[]).find(r=>r.emoji===emoji&&r.user_id===user?.id);
+    if(ex) await sb.from('chat_reactions').delete().eq('id',ex.id);
+    else await sb.from('chat_reactions').insert({message_id:msgId,user_id:user?.id,emoji});
+    setEmojiFor(null);
+  };
+
+  const grouped=msgs.map((m,i)=>{
+    const prev=msgs[i-1];
+    return {...m,
+      isGrouped:!!(prev&&prev.user_id===m.user_id&&(new Date(m.created_at)-new Date(prev.created_at))<5*60*1000),
+      showDate:!prev||new Date(m.created_at).toDateString()!==new Date(prev.created_at).toDateString()
+    };
+  });
+
+  const fmtTime=iso=>new Date(iso).toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'});
+  const fmtDate=iso=>{
+    const d=new Date(iso),t=new Date();
+    if(d.toDateString()===t.toDateString()) return 'اليوم';
+    const y=new Date(t); y.setDate(y.getDate()-1);
+    if(d.toDateString()===y.toDateString()) return 'أمس';
+    return d.toLocaleDateString('ar-JO',{day:'numeric',month:'long'});
+  };
 
   return (
     <>
       <button className="chat-fab" onClick={()=>open?setOpen(false):openPanel()} title="الشات الجماعي">
         <span style={{fontSize:22,lineHeight:1}}>{open?'✕':'💬'}</span>
-        {!open && unread>0 && <span className="chat-fab-badge">{unread>99?'99+':unread}</span>}
+        {!open&&unread>0&&<span className="chat-fab-badge">{unread>99?'99+':unread}</span>}
       </button>
-      {open && (
-        <div className="chat-panel">
+      {open&&(
+        <div className="chat-panel" onClick={()=>setEmojiFor(null)}>
           <div className="chat-panel-header">
             <div>
               <div className="chat-panel-title">💬 الشات الجماعي</div>
-              <div className="chat-panel-sub">جميع موظفي المؤسسة</div>
+              <div className="chat-panel-sub">{profileList.length} موظف · {msgs.length} رسالة</div>
             </div>
             <button className="chat-panel-close" onClick={()=>setOpen(false)}>✕</button>
           </div>
+
           <div className="chat-messages">
-            {msgs.length===0 && <p style={{textAlign:'center',color:'var(--gray-400)',fontSize:13,margin:'40px 0',direction:'rtl'}}>لا توجد رسائل — كن أول من يبدأ!</p>}
-            {msgs.map(m => {
-              const isOwn = m.user_id===user?.id;
+            {msgs.length===0&&<p style={{textAlign:'center',color:'var(--gray-400)',fontSize:13,margin:'40px 0',direction:'rtl'}}>لا توجد رسائل — كن أول من يبدأ!</p>}
+            {grouped.map(m=>{
+              const isOwn=m.user_id===user?.id;
+              const msgR=reactions[m.id]||[];
+              const rGroups=msgR.reduce((acc,r)=>{ if(!acc[r.emoji]) acc[r.emoji]={count:0,mine:false}; acc[r.emoji].count++; if(r.user_id===user?.id) acc[r.emoji].mine=true; return acc; },{});
               return (
-                <div key={m.id} className={`chat-msg${isOwn?' own':''}`}>
-                  {!isOwn && <div className="chat-avatar">{(profiles[m.user_id]||'?').charAt(0)}</div>}
-                  <div className="chat-bubble-content">
-                    {!isOwn && <div className="chat-bubble-name">{profiles[m.user_id]||'—'}</div>}
-                    <div className="chat-bubble-body">{m.body}</div>
-                    <div className="chat-bubble-time">{fmtTime(m.created_at)}</div>
+                <React.Fragment key={m.id}>
+                  {m.showDate&&<div className="chat-date-sep"><span>{fmtDate(m.created_at)}</span></div>}
+                  <div
+                    className={`chat-msg${isOwn?' own':''}`}
+                    style={{marginTop:m.isGrouped?2:10,position:'relative'}}
+                    onMouseEnter={()=>setHovered(m.id)}
+                    onMouseLeave={()=>setHovered(null)}
+                  >
+                    {!isOwn&&<div className="chat-avatar" style={{visibility:m.isGrouped?'hidden':'visible'}}>{(profiles[m.user_id]||'?').charAt(0)}</div>}
+                    <div className="chat-bubble-content" style={{position:'relative'}}>
+                      {!m.isGrouped&&!isOwn&&<div className="chat-bubble-name">{profiles[m.user_id]||'—'}</div>}
+
+                      {hovered===m.id&&editingId!==m.id&&(
+                        <div className="msg-actions" style={{[isOwn?'left':'right']:0}} onClick={e=>e.stopPropagation()}>
+                          <div style={{position:'relative'}}>
+                            <button className="msg-action-btn" onClick={e=>{e.stopPropagation();setEmojiFor(emojiFor===m.id?null:m.id);}}>😊</button>
+                            {emojiFor===m.id&&(
+                              <div className="reaction-picker" style={{[isOwn?'right':'left']:0}} onClick={e=>e.stopPropagation()}>
+                                {CHAT_EMOJIS.map(em=><button key={em} className="reaction-picker-btn" onClick={()=>toggleReaction(m.id,em)}>{em}</button>)}
+                              </div>
+                            )}
+                          </div>
+                          {isOwn&&<>
+                            <button className="msg-action-btn" title="تعديل" onClick={()=>startEdit(m)}>✏️</button>
+                            <button className="msg-action-btn" title="حذف" onClick={()=>deleteMsg(m.id)}>🗑️</button>
+                          </>}
+                        </div>
+                      )}
+
+                      {editingId===m.id?(
+                        <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                          <textarea className="chat-edit-input" rows={2} value={editText}
+                            onChange={e=>setEditText(e.target.value)}
+                            onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();saveEdit();}if(e.key==='Escape')setEditingId(null);}}
+                            autoFocus/>
+                          <div style={{display:'flex',gap:5,justifyContent:'flex-end'}}>
+                            <button className="btn btn-ghost btn-sm" style={{fontSize:11}} onClick={()=>setEditingId(null)}>إلغاء</button>
+                            <button className="btn btn-primary btn-sm" style={{fontSize:11}} onClick={saveEdit}>حفظ</button>
+                          </div>
+                        </div>
+                      ):(
+                        <>
+                          <div className="chat-bubble-body">
+                            {renderBody(m.body)}
+                            {m.edited&&<span style={{fontSize:9,opacity:.55,marginRight:5}}>(معدّل)</span>}
+                          </div>
+                          {Object.keys(rGroups).length>0&&(
+                            <div className="reaction-bar">
+                              {Object.entries(rGroups).map(([emoji,{count,mine}])=>(
+                                <button key={emoji} className={`reaction-pill${mine?' mine':''}`}
+                                  onClick={e=>{e.stopPropagation();toggleReaction(m.id,emoji);}}>
+                                  {emoji}<span>{count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <div className="chat-bubble-time">{fmtTime(m.created_at)}</div>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </React.Fragment>
               );
             })}
             <div ref={bottomRef}/>
           </div>
-          <div className="chat-input-area">
-            <textarea className="chat-input" rows={1} value={body}
-              onChange={e=>setBody(e.target.value)} placeholder="اكتب رسالة..."
-              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}
-            />
-            <button className="chat-send-btn" onClick={send} disabled={!body.trim()||sending}>↑</button>
+
+          <div style={{position:'relative'}}>
+            {showMention&&filteredMentions.length>0&&(
+              <div className="mention-dropdown">
+                {filteredMentions.map(p=>(
+                  <div key={p.id} className="mention-row" onClick={()=>insertMention(p.full_name)}>
+                    <div className="mention-av">{p.full_name.charAt(0)}</div>
+                    <span style={{fontSize:13,fontWeight:600}}>{p.full_name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="chat-input-area">
+              <textarea ref={inputRef} className="chat-input" rows={1} value={body}
+                onChange={handleInput}
+                placeholder="اكتب رسالة... أو @ للمنشن"
+                onKeyDown={e=>{
+                  if(e.key==='Escape'){setShowMention(false);return;}
+                  if(e.key==='Enter'&&!e.shiftKey&&!showMention){e.preventDefault();send();}
+                }}
+              />
+              <button className="chat-send-btn" onClick={send} disabled={!body.trim()||sending}>↑</button>
+            </div>
           </div>
         </div>
       )}
@@ -9120,6 +9355,13 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
     else toast('خطأ في التحديث','error');
   };
 
+  const deleteCR = async () => {
+    if (!confirm('حذف هذا الطلب نهائياً؟ لا يمكن التراجع.')) return;
+    const {error} = await sb.from('change_requests').delete().eq('id',req.id);
+    if (error) { toast('خطأ في الحذف','error'); return; }
+    toast('تم حذف الطلب','success'); onBack();
+  };
+
   const fmtTime = iso => { const d=new Date(iso); return d.toLocaleDateString('ar-JO')+' '+d.toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'}); };
 
   return (
@@ -9140,11 +9382,14 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
           </div>
           {req.body && <div style={{fontSize:13,color:'var(--gray-700)',lineHeight:1.65,padding:'12px 14px',background:'var(--gray-50)',borderRadius:8,whiteSpace:'pre-wrap'}}>{req.body}</div>}
           {isAdmin && (
-            <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid var(--gray-100)',display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-              <span style={{fontSize:12,color:'var(--gray-500)'}}>تغيير الحالة:</span>
-              {Object.entries(CR_STATUS).map(([k,v]) => (
-                <button key={k} className={`btn btn-sm ${req.status===k?'btn-primary':'btn-ghost'}`} onClick={()=>changeStatus(k)}>{v}</button>
-              ))}
+            <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid var(--gray-100)'}}>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
+                <span style={{fontSize:12,color:'var(--gray-500)'}}>تغيير الحالة:</span>
+                {Object.entries(CR_STATUS).map(([k,v]) => (
+                  <button key={k} className={`btn btn-sm ${req.status===k?'btn-primary':'btn-ghost'}`} onClick={()=>changeStatus(k)}>{v}</button>
+                ))}
+              </div>
+              <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',borderColor:'var(--danger)'}} onClick={deleteCR}>🗑️ حذف الطلب</button>
             </div>
           )}
         </div>
