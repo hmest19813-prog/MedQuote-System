@@ -1536,7 +1536,12 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
       </div>
       {doc.notes && (
         <div className="print-notes">
-          <strong>{isEn ? 'Notes: ' : 'ملاحظات: '}</strong>{doc.notes}
+          <strong>{isEn ? 'Notes: ' : 'ملاحظات: '}</strong>
+          <ul style={{margin:'4px 0 0 0', paddingRight:18, paddingLeft:0}}>
+            {doc.notes.split('\n').filter(l=>l.trim()).map((line,i)=>(
+              <li key={i} style={{marginBottom:2}}>{line}</li>
+            ))}
+          </ul>
         </div>
       )}
     </>
