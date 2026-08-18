@@ -689,6 +689,51 @@ th:last-child, td:last-child { border-left: none; }
 .cr-priority-medium    { background: #fef3c7; color: #b45309; }
 .cr-priority-low       { background: #f0fdf4; color: #16a34a; }
 
+/* ===================== TASKS / KANBAN ===================== */
+.kanban-board { display:flex; gap:14px; overflow-x:auto; padding:4px 2px 20px; align-items:flex-start; }
+.kanban-col { flex-shrink:0; width:245px; display:flex; flex-direction:column; }
+.kanban-col-header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; border-radius:12px 12px 0 0;
+  font-weight:700; font-size:13px; user-select:none;
+}
+.kanban-col-count {
+  background:rgba(0,0,0,.12); border-radius:10px;
+  padding:1px 7px; font-size:11px; font-weight:700; margin-right:6px;
+}
+.kanban-col-add {
+  background:rgba(0,0,0,.12); border:none; border-radius:6px;
+  width:24px; height:24px; cursor:pointer; color:inherit;
+  font-weight:700; font-size:16px; display:flex; align-items:center; justify-content:center;
+  transition:background .1s;
+}
+.kanban-col-add:hover { background:rgba(0,0,0,.22); }
+.kanban-col-body {
+  flex:1; padding:8px; min-height:140px;
+  background:#f8f9fb; border-radius:0 0 12px 12px;
+  border:1.5px solid var(--gray-200); border-top:none;
+  transition:background .15s, border-color .15s;
+}
+.kanban-col-body.drag-over { background:#dbeafe; border-color:var(--primary); }
+.kanban-card {
+  background:white; border-radius:10px; padding:12px;
+  margin-bottom:8px; cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,.07);
+  border:1.5px solid var(--gray-200);
+  transition:border-color .15s, box-shadow .15s, opacity .1s;
+  user-select:none;
+}
+.kanban-card:last-child { margin-bottom:0; }
+.kanban-card:hover { border-color:var(--primary); box-shadow:0 4px 16px rgba(43,143,196,.15); }
+.kanban-card.dragging { opacity:.35; transform:scale(.97); }
+.kanban-empty { text-align:center; color:var(--gray-300); font-size:12px; padding:24px 0; }
+.task-avatar {
+  width:22px; height:22px; border-radius:50%; flex-shrink:0;
+  background:linear-gradient(135deg,#0f3460,var(--primary));
+  color:white; font-size:10px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+}
+
 /* ===================== INBOX ===================== */
 .inbox-card {
   background: white; border-radius: 12px; border: 1.5px solid var(--gray-200);
@@ -1162,6 +1207,7 @@ const NAV = [
   { id: 'forms',     label: 'النماذج',        icon: '🧾', perm: 'letters_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
+  { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
   { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧', perm: 'change_requests_access' },
   { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
 ];
@@ -5575,6 +5621,7 @@ const PERM_GROUPS = [
     { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
   ]},
   { label: 'التواصل الداخلي', icon: '💬', perms: [
+    { key: 'tasks_access',           label: 'الوصول لنظام المهام' },
     { key: 'change_requests_access', label: 'الوصول لطلبات التعديل' },
     { key: 'inbox_access',           label: 'الوصول للبريد الوارد' },
   ]},
@@ -5593,7 +5640,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   hr_access: false,
   suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
   supplier_invoices_create: false, supplier_payments_create: false,
-  change_requests_access: true, inbox_access: true,
+  tasks_access: true, change_requests_access: true, inbox_access: true,
 };
 
 const DEFAULT_MANAGER_PERMS = Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: true }), {});
@@ -9452,6 +9499,369 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
 }
 
 /* ===================== INBOX ===================== */
+/* ===================== TASKS ===================== */
+const TASK_STATUSES = ['todo','in_progress','review','done'];
+const TASK_STATUS_META = {
+  todo:        { label:'قيد الانتظار', color:'#374151', bg:'#f3f4f6', icon:'📋' },
+  in_progress: { label:'قيد التنفيذ',  color:'#1d4ed8', bg:'#dbeafe', icon:'⚡' },
+  review:      { label:'مراجعة',       color:'#b45309', bg:'#fef3c7', icon:'👁️' },
+  done:        { label:'منجز',         color:'#16a34a', bg:'#dcfce7', icon:'✅' },
+};
+const TASK_PRIORITY_META = {
+  high:   { label:'عالية',   color:'#dc2626', dot:'🔴' },
+  medium: { label:'متوسطة', color:'#b45309', dot:'🟡' },
+  low:    { label:'منخفضة', color:'#16a34a', dot:'🟢' },
+};
+
+function TasksPage({ user }) {
+  const [tasks, setTasks]               = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [profiles, setProfiles]         = useState({});
+  const [profileList, setProfileList]   = useState([]);
+  const [showForm, setShowForm]         = useState(false);
+  const [selected, setSelected]         = useState(null);
+  const [filterBy, setFilterBy]         = useState('all');
+  const [dragTaskId, setDragTaskId]     = useState(null);
+  const [dragOverCol, setDragOverCol]   = useState(null);
+  const canManage = user?.role==='admin'||user?.role==='manager';
+
+  useEffect(()=>{
+    sb.from('profiles').select('id,full_name').then(({data})=>{
+      const m={}; (data||[]).forEach(p=>m[p.id]=p.full_name);
+      setProfiles(m); setProfileList(data||[]);
+    });
+    load();
+    const ch=sb.channel('tasks_rt')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'tasks'},p=>setTasks(prev=>[...prev,p.new]))
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'tasks'},p=>setTasks(prev=>prev.map(t=>t.id===p.new.id?p.new:t)))
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'tasks'},p=>setTasks(prev=>prev.filter(t=>t.id!==p.old.id)))
+      .subscribe();
+    return ()=>sb.removeChannel(ch);
+  },[]);
+
+  const load=async()=>{
+    setLoading(true);
+    const {data}=await sb.from('tasks').select('*').order('created_at',{ascending:false});
+    setTasks(data||[]); setLoading(false);
+  };
+
+  const changeStatus=async(taskId,newStatus)=>{
+    await sb.from('tasks').update({status:newStatus,updated_at:new Date().toISOString()}).eq('id',taskId);
+  };
+
+  const onDragStart=(e,taskId)=>{ setDragTaskId(taskId); e.dataTransfer.effectAllowed='move'; };
+  const onDragOver=(e,status)=>{ e.preventDefault(); setDragOverCol(status); };
+  const onDrop=(e,status)=>{ e.preventDefault(); if(dragTaskId) changeStatus(dragTaskId,status); setDragTaskId(null); setDragOverCol(null); };
+  const onDragEnd=()=>{ setDragTaskId(null); setDragOverCol(null); };
+
+  const filtered = filterBy==='mine' ? tasks.filter(t=>t.assigned_to===user?.id||t.created_by===user?.id)
+                 : filterBy==='unassigned' ? tasks.filter(t=>!t.assigned_to) : tasks;
+  const byStatus=s=>filtered.filter(t=>t.status===s);
+
+  const isOverdue=due=>due&&new Date(due)<new Date(new Date().toDateString());
+  const isDueSoon=due=>{ if(!due) return false; const d=new Date(due),n=new Date(); return d>=new Date(n.toDateString())&&(d-n)<2*86400*1000; };
+
+  const totalDone=tasks.filter(t=>t.status==='done').length;
+  const myOverdue=tasks.filter(t=>t.assigned_to===user?.id&&isOverdue(t.due_date)&&t.status!=='done').length;
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:10}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:800,color:'var(--gray-800)'}}>✅ المهام</div>
+          <div style={{fontSize:12,color:'var(--gray-400)',marginTop:2,display:'flex',gap:12}}>
+            <span>{tasks.length} مهمة</span>
+            <span style={{color:'#16a34a'}}>{totalDone} منجزة</span>
+            {myOverdue>0&&<span style={{color:'#dc2626',fontWeight:700}}>⚠️ {myOverdue} متأخرة</span>}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <div style={{display:'flex',background:'var(--gray-100)',borderRadius:8,padding:2,gap:1}}>
+            {[['all','الكل'],['mine','مهامي'],['unassigned','غير مكلّفة']].map(([v,l])=>(
+              <button key={v} onClick={()=>setFilterBy(v)}
+                style={{padding:'4px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,background:filterBy===v?'white':'transparent',color:filterBy===v?'var(--primary)':'var(--gray-500)',boxShadow:filterBy===v?'0 1px 4px rgba(0,0,0,.1)':'none',transition:'all .15s'}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {canManage&&<button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ مهمة جديدة</button>}
+        </div>
+      </div>
+
+      {loading?(
+        <div style={{textAlign:'center',padding:40,color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ):(
+        <div className="kanban-board">
+          {TASK_STATUSES.map(status=>{
+            const meta=TASK_STATUS_META[status];
+            const cols=byStatus(status);
+            return (
+              <div key={status} className="kanban-col">
+                <div className="kanban-col-header" style={{background:meta.bg,color:meta.color}}>
+                  <div style={{display:'flex',alignItems:'center'}}>
+                    <span style={{marginLeft:6}}>{meta.icon}</span>
+                    <span>{meta.label}</span>
+                    <span className="kanban-col-count">{cols.length}</span>
+                  </div>
+                  {canManage&&<button className="kanban-col-add" onClick={()=>setShowForm(status)}>+</button>}
+                </div>
+                <div
+                  className={`kanban-col-body${dragOverCol===status?' drag-over':''}`}
+                  onDragOver={e=>onDragOver(e,status)}
+                  onDragLeave={()=>setDragOverCol(null)}
+                  onDrop={e=>onDrop(e,status)}
+                >
+                  {cols.length===0&&<div className="kanban-empty">لا توجد مهام</div>}
+                  {cols.map(task=>{
+                    const overdue=isOverdue(task.due_date)&&task.status!=='done';
+                    const soon=isDueSoon(task.due_date)&&task.status!=='done';
+                    return (
+                      <div key={task.id}
+                        className={`kanban-card${dragTaskId===task.id?' dragging':''}`}
+                        draggable={canManage}
+                        onDragStart={e=>onDragStart(e,task.id)}
+                        onDragEnd={onDragEnd}
+                        onClick={()=>setSelected(task)}
+                      >
+                        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:6,marginBottom:7}}>
+                          <div style={{fontSize:13,fontWeight:600,color:'var(--gray-800)',lineHeight:1.35,flex:1}}>{task.title}</div>
+                          <span style={{fontSize:13,flexShrink:0}}>{TASK_PRIORITY_META[task.priority]?.dot||'🟡'}</span>
+                        </div>
+                        {task.assigned_to&&(
+                          <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:5}}>
+                            <div className="task-avatar">{(profiles[task.assigned_to]||'?').charAt(0)}</div>
+                            <span style={{fontSize:11,color:'var(--gray-500)'}}>{profiles[task.assigned_to]||'—'}</span>
+                          </div>
+                        )}
+                        {task.due_date&&(
+                          <div style={{fontSize:11,fontWeight:overdue?700:400,color:overdue?'#dc2626':soon?'#b45309':'var(--gray-400)'}}>
+                            📅 {new Date(task.due_date).toLocaleDateString('ar-JO',{day:'numeric',month:'short'})}{overdue?' ⚠️':''}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showForm&&<TaskForm user={user} profiles={profileList} initialStatus={typeof showForm==='string'?showForm:'todo'} onSave={()=>{setShowForm(false);}} onClose={()=>setShowForm(false)}/>}
+      {selected&&<TaskDetail task={selected} user={user} profiles={profiles} profileList={profileList} canManage={canManage}
+        onClose={()=>setSelected(null)}
+        onUpdate={updated=>{ setSelected(updated); setTasks(prev=>prev.map(t=>t.id===updated.id?updated:t)); }}
+        onDelete={()=>{ setSelected(null); load(); }}/>}
+    </div>
+  );
+}
+
+function TaskForm({ user, profiles, initialStatus, onSave, onClose, task }) {
+  const editing               = !!task;
+  const [title, setTitle]     = useState(task?.title||'');
+  const [desc, setDesc]       = useState(task?.description||'');
+  const [assigned, setAssigned] = useState(task?.assigned_to||'');
+  const [dueDate, setDueDate] = useState(task?.due_date||'');
+  const [priority, setPriority] = useState(task?.priority||'medium');
+  const [status, setStatus]   = useState(task?.status||initialStatus||'todo');
+  const [saving, setSaving]   = useState(false);
+
+  const submit=async()=>{
+    if(!title.trim()){toast('أدخل عنوان المهمة','error');return;}
+    setSaving(true);
+    const payload={title:title.trim(),description:desc.trim(),assigned_to:assigned||null,due_date:dueDate||null,priority,status,updated_at:new Date().toISOString()};
+    let error, data;
+    if(editing){({error}=await sb.from('tasks').update(payload).eq('id',task.id));}
+    else{({data,error}=await sb.from('tasks').insert({...payload,created_by:user?.id}).select().single());}
+    if(error){toast('خطأ: '+error.message,'error');setSaving(false);return;}
+    if(!editing&&assigned&&assigned!==user?.id){
+      await sb.from('notifications').insert({user_id:assigned,title:`📋 مهمة جديدة: ${title.trim().slice(0,40)}`,body:desc.trim().slice(0,80)||'تم تكليفك بمهمة جديدة',link_type:'task',link_id:data?.id||null,user_name:''});
+    }
+    toast(editing?'تم التحديث':'تمت الإضافة','success'); onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:500}}>
+        <div className="modal-header">
+          <span className="modal-title">{editing?'✏️ تعديل المهمة':'✅ مهمة جديدة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">عنوان المهمة <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" value={title} onChange={e=>setTitle(e.target.value)} placeholder="مثال: مراجعة عروض الأسعار للربع الثالث" autoFocus/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">التفاصيل</label>
+            <textarea className="form-control" rows={3} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="شرح المهمة..." style={{resize:'vertical'}}/>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">تكليف لـ</label>
+              <select className="form-control" value={assigned} onChange={e=>setAssigned(e.target.value)}>
+                <option value="">— غير محدد —</option>
+                {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ الاستحقاق</label>
+              <input className="form-control" type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الأولوية</label>
+              <select className="form-control" value={priority} onChange={e=>setPriority(e.target.value)}>
+                <option value="high">🔴 عالية</option>
+                <option value="medium">🟡 متوسطة</option>
+                <option value="low">🟢 منخفضة</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الحالة</label>
+              <select className="form-control" value={status} onChange={e=>setStatus(e.target.value)}>
+                {Object.entries(TASK_STATUS_META).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!title.trim()||saving}>
+            {saving?'جاري الحفظ...':(editing?'حفظ التعديلات':'إضافة المهمة')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskDetail({ task, user, profiles, profileList, canManage, onClose, onUpdate, onDelete }) {
+  const [t, setT]               = useState(task);
+  const [comments, setComments] = useState([]);
+  const [body, setBody]         = useState('');
+  const [sending, setSending]   = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const bottomRef               = useRef(null);
+  const canAct                  = canManage||t.assigned_to===user?.id;
+
+  useEffect(()=>{
+    loadComments();
+    const ch=sb.channel('tc_'+t.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'task_comments',filter:`task_id=eq.${t.id}`},
+        p=>{setComments(prev=>[...prev,p.new]);setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),50);})
+      .subscribe();
+    return ()=>sb.removeChannel(ch);
+  },[t.id]);
+
+  const loadComments=async()=>{
+    const {data}=await sb.from('task_comments').select('*').eq('task_id',t.id).order('created_at',{ascending:true});
+    setComments(data||[]); setTimeout(()=>bottomRef.current?.scrollIntoView(),60);
+  };
+
+  const changeStatus=async s=>{
+    const {data,error}=await sb.from('tasks').update({status:s,updated_at:new Date().toISOString()}).eq('id',t.id).select().single();
+    if(!error){setT(data);onUpdate(data);} else toast('خطأ','error');
+  };
+
+  const sendComment=async()=>{
+    if(!body.trim()||sending) return;
+    setSending(true);
+    const {error}=await sb.from('task_comments').insert({task_id:t.id,user_id:user?.id,body:body.trim()});
+    if(error) toast('خطأ','error'); else setBody('');
+    setSending(false);
+  };
+
+  const deleteTask=async()=>{
+    if(!confirm('حذف هذه المهمة نهائياً؟')) return;
+    const {error}=await sb.from('tasks').delete().eq('id',t.id);
+    if(error){toast('خطأ في الحذف','error');return;}
+    toast('تم الحذف','success'); onDelete();
+  };
+
+  const fmtDate=iso=>new Date(iso+'T00:00:00').toLocaleDateString('ar-JO',{day:'numeric',month:'long'});
+  const meta=TASK_STATUS_META[t.status];
+  const isOverdue=t.due_date&&new Date(t.due_date)<new Date(new Date().toDateString())&&t.status!=='done';
+
+  if(showEdit) return <TaskForm user={user} profiles={profileList} task={t}
+    onSave={async()=>{const {data}=await sb.from('tasks').select('*').eq('id',t.id).single();setT(data);onUpdate(data);setShowEdit(false);toast('تم التحديث','success');}}
+    onClose={()=>setShowEdit(false)}/>;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:560}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header" style={{background:meta.bg}}>
+          <span className="modal-title" style={{color:meta.color}}>{meta.icon} {meta.label}</span>
+          <button className="modal-close" onClick={onClose} style={{background:'rgba(0,0,0,.1)',color:meta.color}}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{fontSize:17,fontWeight:800,color:'var(--gray-800)',marginBottom:10,lineHeight:1.3}}>{t.title}</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+            <span style={{fontSize:12,background:'var(--gray-50)',border:'1px solid var(--gray-200)',padding:'3px 10px',borderRadius:20}}>
+              {TASK_PRIORITY_META[t.priority]?.dot} {TASK_PRIORITY_META[t.priority]?.label}
+            </span>
+            {t.assigned_to&&<span style={{fontSize:12,background:'var(--gray-50)',border:'1px solid var(--gray-200)',padding:'3px 10px',borderRadius:20}}>👤 {profiles[t.assigned_to]||'—'}</span>}
+            {t.due_date&&(
+              <span style={{fontSize:12,padding:'3px 10px',borderRadius:20,fontWeight:isOverdue?700:400,background:isOverdue?'#fee2e2':'var(--gray-50)',border:`1px solid ${isOverdue?'#fca5a5':'var(--gray-200)'}`,color:isOverdue?'#dc2626':'inherit'}}>
+                📅 {fmtDate(t.due_date)}{isOverdue?' ⚠️ متأخرة':''}
+              </span>
+            )}
+          </div>
+
+          {t.description&&(
+            <div style={{fontSize:13,color:'var(--gray-700)',lineHeight:1.7,padding:'10px 14px',background:'var(--gray-50)',borderRadius:8,marginBottom:14,whiteSpace:'pre-wrap'}}>{t.description}</div>
+          )}
+
+          {/* Status buttons */}
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16,paddingBottom:14,borderBottom:'1px solid var(--gray-100)'}}>
+            <span style={{fontSize:12,color:'var(--gray-500)',alignSelf:'center'}}>الحالة:</span>
+            {Object.entries(TASK_STATUS_META).map(([k,v])=>(
+              <button key={k} className={`btn btn-sm ${t.status===k?'btn-primary':'btn-ghost'}`}
+                onClick={()=>canAct&&changeStatus(k)} disabled={!canAct} style={{opacity:canAct?1:.5}}>
+                {v.icon} {v.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Comments */}
+          <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)',marginBottom:8}}>💬 التعليقات ({comments.length})</div>
+          <div className="chat-messages" style={{maxHeight:200,flex:'none',padding:'8px 10px',border:'1px solid var(--gray-100)',borderRadius:10,marginBottom:8}}>
+            {comments.length===0&&<p style={{textAlign:'center',color:'var(--gray-400)',fontSize:12,padding:'16px 0',direction:'rtl'}}>لا توجد تعليقات — كن أول من يعلّق</p>}
+            {comments.map(c=>{
+              const isOwn=c.user_id===user?.id;
+              return (
+                <div key={c.id} className={`chat-msg${isOwn?' own':''}`} style={{marginTop:8}}>
+                  {!isOwn&&<div className="chat-avatar">{(profiles[c.user_id]||'?').charAt(0)}</div>}
+                  <div className="chat-bubble-content">
+                    {!isOwn&&<div className="chat-bubble-name">{profiles[c.user_id]||'—'}</div>}
+                    <div className="chat-bubble-body">{c.body}</div>
+                    <div className="chat-bubble-time">{new Date(c.created_at).toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'})}</div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef}/>
+          </div>
+          <div className="chat-input-area" style={{padding:'6px 0 0',border:'none'}}>
+            <textarea className="chat-input" rows={1} value={body} onChange={e=>setBody(e.target.value)}
+              placeholder="اكتب تعليقاً..."
+              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendComment();}}}/>
+            <button className="chat-send-btn" onClick={sendComment} disabled={!body.trim()||sending}>↑</button>
+          </div>
+        </div>
+        <div className="modal-footer">
+          {canManage&&<button className="btn btn-ghost btn-sm" style={{color:'var(--danger)',borderColor:'var(--danger)'}} onClick={deleteTask}>🗑️ حذف</button>}
+          <div style={{flex:1}}/>
+          {canManage&&<button className="btn btn-ghost" onClick={()=>setShowEdit(true)}>✏️ تعديل</button>}
+          <button className="btn btn-primary" onClick={onClose}>إغلاق</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const INBOX_TYPES = { quote:'📋 عرض سعر وارد', order:'📦 طلب', invoice:'🧾 فاتورة', letter:'📝 مراسلة', other:'📂 أخرى' };
 const INBOX_STATUS = { new:'جديد', reviewed:'مراجع', pending:'معلق', archived:'مؤرشف' };
 
@@ -11841,7 +12251,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', forms:'النماذج الجاهزة', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', forms:'النماذج الجاهزة', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد' };
 
   return (
     <div className="app-layout">
@@ -11869,6 +12279,7 @@ function App() {
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
           {page==='hr' && hasPerm(user,'hr_access') && <HRPage user={user}/>}
+          {page==='tasks' && hasPerm(user,'tasks_access') && <TasksPage user={user}/>}
           {page==='change-requests' && hasPerm(user,'change_requests_access') && <ChangeRequestsPage user={user}/>}
           {page==='inbox' && hasPerm(user,'inbox_access') && <InboxPage user={user}/>}
         </div>
