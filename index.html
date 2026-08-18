@@ -519,6 +519,118 @@ th:last-child, td:last-child { border-left: none; }
 .w-full { width: 100%; }
 .section-title { font-size: 12px; font-weight: 700; color: var(--gray-500); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--gray-100); text-transform: uppercase; letter-spacing: .05em; }
 
+/* ===================== CHAT PANEL ===================== */
+.chat-fab {
+  position: fixed; bottom: 24px; left: 24px; z-index: 200;
+  width: 54px; height: 54px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), #3FA3D8);
+  color: white; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 18px rgba(43,143,196,.45);
+  transition: transform .18s, box-shadow .18s;
+}
+.chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(43,143,196,.55); }
+.chat-fab-badge {
+  position: absolute; top: -4px; right: -4px;
+  background: var(--danger); color: white; font-size: 10px; font-weight: 800;
+  min-width: 18px; height: 18px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px; border: 2px solid white; line-height: 1;
+}
+.chat-panel {
+  position: fixed; bottom: 90px; left: 24px; z-index: 199;
+  width: 360px; max-height: 530px;
+  background: white; border-radius: 18px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.18);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--gray-200);
+  animation: slideUpChat .22s cubic-bezier(.4,0,.2,1);
+}
+@keyframes slideUpChat {
+  from { opacity:0; transform:translateY(20px) scale(.97); }
+  to   { opacity:1; transform:translateY(0) scale(1); }
+}
+.chat-panel-header {
+  background: linear-gradient(135deg, var(--primary), #3FA3D8);
+  color: white; padding: 13px 16px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.chat-panel-title { font-size: 14px; font-weight: 700; }
+.chat-panel-sub { font-size: 11px; opacity: .75; margin-top: 1px; }
+.chat-panel-close {
+  background: rgba(255,255,255,.2); border: none; color: white;
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  direction: ltr;
+}
+.chat-msg { display: flex; align-items: flex-end; gap: 8px; }
+.chat-msg.own { flex-direction: row-reverse; }
+.chat-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, #0f3460, var(--primary));
+  color: white; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.chat-bubble-content { max-width: 74%; display: flex; flex-direction: column; }
+.chat-bubble-name { font-size: 10px; color: var(--gray-400); margin-bottom: 2px; direction: rtl; }
+.chat-bubble-body {
+  background: var(--gray-100); color: var(--gray-800);
+  padding: 8px 11px; border-radius: 14px 14px 14px 2px;
+  font-size: 13px; line-height: 1.5; word-break: break-word;
+  direction: rtl; white-space: pre-wrap;
+}
+.chat-msg.own .chat-bubble-body {
+  background: linear-gradient(135deg, var(--primary), #3FA3D8);
+  color: white; border-radius: 14px 14px 2px 14px;
+}
+.chat-bubble-time { font-size: 10px; color: var(--gray-400); margin-top: 2px; direction: ltr; }
+.chat-msg.own .chat-bubble-time { text-align: right; }
+.chat-input-area {
+  display: flex; gap: 8px; padding: 10px 12px;
+  border-top: 1px solid var(--gray-100); flex-shrink: 0;
+  background: white; align-items: flex-end;
+}
+.chat-input {
+  flex: 1; padding: 8px 12px; border: 1.5px solid var(--gray-200);
+  border-radius: 16px; font-size: 13px; font-family: inherit;
+  outline: none; resize: none; line-height: 1.45; max-height: 90px;
+  overflow-y: auto; direction: rtl; transition: border-color .2s;
+}
+.chat-input:focus { border-color: var(--primary); }
+.chat-send-btn {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), #3FA3D8);
+  color: white; border: none; cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity .15s, transform .15s;
+}
+.chat-send-btn:disabled { opacity: .38; cursor: default; }
+.chat-send-btn:not(:disabled):hover { transform: scale(1.08); }
+
+/* ===================== CHANGE REQUESTS ===================== */
+.cr-card {
+  background: white; border-radius: 12px; border: 1.5px solid var(--gray-200);
+  padding: 16px 18px; cursor: pointer;
+  transition: border-color .18s, box-shadow .18s; margin-bottom: 10px;
+}
+.cr-card:hover { border-color: var(--primary); box-shadow: 0 4px 16px rgba(43,143,196,.1); }
+.cr-status-open        { background: #dbeafe; color: #1d4ed8; }
+.cr-status-in_progress { background: #fef3c7; color: #b45309; }
+.cr-status-done        { background: #dcfce7; color: #16a34a; }
+.cr-status-rejected    { background: #fee2e2; color: #dc2626; }
+.cr-priority-high      { background: #fee2e2; color: #dc2626; }
+.cr-priority-medium    { background: #fef3c7; color: #b45309; }
+.cr-priority-low       { background: #f0fdf4; color: #16a34a; }
+
+@media (max-width: 768px) {
+  .chat-fab { bottom: 72px; left: 12px; width: 48px; height: 48px; }
+  .chat-panel { bottom: 126px; left: 8px; right: 8px; width: auto; max-height: 60vh; border-radius: 16px; }
+}
+
 /* ===================== MOBILE RESPONSIVE ===================== */
 @media (max-width: 768px) {
   .sidebar { transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1); }
@@ -970,6 +1082,7 @@ const NAV = [
   { id: 'forms',     label: 'النماذج',        icon: '🧾', perm: 'letters_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
+  { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧' },
 ];
 
 function Sidebar({ user, page, setPage, onLogout }) {
@@ -2962,6 +3075,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [editArchiveTarget, setEditArchiveTarget] = useState(null);
   const [editDeleteTarget, setEditDeleteTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
+  const [discussTarget, setDiscussTarget]   = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -3472,6 +3586,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
                   {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
@@ -3519,6 +3634,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
                       { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
+                      { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
@@ -3568,6 +3684,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
                   {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
@@ -3608,6 +3725,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
                       { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
+                      { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
@@ -3817,6 +3935,7 @@ function QuotesList({ user, quotes, onReload }) {
       {editArchiveTarget && <ArchiveModal label={`تعديل سبب أرشفة ${editArchiveTarget.number}`} initialNote={editArchiveTarget.archive_note||''} onConfirm={doEditArchiveNote} onClose={()=>setEditArchiveTarget(null)}/>}
       {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
       {followUpTarget && <FollowUpModal quote={followUpTarget} user={user} onClose={()=>setFollowUpTarget(null)}/>}
+      {discussTarget && <QuoteDiscussionModal quote={discussTarget} user={user} onClose={()=>setDiscussTarget(null)}/>}
     </div>
   );
 }
@@ -8679,6 +8798,389 @@ function ProcurementPage({ user }) {
   );
 }
 
+/* ===================== CHAT PANEL ===================== */
+function ChatPanel({ user }) {
+  const [open, setOpen] = useState(false);
+  const [msgs, setMsgs] = useState([]);
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [profiles, setProfiles] = useState({});
+  const [unread, setUnread] = useState(0);
+  const bottomRef = useRef(null);
+  const lastReadRef = useRef(Number(localStorage.getItem('chat_last_read') || 0));
+  const openRef = useRef(false);
+  useEffect(() => { openRef.current = open; }, [open]);
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').then(({ data }) => {
+      const m = {}; (data||[]).forEach(p => m[p.id]=p.full_name); setProfiles(m);
+    });
+  }, []);
+
+  useEffect(() => {
+    sb.from('chat_messages').select('*').order('created_at',{ascending:true}).limit(80)
+      .then(({ data }) => {
+        const rows = data||[];
+        setMsgs(rows);
+        const lr = lastReadRef.current;
+        if (lr) setUnread(rows.filter(m => new Date(m.created_at).getTime()>lr && m.user_id!==user?.id).length);
+      });
+    const ch = sb.channel('chat_global')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'chat_messages'}, p => {
+        setMsgs(prev => [...prev, p.new]);
+        if (p.new.user_id !== user?.id && !openRef.current) setUnread(n => n+1);
+      }).subscribe();
+    return () => sb.removeChannel(ch);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (open) setTimeout(() => bottomRef.current?.scrollIntoView({behavior:'smooth'}), 80);
+  }, [open, msgs.length]);
+
+  const openPanel = () => {
+    setOpen(true); setUnread(0);
+    const now = Date.now(); lastReadRef.current = now;
+    localStorage.setItem('chat_last_read', String(now));
+  };
+
+  const send = async () => {
+    if (!body.trim()||sending) return;
+    setSending(true);
+    const {error} = await sb.from('chat_messages').insert({user_id:user?.id,body:body.trim()});
+    if (error) toast('خطأ في الإرسال','error'); else setBody('');
+    setSending(false);
+  };
+
+  const fmtTime = iso => new Date(iso).toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'});
+
+  return (
+    <>
+      <button className="chat-fab" onClick={()=>open?setOpen(false):openPanel()} title="الشات الجماعي">
+        <span style={{fontSize:22,lineHeight:1}}>{open?'✕':'💬'}</span>
+        {!open && unread>0 && <span className="chat-fab-badge">{unread>99?'99+':unread}</span>}
+      </button>
+      {open && (
+        <div className="chat-panel">
+          <div className="chat-panel-header">
+            <div>
+              <div className="chat-panel-title">💬 الشات الجماعي</div>
+              <div className="chat-panel-sub">جميع موظفي المؤسسة</div>
+            </div>
+            <button className="chat-panel-close" onClick={()=>setOpen(false)}>✕</button>
+          </div>
+          <div className="chat-messages">
+            {msgs.length===0 && <p style={{textAlign:'center',color:'var(--gray-400)',fontSize:13,margin:'40px 0',direction:'rtl'}}>لا توجد رسائل — كن أول من يبدأ!</p>}
+            {msgs.map(m => {
+              const isOwn = m.user_id===user?.id;
+              return (
+                <div key={m.id} className={`chat-msg${isOwn?' own':''}`}>
+                  {!isOwn && <div className="chat-avatar">{(profiles[m.user_id]||'?').charAt(0)}</div>}
+                  <div className="chat-bubble-content">
+                    {!isOwn && <div className="chat-bubble-name">{profiles[m.user_id]||'—'}</div>}
+                    <div className="chat-bubble-body">{m.body}</div>
+                    <div className="chat-bubble-time">{fmtTime(m.created_at)}</div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={bottomRef}/>
+          </div>
+          <div className="chat-input-area">
+            <textarea className="chat-input" rows={1} value={body}
+              onChange={e=>setBody(e.target.value)} placeholder="اكتب رسالة..."
+              onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}
+            />
+            <button className="chat-send-btn" onClick={send} disabled={!body.trim()||sending}>↑</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ===================== QUOTE DISCUSSION MODAL ===================== */
+function QuoteDiscussionModal({ quote, user, onClose }) {
+  const [msgs, setMsgs] = useState([]);
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [profiles, setProfiles] = useState({});
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').then(({data})=>{
+      const m={}; (data||[]).forEach(p=>m[p.id]=p.full_name); setProfiles(m);
+    });
+    sb.from('quote_discussions').select('*').eq('quotation_id',quote.id)
+      .order('created_at',{ascending:true})
+      .then(({data})=>{ setMsgs(data||[]); setTimeout(()=>bottomRef.current?.scrollIntoView(),60); });
+    const ch = sb.channel('disc_'+quote.id)
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'quote_discussions',filter:`quotation_id=eq.${quote.id}`},
+        p => { setMsgs(prev=>[...prev,p.new]); setTimeout(()=>bottomRef.current?.scrollIntoView({behavior:'smooth'}),60); })
+      .subscribe();
+    return () => sb.removeChannel(ch);
+  }, [quote.id]);
+
+  const send = async () => {
+    if (!body.trim()||sending) return;
+    setSending(true);
+    const {error} = await sb.from('quote_discussions').insert({quotation_id:quote.id,user_id:user?.id,body:body.trim()});
+    if (error) toast('خطأ في الإرسال','error'); else setBody('');
+    setSending(false);
+  };
+
+  const fmtTime = iso => { const d=new Date(iso); return d.toLocaleDateString('ar-JO')+' '+d.toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'}); };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:520,height:'72vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div className="modal-header">
+          <span className="modal-title">🗨️ نقاش العرض {quote.number} — {quote.customer_name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="chat-messages" style={{flex:1,padding:'14px 16px'}}>
+          {msgs.length===0 && <p style={{textAlign:'center',color:'var(--gray-400)',fontSize:13,margin:'40px 0',direction:'rtl'}}>لا توجد تعليقات على هذا العرض بعد</p>}
+          {msgs.map(m => {
+            const isOwn = m.user_id===user?.id;
+            return (
+              <div key={m.id} className={`chat-msg${isOwn?' own':''}`}>
+                {!isOwn && <div className="chat-avatar">{(profiles[m.user_id]||'?').charAt(0)}</div>}
+                <div className="chat-bubble-content">
+                  {!isOwn && <div className="chat-bubble-name">{profiles[m.user_id]||'—'}</div>}
+                  <div className="chat-bubble-body">{m.body}</div>
+                  <div className="chat-bubble-time">{fmtTime(m.created_at)}</div>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef}/>
+        </div>
+        <div className="chat-input-area" style={{borderTop:'1px solid var(--gray-100)'}}>
+          <textarea className="chat-input" rows={2} value={body}
+            onChange={e=>setBody(e.target.value)} placeholder="أضف تعليقاً على هذا العرض..."
+            onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}
+            style={{resize:'none'}}
+          />
+          <button className="chat-send-btn" onClick={send} disabled={!body.trim()||sending}>↑</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== CHANGE REQUESTS PAGE ===================== */
+const CR_STATUS   = {open:'مفتوح', in_progress:'قيد العمل', done:'منجز', rejected:'مرفوض'};
+const CR_PRIORITY = {high:'عالية', medium:'متوسطة', low:'منخفضة'};
+
+function ChangeRequestsPage({ user }) {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [profiles, setProfiles] = useState({});
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').then(({data})=>{
+      const m={}; (data||[]).forEach(p=>m[p.id]=p.full_name); setProfiles(m);
+    });
+    load();
+  }, []);
+
+  const load = async () => {
+    setLoading(true);
+    const {data} = await sb.from('change_requests').select('*').order('created_at',{ascending:false});
+    setRequests(data||[]); setLoading(false);
+  };
+
+  if (selected) return (
+    <CRDetail request={selected} user={user} profiles={profiles}
+      onBack={()=>{setSelected(null);load();}}
+      onUpdate={updated=>{setSelected(updated);setRequests(prev=>prev.map(r=>r.id===updated.id?updated:r));}}
+    />
+  );
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:800,color:'var(--gray-800)'}}>🔧 طلبات التعديل</div>
+          <div style={{fontSize:12,color:'var(--gray-400)',marginTop:2}}>اقترح تحسينات أو أبلغ عن مشاكل في النظام</div>
+        </div>
+        <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ طلب جديد</button>
+      </div>
+      {loading ? (
+        <div style={{textAlign:'center',padding:40,color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : requests.length===0 ? (
+        <div style={{textAlign:'center',padding:'60px 0'}}>
+          <div style={{fontSize:48,marginBottom:12}}>🔧</div>
+          <p style={{color:'var(--gray-400)',marginBottom:16}}>لا توجد طلبات تعديل بعد</p>
+          <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ أرسل أول طلب</button>
+        </div>
+      ) : requests.map(r => (
+        <div key={r.id} className="cr-card" onClick={()=>setSelected(r)}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:6}}>
+            <div style={{fontSize:14,fontWeight:700,color:'var(--gray-800)',flex:1}}>{r.title}</div>
+            <div style={{display:'flex',gap:6,flexShrink:0}}>
+              <span className={`badge cr-priority-${r.priority}`}>{CR_PRIORITY[r.priority]||r.priority}</span>
+              <span className={`badge cr-status-${r.status}`}>{CR_STATUS[r.status]||r.status}</span>
+            </div>
+          </div>
+          {r.body && <div style={{fontSize:12,color:'var(--gray-600)',lineHeight:1.5,overflow:'hidden',maxHeight:38,marginBottom:6}}>{r.body}</div>}
+          <div style={{fontSize:11,color:'var(--gray-400)',display:'flex',gap:12,flexWrap:'wrap'}}>
+            <span>👤 {profiles[r.user_id]||'—'}</span>
+            <span>📅 {new Date(r.created_at).toLocaleDateString('ar-JO')}</span>
+          </div>
+        </div>
+      ))}
+      {showForm && <CRForm user={user} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
+    </div>
+  );
+}
+
+function CRForm({ user, onSave, onClose }) {
+  const [title, setTitle]       = useState('');
+  const [body, setBody]         = useState('');
+  const [priority, setPriority] = useState('medium');
+  const [saving, setSaving]     = useState(false);
+
+  const submit = async () => {
+    if (!title.trim()) { toast('أدخل عنوان الطلب','error'); return; }
+    setSaving(true);
+    const {error} = await sb.from('change_requests').insert({user_id:user?.id,title:title.trim(),body:body.trim(),priority});
+    if (error) { toast('خطأ: '+error.message,'error'); setSaving(false); return; }
+    toast('تم إرسال الطلب','success'); onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:500}}>
+        <div className="modal-header">
+          <span className="modal-title">🔧 طلب تعديل جديد</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">عنوان الطلب <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" value={title} onChange={e=>setTitle(e.target.value)}
+              placeholder="مثال: إضافة خانة الخصم عند الطباعة" autoFocus/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">التفاصيل</label>
+            <textarea className="form-control" rows={4} value={body} onChange={e=>setBody(e.target.value)}
+              placeholder="اشرح الطلب بالتفصيل..." style={{resize:'vertical'}}/>
+          </div>
+          <div className="form-group" style={{marginBottom:0}}>
+            <label className="form-label">الأولوية</label>
+            <select className="form-control" value={priority} onChange={e=>setPriority(e.target.value)}>
+              <option value="high">🔴 عالية</option>
+              <option value="medium">🟡 متوسطة</option>
+              <option value="low">🟢 منخفضة</option>
+            </select>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!title.trim()||saving}>
+            {saving?'جاري الإرسال...':'إرسال الطلب'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CRDetail({ request, user, profiles, onBack, onUpdate }) {
+  const [replies, setReplies] = useState([]);
+  const [body, setBody]       = useState('');
+  const [sending, setSending] = useState(false);
+  const [req, setReq]         = useState(request);
+  const bottomRef             = useRef(null);
+  const isAdmin               = user?.role==='admin';
+
+  useEffect(() => { loadReplies(); }, [request.id]);
+
+  const loadReplies = async () => {
+    const {data} = await sb.from('change_request_replies').select('*')
+      .eq('request_id',req.id).order('created_at',{ascending:true});
+    setReplies(data||[]); setTimeout(()=>bottomRef.current?.scrollIntoView(),60);
+  };
+
+  const sendReply = async () => {
+    if (!body.trim()||sending) return;
+    setSending(true);
+    const {error} = await sb.from('change_request_replies').insert({request_id:req.id,user_id:user?.id,body:body.trim()});
+    if (error) toast('خطأ','error'); else { setBody(''); loadReplies(); }
+    setSending(false);
+  };
+
+  const changeStatus = async newStatus => {
+    const {data,error} = await sb.from('change_requests')
+      .update({status:newStatus,updated_at:new Date().toISOString()})
+      .eq('id',req.id).select().single();
+    if (!error) { setReq(data); onUpdate(data); toast('تم تحديث الحالة','success'); }
+    else toast('خطأ في التحديث','error');
+  };
+
+  const fmtTime = iso => { const d=new Date(iso); return d.toLocaleDateString('ar-JO')+' '+d.toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit'}); };
+
+  return (
+    <div>
+      <button className="btn btn-ghost btn-sm" onClick={onBack} style={{marginBottom:14}}>← رجوع للقائمة</button>
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-body">
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10}}>
+            <div style={{fontSize:16,fontWeight:800,color:'var(--gray-800)',flex:1}}>{req.title}</div>
+            <div style={{display:'flex',gap:6,flexShrink:0}}>
+              <span className={`badge cr-priority-${req.priority}`}>{CR_PRIORITY[req.priority]}</span>
+              <span className={`badge cr-status-${req.status}`}>{CR_STATUS[req.status]}</span>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:'var(--gray-400)',display:'flex',gap:14,marginBottom:req.body?12:0,flexWrap:'wrap'}}>
+            <span>👤 {profiles[req.user_id]||'—'}</span>
+            <span>📅 {new Date(req.created_at).toLocaleDateString('ar-JO')}</span>
+          </div>
+          {req.body && <div style={{fontSize:13,color:'var(--gray-700)',lineHeight:1.65,padding:'12px 14px',background:'var(--gray-50)',borderRadius:8,whiteSpace:'pre-wrap'}}>{req.body}</div>}
+          {isAdmin && (
+            <div style={{marginTop:14,paddingTop:12,borderTop:'1px solid var(--gray-100)',display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+              <span style={{fontSize:12,color:'var(--gray-500)'}}>تغيير الحالة:</span>
+              {Object.entries(CR_STATUS).map(([k,v]) => (
+                <button key={k} className={`btn btn-sm ${req.status===k?'btn-primary':'btn-ghost'}`} onClick={()=>changeStatus(k)}>{v}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header"><span style={{fontWeight:700,fontSize:13}}>💬 الردود ({replies.length})</span></div>
+        <div className="chat-messages" style={{maxHeight:320,flex:'none',padding:'10px 14px'}}>
+          {replies.length===0 && <p style={{textAlign:'center',color:'var(--gray-400)',fontSize:13,padding:'20px 0',direction:'rtl'}}>لا توجد ردود بعد</p>}
+          {replies.map(r => {
+            const isOwn = r.user_id===user?.id;
+            return (
+              <div key={r.id} className={`chat-msg${isOwn?' own':''}`}>
+                {!isOwn && <div className="chat-avatar">{(profiles[r.user_id]||'?').charAt(0)}</div>}
+                <div className="chat-bubble-content">
+                  {!isOwn && <div className="chat-bubble-name">{profiles[r.user_id]||'—'}</div>}
+                  <div className="chat-bubble-body">{r.body}</div>
+                  <div className="chat-bubble-time">{fmtTime(r.created_at)}</div>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef}/>
+        </div>
+        <div className="chat-input-area" style={{borderTop:'1px solid var(--gray-100)'}}>
+          <textarea className="chat-input" rows={2} value={body}
+            onChange={e=>setBody(e.target.value)} placeholder="اكتب رداً..."
+            onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendReply();}}}
+            style={{resize:'none'}}
+          />
+          <button className="chat-send-btn" onClick={sendReply} disabled={!body.trim()||sending}>↑</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== APP ===================== *//* ===================== APP ===================== */
 /* ===================== NOTIFICATION BELL ===================== */
 function NotificationBell({ userId }) {
@@ -10801,7 +11303,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', forms:'النماذج الجاهزة', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', forms:'النماذج الجاهزة', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'change-requests':'طلبات التعديل' };
 
   return (
     <div className="app-layout">
@@ -10829,10 +11331,12 @@ function App() {
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
           {page==='hr' && hasPerm(user,'hr_access') && <HRPage user={user}/>}
+          {page==='change-requests' && <ChangeRequestsPage user={user}/>}
         </div>
       </div>
       <BottomNav user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onMoreClick={() => setMobileMenuOpen(true)}/>
       {mobileMenuOpen && <MobileSheet user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onClose={() => setMobileMenuOpen(false)} onLogout={handleLogout}/>}
+      <ChatPanel user={user}/>
       <Toasts/>
     </div>
   );
