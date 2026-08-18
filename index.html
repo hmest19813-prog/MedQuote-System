@@ -1162,8 +1162,8 @@ const NAV = [
   { id: 'forms',     label: 'النماذج',        icon: '🧾', perm: 'letters_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
-  { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧' },
-  { id: 'inbox', label: 'البريد الوارد', icon: '📥' },
+  { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧', perm: 'change_requests_access' },
+  { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
 ];
 
 function Sidebar({ user, page, setPage, onLogout }) {
@@ -5574,6 +5574,10 @@ const PERM_GROUPS = [
   { label: 'الموارد البشرية', icon: '👥', perms: [
     { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
   ]},
+  { label: 'التواصل الداخلي', icon: '💬', perms: [
+    { key: 'change_requests_access', label: 'الوصول لطلبات التعديل' },
+    { key: 'inbox_access',           label: 'الوصول للبريد الوارد' },
+  ]},
 ];
 
 const DEFAULT_EMPLOYEE_PERMS = {
@@ -5589,6 +5593,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   hr_access: false,
   suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
   supplier_invoices_create: false, supplier_payments_create: false,
+  change_requests_access: true, inbox_access: true,
 };
 
 const DEFAULT_MANAGER_PERMS = Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: true }), {});
@@ -11864,8 +11869,8 @@ function App() {
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='users' && user.role==='admin' && <UsersPage currentUser={user}/>}
           {page==='hr' && hasPerm(user,'hr_access') && <HRPage user={user}/>}
-          {page==='change-requests' && <ChangeRequestsPage user={user}/>}
-          {page==='inbox' && <InboxPage user={user}/>}
+          {page==='change-requests' && hasPerm(user,'change_requests_access') && <ChangeRequestsPage user={user}/>}
+          {page==='inbox' && hasPerm(user,'inbox_access') && <InboxPage user={user}/>}
         </div>
       </div>
       <BottomNav user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onMoreClick={() => setMobileMenuOpen(true)}/>
