@@ -9071,9 +9071,13 @@ function ChatPanel({ user }) {
     }
     const panelW = 420;
     const left = Math.min(Math.max(r.left, 8), window.innerWidth - panelW - 8);
+    const spaceAbove = r.top - gap - 8;
+    const spaceBelow = window.innerHeight - r.bottom - gap - 8;
+    if (spaceAbove < 250 && spaceBelow > spaceAbove) {
+      return { left:left+'px', top:(r.bottom+gap)+'px', bottom:'auto', maxHeight: Math.min(620, spaceBelow)+'px' };
+    }
     const bottom = window.innerHeight - r.top + gap;
-    if (bottom + 620 > window.innerHeight - 8) return { left:left+'px', top:(r.bottom+gap)+'px', bottom:'auto' };
-    return { left:left+'px', bottom:bottom+'px' };
+    return { left:left+'px', bottom:bottom+'px', maxHeight: Math.min(620, spaceAbove)+'px' };
   }, [open, fabPos, isMobile]);
 
   const handleInput=e=>{
