@@ -524,12 +524,14 @@ th:last-child, td:last-child { border-left: none; }
   position: fixed; bottom: 24px; left: 24px; z-index: 200;
   width: 54px; height: 54px; border-radius: 50%;
   background: linear-gradient(135deg, var(--primary), #3FA3D8);
-  color: white; border: none; cursor: pointer;
+  color: white; border: none; cursor: grab;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 18px rgba(43,143,196,.45);
   transition: transform .18s, box-shadow .18s;
+  touch-action: none; user-select: none;
 }
 .chat-fab:hover { transform: scale(1.08); box-shadow: 0 6px 24px rgba(43,143,196,.55); }
+.chat-fab:active { cursor: grabbing; }
 .chat-fab-badge {
   position: absolute; top: -4px; right: -4px;
   background: var(--danger); color: white; font-size: 10px; font-weight: 800;
@@ -8956,6 +8958,63 @@ function ChatPanel({ user }) {
   const openRef     = useRef(false);
   useEffect(()=>{ openRef.current=open; },[open]);
 
+  const FAB_MARGIN = 8;
+  const clampFabPos = (pos, btnSize) => {
+    const maxLeft   = window.innerWidth  - btnSize - FAB_MARGIN;
+    const maxBottom = window.innerHeight - btnSize - FAB_MARGIN;
+    return {
+      left:   Math.min(Math.max(pos.left,   FAB_MARGIN), Math.max(FAB_MARGIN, maxLeft)),
+      bottom: Math.min(Math.max(pos.bottom, FAB_MARGIN), Math.max(FAB_MARGIN, maxBottom)),
+    };
+  };
+  const loadFabPos = () => {
+    try {
+      const raw = localStorage.getItem('chatFabPos');
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (typeof p.left!=='number' || typeof p.bottom!=='number' || !isFinite(p.left) || !isFinite(p.bottom)) return null;
+      return clampFabPos(p, window.innerWidth < 768 ? 48 : 54);
+    } catch { return null; }
+  };
+  const [fabPos, setFabPos]     = useState(() => loadFabPos());
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const fabBtnRef = useRef(null);
+  const dragRef    = useRef({ dragging:false, moved:false, startX:0, startY:0, startLeft:0, startBottom:0 });
+
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      setFabPos(cur => cur ? clampFabPos(cur, mobile?48:54) : cur);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  },[]);
+
+  const DRAG_THRESHOLD = 6;
+  const onFabPointerDown = (e) => {
+    const rect = fabBtnRef.current.getBoundingClientRect();
+    dragRef.current = { dragging:true, moved:false, startX:e.clientX, startY:e.clientY,
+      startLeft:rect.left, startBottom: window.innerHeight - rect.bottom };
+    window.addEventListener('pointermove', onFabPointerMove);
+    window.addEventListener('pointerup', onFabPointerUp);
+  };
+  const onFabPointerMove = (ev) => {
+    const d = dragRef.current; if (!d.dragging) return;
+    const dx = ev.clientX - d.startX, dy = ev.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx,dy) < DRAG_THRESHOLD) return;
+    d.moved = true;
+    setFabPos(clampFabPos({ left: d.startLeft+dx, bottom: d.startBottom-dy }, isMobile?48:54));
+  };
+  const onFabPointerUp = () => {
+    const d = dragRef.current;
+    window.removeEventListener('pointermove', onFabPointerMove);
+    window.removeEventListener('pointerup', onFabPointerUp);
+    if (d.moved) setFabPos(cur => { if (cur) localStorage.setItem('chatFabPos', JSON.stringify(cur)); return cur; });
+    d.dragging = false;
+    setTimeout(()=>{ d.moved = false; }, 0);
+  };
+
   useEffect(()=>{
     sb.from('profiles').select('id,full_name').then(({data})=>{
       const m={}; (data||[]).forEach(p=>m[p.id]=p.full_name);
@@ -9002,6 +9061,20 @@ function ChatPanel({ user }) {
     setOpen(true); setUnread(0);
     const now=Date.now(); lastReadRef.current=now; localStorage.setItem('chat_last_read',String(now));
   };
+
+  const panelStyle = React.useMemo(() => {
+    if (!open || !fabBtnRef.current) return undefined;
+    const r = fabBtnRef.current.getBoundingClientRect(); const gap = 12;
+    if (isMobile) {
+      const bottom = Math.min(window.innerHeight - r.top + gap, window.innerHeight - 60);
+      return { bottom: Math.max(bottom, 8) + 'px' };
+    }
+    const panelW = 420;
+    const left = Math.min(Math.max(r.left, 8), window.innerWidth - panelW - 8);
+    const bottom = window.innerHeight - r.top + gap;
+    if (bottom + 620 > window.innerHeight - 8) return { left:left+'px', top:(r.bottom+gap)+'px', bottom:'auto' };
+    return { left:left+'px', bottom:bottom+'px' };
+  }, [open, fabPos, isMobile]);
 
   const handleInput=e=>{
     const val=e.target.value; setBody(val);
@@ -9090,12 +9163,16 @@ function ChatPanel({ user }) {
 
   return (
     <>
-      <button className="chat-fab" onClick={()=>open?setOpen(false):openPanel()} title="الشات الجماعي">
+      <button ref={fabBtnRef} className="chat-fab"
+        style={fabPos ? { left: fabPos.left+'px', bottom: fabPos.bottom+'px' } : undefined}
+        onPointerDown={onFabPointerDown}
+        onClick={(e)=>{ if (dragRef.current.moved) { e.preventDefault(); return; } open?setOpen(false):openPanel(); }}
+        title="الشات الجماعي">
         <span style={{fontSize:22,lineHeight:1}}>{open?'✕':'💬'}</span>
         {!open&&unread>0&&<span className="chat-fab-badge">{unread>99?'99+':unread}</span>}
       </button>
       {open&&(
-        <div className="chat-panel" onClick={()=>setEmojiFor(null)}>
+        <div className="chat-panel" style={panelStyle} onClick={()=>setEmojiFor(null)}>
           <div className="chat-panel-header">
             <div>
               <div className="chat-panel-title">💬 الشات الجماعي</div>
