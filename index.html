@@ -1001,6 +1001,10 @@ const fmt = (n, cur = 'JOD') => {
   return num.toLocaleString('ar-JO', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' ' + cur;
 };
 const today = () => new Date().toISOString().slice(0,10);
+const sha256Hex = async (text) => {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+};
 /* حساب التواريخ يتم بالكامل بتوقيت UTC (لاحقة Z) — بدونها يطرح toISOString
    فرق المنطقة الزمنية (+3 في الأردن) فينقص يوماً من النتيجة */
 const addDays = (dateStr, n) => {
@@ -10372,7 +10376,15 @@ function LettersPage({ user }) {
   const [previewing, setPreviewing] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
+  const [unlocked, setUnlocked] = useState(() => new Set());
+  const [unlockReq, setUnlockReq] = useState(null);
   const fileInputRef = useRef(null);
+
+  const openLetter = (l, action) => {
+    if (l.is_private && l.access_code_hash && !unlocked.has(l.id)) { setUnlockReq({ letter: l, action }); return; }
+    if (action === 'preview') setPreviewing(l);
+    else { setEditing(l); setShowForm(true); }
+  };
 
   useEffect(() => {
     const c = () => setIsMobile(window.innerWidth < 768);
@@ -10484,8 +10496,8 @@ function LettersPage({ user }) {
                   {canManageLetters && <td style={{textAlign:'center'}}><span className={`badge-cat badge-cat-${l.category||'correspondence'}`}>{catLabel(l.category)}</span></td>}
                   <td>
                     <div className="flex gap-2">
-                      <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewing(l)} title="معاينة وطباعة">👁</button>
-                      <button className="btn btn-ghost btn-sm" onClick={()=>{setEditing(l);setShowForm(true);}} title="تعديل">✏️</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>openLetter(l,'preview')} title="معاينة وطباعة">👁</button>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>openLetter(l,'edit')} title="تعديل">✏️</button>
                       {canManageLetters && <button className="btn btn-danger btn-sm" onClick={()=>deleteLetter(l)} title="حذف">🗑️</button>}
                     </div>
                   </td>
@@ -10499,6 +10511,58 @@ function LettersPage({ user }) {
 
       {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
       {previewing && <LetterPrint letter={previewing} onClose={()=>setPreviewing(null)}/>}
+      {unlockReq && (
+        <LetterUnlockModal
+          onClose={()=>setUnlockReq(null)}
+          onUnlock={()=>{
+            const { letter: l, action } = unlockReq;
+            setUnlocked(prev=>new Set(prev).add(l.id));
+            setUnlockReq(null);
+            if (action === 'preview') setPreviewing(l);
+            else { setEditing(l); setShowForm(true); }
+          }}
+          checkCode={async pwd => (await sha256Hex(pwd)) === unlockReq.letter.access_code_hash}
+        />
+      )}
+    </div>
+  );
+}
+
+function LetterUnlockModal({ onClose, onUnlock, checkCode }) {
+  const [pwd, setPwd] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [err, setErr] = useState(false);
+
+  const submit = async () => {
+    if (!pwd.trim()) return;
+    setChecking(true); setErr(false);
+    const ok = await checkCode(pwd.trim());
+    setChecking(false);
+    if (ok) onUnlock(); else setErr(true);
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:380}}>
+        <div className="modal-header">
+          <span className="modal-title">🔒 كتاب خاص</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <p style={{fontSize:13,color:'var(--gray-600)',marginTop:0}}>أدخل كلمة السر لعرض هذا الكتاب</p>
+          <input type="password" autoFocus className="form-control" value={pwd}
+            onChange={e=>{setPwd(e.target.value);setErr(false);}}
+            onKeyDown={e=>{if(e.key==='Enter')submit();}}
+            placeholder="كلمة السر"/>
+          {err && <div style={{color:'var(--danger)',fontSize:12,marginTop:8}}>كلمة السر غير صحيحة</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!pwd.trim()||checking}>
+            {checking?'جاري التحقق...':'دخول'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -10603,6 +10667,7 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
     ...(letter || {})
   });
   const [loading, setLoading] = useState(false);
+  const [pwd, setPwd] = useState('');
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const canManageLetters = hasPerm(user, 'letters_manage');
 
@@ -10623,11 +10688,15 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
   const handleSave = async () => {
     if (!form.subject.trim()) { toast('يجب إدخال الموضوع','error'); return; }
     if (!form.body.trim()) { toast('يجب إدخال نص الكتاب','error'); return; }
+    if (form.is_private && !form.access_code_hash && !pwd.trim()) { toast('أدخل كلمة سر للكتاب الخاص','error'); return; }
+    if (form.is_private && pwd.trim() && pwd.trim().length < 4) { toast('كلمة السر لازم تكون 4 أحرف على الأقل','error'); return; }
     setLoading(true);
     try {
       const payload = {...form};
       delete payload.id; delete payload.created_at; delete payload.updated_at; delete payload.isImportDraft;
       if (!canManageLetters) delete payload.category;
+      if (!payload.is_private) payload.access_code_hash = null;
+      else if (pwd.trim()) payload.access_code_hash = await sha256Hex(pwd.trim());
 
       if (letter?.id) {
         delete payload.number; delete payload.created_by;
@@ -10727,8 +10796,18 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
                 <input type="checkbox" checked={!!form.is_private} onChange={e=>setF('is_private',e.target.checked)} style={{width:16,height:16}}/>
                 🔒 كتاب خاص (أنا والأدمن فقط)
               </label>
+              {form.is_private && (
+                <input type="password" className="form-control" style={{maxWidth:180}} value={pwd}
+                  onChange={e=>setPwd(e.target.value)}
+                  placeholder={form.access_code_hash ? 'كلمة سر جديدة (اختياري)' : 'كلمة سر الكتاب'}/>
+              )}
             </div>
           </div>
+          {form.is_private && form.access_code_hash && (
+            <div style={{fontSize:12,color:'var(--gray-400)',marginTop:-10,marginBottom:14}}>
+              يوجد كلمة سر محفوظة لهذا الكتاب — اتركها فارغة لإبقائها كما هي.
+            </div>
+          )}
 
           <div className="flex gap-2" style={{justifyContent:'flex-end',paddingTop:14,borderTop:'1px solid var(--gray-200)'}}>
             <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
