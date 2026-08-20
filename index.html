@@ -1201,17 +1201,16 @@ const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊' },
   { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋' },
   { id: 'orders',    label: 'الطلبات',        icon: '📦', perm: 'orders_access' },
-  { id: 'invoices',  label: 'الفواتير',       icon: '🧾' },
-  { id: 'procurement', label: 'المشتريات',   icon: '🏭', perm: 'suppliers_access' },
-  { id: 'customers', label: 'العملاء',        icon: '🏢', perm: 'customers_access' },
-  { id: 'catalog',   label: 'الكتالوج',       icon: '🗂️', perm: 'catalog_access' },
-  { id: 'letters',   label: 'الكتب الرسمية', icon: '📝', perm: 'letters_access' },
-  { id: 'forms',     label: 'النماذج',        icon: '🧾', perm: 'letters_access' },
-  { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
-  { id: 'hr',        label: 'الموارد البشرية', icon: '👥', perm: 'hr_access' },
-  { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
-  { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧', perm: 'change_requests_access' },
+  { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰' },
+  { id: 'procurement', label: 'إدارة المشتريات',   icon: '🏭', perm: 'suppliers_access' },
+  { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
+  { id: 'hr',        label: 'إدارة الموارد البشرية', icon: '👥', perm: 'hr_access' },
+  { id: 'letters',   label: 'الكتب الرسمية الصادرة', icon: '📝', perm: 'letters_access' },
   { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
+  { id: 'catalog',   label: 'إدارة الأصناف',       icon: '🗂️', perm: 'catalog_access' },
+  { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
+  { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
+  { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧', perm: 'change_requests_access' },
 ];
 
 function Sidebar({ user, page, setPage, onLogout }) {
@@ -1228,16 +1227,18 @@ function Sidebar({ user, page, setPage, onLogout }) {
       <div className="sidebar-section">
         <div className="sidebar-section-label">القائمة</div>
         {NAV.filter(item => !item.perm || hasPerm(user, item.perm)).map(item => (
-          <div key={item.id} className={`nav-item ${page===item.id?'active':''}`}
-            onClick={() => setPage(item.id)}>
-            <span>{item.icon}</span>{item.label}
-          </div>
+          <React.Fragment key={item.id}>
+            <div className={`nav-item ${page===item.id?'active':''}`}
+              onClick={() => setPage(item.id)}>
+              <span>{item.icon}</span>{item.label}
+            </div>
+            {item.id === 'activity' && user?.role === 'admin' && (
+              <div className={`nav-item ${page==='users'?'active':''}`} onClick={() => setPage('users')}>
+                <span>👥</span>إدارة المستخدمين
+              </div>
+            )}
+          </React.Fragment>
         ))}
-        {user?.role === 'admin' && (
-          <div className={`nav-item ${page==='users'?'active':''}`} onClick={() => setPage('users')}>
-            <span>👥</span>إدارة المستخدمين
-          </div>
-        )}
       </div>
 
       <div className="sidebar-footer">
@@ -1259,7 +1260,7 @@ function BottomNav({ user, page, setPage, onMoreClick }) {
   const primary = [
     { id: 'dashboard', label: 'الرئيسية', icon: '📊' },
     { id: 'quotes',    label: 'عروض',     icon: '📋' },
-    { id: 'invoices',  label: 'فواتير',   icon: '🧾' },
+    { id: 'accounting', label: 'محاسبة',  icon: '💰' },
     { id: 'customers', label: 'عملاء',    icon: '🏢', perm: 'customers_access' },
   ].filter(i => !i.perm || hasPerm(user, i.perm));
 
@@ -1280,8 +1281,13 @@ function BottomNav({ user, page, setPage, onMoreClick }) {
 }
 
 function MobileSheet({ user, page, setPage, onClose, onLogout }) {
-  const allNav = NAV.filter(item => !item.perm || hasPerm(user, item.perm));
-  if (user?.role === 'admin') allNav.push({ id:'users', label:'المستخدمون', icon:'👥' });
+  const allNav = [];
+  NAV.filter(item => !item.perm || hasPerm(user, item.perm)).forEach(item => {
+    allNav.push(item);
+    if (item.id === 'activity' && user?.role === 'admin') {
+      allNav.push({ id:'users', label:'المستخدمون', icon:'👥' });
+    }
+  });
 
   return (
     <>
@@ -12027,8 +12033,9 @@ function VoucherPrintModal({ voucher, onClose }) {
   );
 }
 
-function FormsPage({ user }) {
-  const [tab, setTab]           = useState('payment');
+function FormsPage({ user, quotes, onReload }) {
+  const canVouchers = hasPerm(user, 'letters_access');
+  const [tab, setTab]           = useState(canVouchers ? 'payment' : 'invoices');
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
@@ -12079,7 +12086,7 @@ function FormsPage({ user }) {
     <div>
       {/* تبويبات */}
       <div style={{display:'flex',gap:8,marginBottom:20}}>
-        {[['payment','سند صرف 💸'],['receipt','سند قبض 💰']].map(([id,lbl])=>(
+        {[...(canVouchers ? [['payment','سند صرف 💸'],['receipt','سند قبض 💰']] : []),['invoices','الفواتير 🧾']].map(([id,lbl])=>(
           <button key={id}
             className={`btn btn-sm ${tab===id ? 'btn-primary' : 'btn-ghost'}`}
             style={{fontSize:14,padding:'7px 22px',fontWeight:tab===id?800:500}}
@@ -12088,6 +12095,7 @@ function FormsPage({ user }) {
         ))}
       </div>
 
+      {tab === 'invoices' ? <InvoicesPage user={user} quotes={quotes} onReload={onReload}/> : <>
       {/* شريط الأدوات */}
       <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
         <input className="form-control" style={{maxWidth:280}}
@@ -12129,6 +12137,7 @@ function FormsPage({ user }) {
           onConfirm={handleArchive}
           onClose={()=>setArchiving(null)}/>
       )}
+      </>}
     </div>
   );
 }
@@ -12332,7 +12341,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', invoices:'الفواتير', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', forms:'النماذج الجاهزة', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد' };
 
   return (
     <div className="app-layout">
@@ -12348,13 +12357,12 @@ function App() {
         <div className="content">
           {page==='dashboard' && <Dashboard quotes={quotes} orders={orders} logs={logs} user={user}/>}
           {page==='quotes' && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
-          {page==='invoices' && <InvoicesPage user={user} quotes={quotes} onReload={reload}/>}
+          {page==='accounting' && <FormsPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='orders' && hasPerm(user,'orders_access') && <OrdersPage user={user} orders={orders} onReload={reload}/>}
           {page==='procurement' && hasPerm(user,'suppliers_access') && <ProcurementPage user={user}/>}
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
           {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
-          {page==='forms'   && hasPerm(user,'letters_access') && <FormsPage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
