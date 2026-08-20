@@ -20,6 +20,7 @@
 window.BABEL_OPTIONS = { presets: ['react'], sourceMaps: false };
 </script>
 <script src="/lib/xlsx.min.js"></script>
+<script src="/lib/mammoth.min.js"></script>
 <script src="/lib/babel.min.js"></script>
 <style>
 :root {
@@ -10353,6 +10354,8 @@ function LettersPage({ user }) {
   const [editing, setEditing]   = useState(null);
   const [previewing, setPreviewing] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const c = () => setIsMobile(window.innerWidth < 768);
@@ -10387,6 +10390,33 @@ function LettersPage({ user }) {
     load();
   };
 
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      toast('لازم ملف .docx (وورد حديث). لو الملف .doc قديم، افتحه بـ Word واحفظه كـ .docx أولاً', 'error');
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      const guessedSubject = file.name.replace(/\.docx$/i, '').trim();
+      setEditing({ subject: guessedSubject, body: result.value, category: 'correspondence', isImportDraft: true });
+      setShowForm(true);
+      if (result.messages?.length) {
+        toast('تم الاستيراد، راجع التنسيق (قد يحتاج تعديل بسيط)', 'info');
+      } else {
+        toast('تم استيراد النص ✓ راجع الحقول واحفظ', 'success');
+      }
+    } catch (err) {
+      toast('تعذر قراءة الملف: ' + err.message, 'error');
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const CAT_LEGACY = {correspondence:'تراسل',communication:'تخاطب'};
   const catLabel = (id) => LETTER_CATS.find(c => c.id === id)?.label || CAT_LEGACY[id] || id || '—';
 
@@ -10399,7 +10429,11 @@ function LettersPage({ user }) {
           <h2 style={{fontSize:20,fontWeight:900,color:'var(--gray-800)',margin:'0 0 4px'}}>الكتب الرسمية</h2>
           <p style={{fontSize:13,color:'var(--gray-500)',margin:0}}>{letters.length} كتاب</p>
         </div>
-        <button className="btn btn-primary" onClick={()=>{setEditing(null);setShowForm(true);}}>✉️ كتاب جديد</button>
+        <div className="flex gap-2">
+          <input type="file" accept=".docx" ref={fileInputRef} style={{display:'none'}} onChange={handleImportFile}/>
+          <button className="btn btn-ghost" disabled={importBusy} onClick={()=>fileInputRef.current?.click()}>{importBusy?'⏳ جاري الاستيراد...':'📄 استيراد من Word'}</button>
+          <button className="btn btn-primary" onClick={()=>{setEditing(null);setShowForm(true);}}>✉️ كتاب جديد</button>
+        </div>
       </div>
 
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
@@ -10575,7 +10609,7 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
     setLoading(true);
     try {
       const payload = {...form};
-      delete payload.id; delete payload.created_at; delete payload.updated_at;
+      delete payload.id; delete payload.created_at; delete payload.updated_at; delete payload.isImportDraft;
       if (!canManageLetters) delete payload.category;
 
       if (letter?.id) {
@@ -10589,7 +10623,7 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
         const { error } = await sb.from('official_letters').insert(payload);
         if (error) throw error;
       }
-      toast(letter ? 'تم التعديل' : 'تم إنشاء الكتاب','success');
+      toast(letter?.id ? 'تم التعديل' : 'تم إنشاء الكتاب','success');
       onSave();
     } catch(err) {
       toast('خطأ: '+err.message,'error');
@@ -10602,7 +10636,7 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:1000}}>
         <div className="modal-header">
-          <span className="modal-title">{letter?'تعديل كتاب':'✉️ كتاب رسمي جديد'}</span>
+          <span className="modal-title">{letter?.id?'تعديل كتاب':(letter?.isImportDraft?'📄 كتاب مستورد من Word':'✉️ كتاب رسمي جديد')}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
