@@ -9431,25 +9431,34 @@ function ChangeRequestsPage({ user }) {
   );
 }
 
-function CRForm({ user, onSave, onClose }) {
-  const [title, setTitle]       = useState('');
-  const [body, setBody]         = useState('');
-  const [priority, setPriority] = useState('medium');
+function CRForm({ user, editing, onSave, onClose }) {
+  const [title, setTitle]       = useState(editing?.title||'');
+  const [body, setBody]         = useState(editing?.body||'');
+  const [priority, setPriority] = useState(editing?.priority||'medium');
   const [saving, setSaving]     = useState(false);
+  const isEdit = !!editing;
 
   const submit = async () => {
     if (!title.trim()) { toast('أدخل عنوان الطلب','error'); return; }
     setSaving(true);
-    const {error} = await sb.from('change_requests').insert({user_id:user?.id,title:title.trim(),body:body.trim(),priority});
-    if (error) { toast('خطأ: '+error.message,'error'); setSaving(false); return; }
-    toast('تم إرسال الطلب','success'); onSave();
+    if (isEdit) {
+      const {data,error} = await sb.from('change_requests')
+        .update({title:title.trim(),body:body.trim(),priority,updated_at:new Date().toISOString()})
+        .eq('id',editing.id).select().single();
+      if (error) { toast('خطأ: '+error.message,'error'); setSaving(false); return; }
+      toast('تم حفظ التعديلات','success'); onSave(data);
+    } else {
+      const {error} = await sb.from('change_requests').insert({user_id:user?.id,title:title.trim(),body:body.trim(),priority});
+      if (error) { toast('خطأ: '+error.message,'error'); setSaving(false); return; }
+      toast('تم إرسال الطلب','success'); onSave();
+    }
   };
 
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:500}}>
         <div className="modal-header">
-          <span className="modal-title">🔧 طلب تعديل جديد</span>
+          <span className="modal-title">{isEdit?'✏️ تعديل الطلب':'🔧 طلب تعديل جديد'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -9475,7 +9484,7 @@ function CRForm({ user, onSave, onClose }) {
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
           <button className="btn btn-primary" onClick={submit} disabled={!title.trim()||saving}>
-            {saving?'جاري الإرسال...':'إرسال الطلب'}
+            {saving?'جاري الحفظ...':(isEdit?'حفظ التعديلات':'إرسال الطلب')}
           </button>
         </div>
       </div>
@@ -9488,8 +9497,10 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
   const [body, setBody]       = useState('');
   const [sending, setSending] = useState(false);
   const [req, setReq]         = useState(request);
+  const [showEdit, setShowEdit] = useState(false);
   const bottomRef             = useRef(null);
   const isAdmin               = user?.role==='admin';
+  const canEdit                = isAdmin || req.user_id===user?.id;
 
   useEffect(() => { loadReplies(); }, [request.id]);
 
@@ -9531,9 +9542,10 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
         <div className="card-body">
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10}}>
             <div style={{fontSize:16,fontWeight:800,color:'var(--gray-800)',flex:1}}>{req.title}</div>
-            <div style={{display:'flex',gap:6,flexShrink:0}}>
+            <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
               <span className={`badge cr-priority-${req.priority}`}>{CR_PRIORITY[req.priority]}</span>
               <span className={`badge cr-status-${req.status}`}>{CR_STATUS[req.status]}</span>
+              {canEdit && <button className="btn btn-ghost btn-sm" title="تعديل" onClick={()=>setShowEdit(true)}>✏️</button>}
             </div>
           </div>
           <div style={{fontSize:12,color:'var(--gray-400)',display:'flex',gap:14,marginBottom:req.body?12:0,flexWrap:'wrap'}}>
@@ -9582,6 +9594,11 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
           <button className="chat-send-btn" onClick={sendReply} disabled={!body.trim()||sending}>↑</button>
         </div>
       </div>
+      {showEdit && (
+        <CRForm user={user} editing={req} onClose={()=>setShowEdit(false)}
+          onSave={updated=>{ setShowEdit(false); if (updated) { setReq(updated); onUpdate(updated); } }}
+        />
+      )}
     </div>
   );
 }
@@ -10462,7 +10479,7 @@ function LettersPage({ user }) {
                 <tr key={l.id}>
                   <td className="font-bold" style={{color:'var(--primary)',textAlign:'center'}}>{l.number}</td>
                   <td>{l.recipient}</td>
-                  <td>{l.subject}</td>
+                  <td>{l.is_private && <span title="كتاب خاص" style={{marginLeft:6}}>🔒</span>}{l.subject}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{l.date}</td>
                   {canManageLetters && <td style={{textAlign:'center'}}><span className={`badge-cat badge-cat-${l.category||'correspondence'}`}>{catLabel(l.category)}</span></td>}
                   <td>
@@ -10582,7 +10599,7 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
     recipient:'', attention:'', date: today(), subject:'',
     category:'correspondence', body:'',
     signer_name:'الدكتور محمد عقاب الجوابرة', signer_title:'الادارة',
-    use_letterhead: true,
+    use_letterhead: true, is_private: false,
     ...(letter || {})
   });
   const [loading, setLoading] = useState(false);
@@ -10701,10 +10718,14 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
               <label className="form-label">الصفة</label>
               <input className="form-control" value={form.signer_title} onChange={e=>setF('signer_title',e.target.value)} placeholder="الادارة"/>
             </div>
-            <div className="form-group" style={{display:'flex',alignItems:'flex-end',paddingBottom:8}}>
+            <div className="form-group" style={{display:'flex',alignItems:'flex-end',gap:16,paddingBottom:8,flexWrap:'wrap'}}>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
                 <input type="checkbox" checked={form.use_letterhead!==false} onChange={e=>setF('use_letterhead',e.target.checked)} style={{width:16,height:16}}/>
                 طباعة بالترويسة
+              </label>
+              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
+                <input type="checkbox" checked={!!form.is_private} onChange={e=>setF('is_private',e.target.checked)} style={{width:16,height:16}}/>
+                🔒 كتاب خاص (أنا والأدمن فقط)
               </label>
             </div>
           </div>
