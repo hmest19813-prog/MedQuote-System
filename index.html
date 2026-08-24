@@ -246,7 +246,7 @@ th:last-child, td:last-child { border-left: none; }
 /* الختم */
 .stamp-layer-main { display: block; width: 300px; opacity: 0.90; pointer-events: none; }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; border: 1.5px solid #999; }
-.letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; }
+.letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; text-align: right; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
 .letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; direction: rtl; }
 .letter-preprinted-spacer-top { height: 52mm; }
@@ -332,9 +332,19 @@ th:last-child, td:last-child { border-left: none; }
    من getBoundingClientRect ويصير القياس أقل من الواقع (تداخل بالطباعة) */
 .pq-measure .pqm-head, .pq-measure .pqm-conthead, .pq-measure .pqm-rows,
 .pq-measure .pqm-tail, .pq-measure .pqm-footer { display: flow-root; }
-.letter-print-wrap { display:flex; flex-direction:column; min-height:calc(297mm - 20mm); padding:0 36px; background:white; max-width:900px; margin:0 auto; }
-.letter-print-wrap .letter-content { flex:1; }
-.letter-print-wrap .letter-footer-anchor { margin-top:auto; }
+/* كتب رسمية: تدفق طبيعي بلا ارتفاع ثابت ولا overflow:hidden — يسمح للمحتوى
+   الطويل بالامتداد على أكثر من صفحة A4 بدل القص. منفصل عن .pq-page (عروض الأسعار)
+   ولا يفرض table-layout ولا direction على المحتوى الداخلي — فقط يمنع طفح الصور. */
+.letter-page { width: 210mm; min-height: 297mm; background: white; margin: 0 auto 18px; position: relative; box-sizing: border-box; box-shadow: 0 3px 14px rgba(0,0,0,.35); direction: rtl; padding: 6mm 10mm 10mm; }
+.letter-page:last-child { margin-bottom: 0; }
+.letter-body img { max-width: 100%; height: auto; }
+/* الفوتر (print-footer-bar) داخل tfoot حتى يتكرر تلقائياً أسفل كل صفحة مطبوعة
+   عندما يمتد الكتاب لأكثر من صفحة A4 — تقنية طباعة قياسية بلا حاجة لقياس JS */
+.letter-page-table { width: 100%; border-collapse: collapse; }
+.letter-page-table > tbody > tr > td, .letter-page-table > tfoot > tr > td { padding: 0; border: none; }
+@media print {
+  .letter-page { box-shadow: none !important; margin: 0 auto !important; }
+}
 .print-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
 .print-center { flex-shrink: 0; }
 .print-center .hayat-logo { width: 130px; height: 130px; object-fit: contain; display: block; }
@@ -976,6 +986,15 @@ const upsertReferenceHistory = (ref) => {
   if (!n) return;
   sb.from('reference_history').upsert(
     [{ name: n, last_used_at: new Date().toISOString() }],
+    { onConflict: 'name' }
+  ).then(() => {});
+};
+
+const upsertRequesterHistory = (name, phone, phone2) => {
+  const n = name?.trim();
+  if (!n) return;
+  sb.from('requester_history').upsert(
+    [{ name: n, phone: phone?.trim() || null, phone2: phone2?.trim() || null, last_used_at: new Date().toISOString() }],
     { onConflict: 'name' }
   ).then(() => {});
 };
@@ -2173,11 +2192,13 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [customers, setCustomers] = useState([]);
   const [customerHistory, setCustomerHistory] = useState([]);
   const [referenceHistory, setReferenceHistory] = useState([]);
+  const [requesterHistory, setRequesterHistory] = useState([]);
 
   useEffect(() => {
     sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2').order('name').then(({data})=>setCustomers(data||[]));
     sb.from('customer_name_history').select('name').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setCustomerHistory((data||[]).map(r=>r.name)));
     sb.from('reference_history').select('name').order('last_used_at',{ascending:false}).limit(200).then(({data})=>setReferenceHistory((data||[]).map(r=>r.name)));
+    sb.from('requester_history').select('name,phone,phone2').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setRequesterHistory(data||[]));
   }, []);
 
   const [catalogItems, setCatalogItems] = useState([]);
@@ -2228,6 +2249,28 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     }
     setShowCustSuggest(false);
     setIsNewCustomer(false);
+  };
+
+  const [requesterSuggest, setRequesterSuggest] = useState([]);
+  const [showRequesterSuggest, setShowRequesterSuggest] = useState(false);
+
+  const onRequesterNameChange = (val) => {
+    setF('requester_name', val);
+    if (val.trim().length >= 2) {
+      const q = val.toLowerCase();
+      const matches = requesterHistory.filter(r => r.name.toLowerCase().includes(q)).slice(0, 8);
+      setRequesterSuggest(matches);
+      setShowRequesterSuggest(matches.length > 0);
+    } else {
+      setShowRequesterSuggest(false);
+    }
+  };
+
+  const pickRequester = (r) => {
+    setF('requester_name', r.name);
+    if (r.phone) setF('requester_phone', r.phone);
+    if (r.phone2) setF('requester_phone2', r.phone2);
+    setShowRequesterSuggest(false);
   };
 
   useEffect(() => {
@@ -2404,6 +2447,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       upsertItemHistory(itemRows.map(r => r.item_name));
       upsertCustomerHistory(form.customer_name);
       upsertReferenceHistory(form.reference);
+      upsertRequesterHistory(form.requester_name, form.requester_phone, form.requester_phone2);
 
       // حفظ تلقائي للمواد الجديدة في الكتالوج (الفئة إجبارية — يُتجاهل بدونها)
       const validItems = items.filter(i=>i.item_name?.trim());
@@ -2581,10 +2625,27 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
               👤 معلومات العميل للمتابعة <span style={{fontWeight:400,fontSize:10}}>(داخلي — لا يُطبع)</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
-              <div className="form-group" style={{marginBottom:0}}>
+              <div className="form-group" style={{marginBottom:0,position:'relative'}}>
                 <label className="form-label" style={{fontSize:11,marginBottom:3}}>اسم العميل للمتابعة <span style={{color:'var(--danger)'}}>*</span></label>
-                <input className="form-control" style={{fontSize:12,padding:'5px 8px',borderColor:!form.requester_name?.trim()?'#fca5a5':''}} value={form.requester_name||''} onChange={e=>setF('requester_name',e.target.value)} placeholder="اسم العميل للمتابعة"/>
+                <input className="form-control" style={{fontSize:12,padding:'5px 8px',borderColor:!form.requester_name?.trim()?'#fca5a5':''}} value={form.requester_name||''}
+                  onChange={e=>onRequesterNameChange(e.target.value)}
+                  onBlur={()=>setTimeout(()=>setShowRequesterSuggest(false),180)}
+                  onFocus={()=>form.requester_name&&onRequesterNameChange(form.requester_name)}
+                  placeholder="اسم العميل للمتابعة"/>
                 {!form.requester_name?.trim() && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>مطلوب</p>}
+                {showRequesterSuggest && (
+                  <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:2,maxHeight:220,overflowY:'auto'}}>
+                    {requesterSuggest.map(r=>(
+                      <div key={r.name} onMouseDown={()=>pickRequester(r)}
+                        style={{padding:'8px 12px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between',alignItems:'center'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'}
+                        onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
+                        <span style={{fontWeight:600}}>{r.name}</span>
+                        {r.phone && <span style={{fontSize:10,color:'var(--gray-400)'}}>{r.phone}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="form-group" style={{marginBottom:0}}>
                 <label className="form-label" style={{fontSize:11,marginBottom:3}}>رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
@@ -9376,6 +9437,7 @@ function ChangeRequestsPage({ user }) {
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState(null);
   const [profiles, setProfiles] = useState({});
+  const [tab, setTab]           = useState('active');
 
   useEffect(() => {
     sb.from('profiles').select('id,full_name').then(({data})=>{
@@ -9397,6 +9459,10 @@ function ChangeRequestsPage({ user }) {
     />
   );
 
+  const active    = requests.filter(r => r.status!=='done');
+  const completed = requests.filter(r => r.status==='done');
+  const list      = tab==='done' ? completed : active;
+
   return (
     <div>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
@@ -9414,22 +9480,42 @@ function ChangeRequestsPage({ user }) {
           <p style={{color:'var(--gray-400)',marginBottom:16}}>لا توجد طلبات تعديل بعد</p>
           <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ أرسل أول طلب</button>
         </div>
-      ) : requests.map(r => (
-        <div key={r.id} className="cr-card" onClick={()=>setSelected(r)}>
-          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:6}}>
-            <div style={{fontSize:14,fontWeight:700,color:'var(--gray-800)',flex:1}}>{r.title}</div>
-            <div style={{display:'flex',gap:6,flexShrink:0}}>
-              <span className={`badge cr-priority-${r.priority}`}>{CR_PRIORITY[r.priority]||r.priority}</span>
-              <span className={`badge cr-status-${r.status}`}>{CR_STATUS[r.status]||r.status}</span>
+      ) : (
+        <>
+          <div style={{display:'flex', borderBottom:'2px solid var(--gray-200)', marginBottom:20}}>
+            <button onClick={()=>setTab('active')} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:14,borderBottom:tab==='active'?'3px solid var(--primary)':'3px solid transparent',color:tab==='active'?'var(--primary)':'var(--gray-500)',fontWeight:tab==='active'?700:400,marginBottom:'-2px'}}>
+              النشطة <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{active.length}</span>
+            </button>
+            <button onClick={()=>setTab('done')} style={{padding:'8px 20px',border:'none',background:'transparent',cursor:'pointer',fontSize:14,borderBottom:tab==='done'?'3px solid #16a34a':'3px solid transparent',color:tab==='done'?'#16a34a':'var(--gray-500)',fontWeight:tab==='done'?700:400,marginBottom:'-2px'}}>
+              ✅ المنجزة <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{completed.length}</span>
+            </button>
+          </div>
+          <div className="card">
+            <div className="table-wrap">
+              <table>
+                <thead><tr>
+                  <th>العنوان</th><th>الأولوية</th><th>الحالة</th><th>مقدّم الطلب</th><th>التاريخ</th><th></th>
+                </tr></thead>
+                <tbody>
+                  {list.map(r => (
+                    <tr key={r.id} style={{cursor:'pointer'}} onClick={()=>setSelected(r)}>
+                      <td className="font-bold">{r.title}</td>
+                      <td><span className={`badge cr-priority-${r.priority}`}>{CR_PRIORITY[r.priority]||r.priority}</span></td>
+                      <td><span className={`badge cr-status-${r.status}`}>{CR_STATUS[r.status]||r.status}</span></td>
+                      <td className="text-sm text-muted">{profiles[r.user_id]||'—'}</td>
+                      <td className="text-sm text-muted">{new Date(r.created_at).toLocaleDateString('ar-JO')}</td>
+                      <td style={{whiteSpace:'nowrap'}}>
+                        <button className="btn btn-ghost btn-sm" onClick={e=>{e.stopPropagation();setSelected(r);}}>👁 عرض</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {list.length===0 && <tr><td colSpan={6}><div className="empty-state"><p>{tab==='done'?'لا توجد طلبات منجزة':'لا توجد طلبات نشطة'}</p></div></td></tr>}
+                </tbody>
+              </table>
             </div>
           </div>
-          {r.body && <div style={{fontSize:12,color:'var(--gray-600)',lineHeight:1.5,overflow:'hidden',maxHeight:38,marginBottom:6}}>{r.body}</div>}
-          <div style={{fontSize:11,color:'var(--gray-400)',display:'flex',gap:12,flexWrap:'wrap'}}>
-            <span>👤 {profiles[r.user_id]||'—'}</span>
-            <span>📅 {new Date(r.created_at).toLocaleDateString('ar-JO')}</span>
-          </div>
-        </div>
-      ))}
+        </>
+      )}
       {showForm && <CRForm user={user} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
     </div>
   );
@@ -10423,15 +10509,25 @@ function LettersPage({ user }) {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.docx')) {
-      toast('لازم ملف .docx (وورد حديث). لو الملف .doc قديم، افتحه بـ Word واحفظه كـ .docx أولاً', 'error');
-      return;
-    }
+
     setImportBusy(true);
     try {
       const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer.slice(0, 8));
+      const isZip = bytes[0]===0x50 && bytes[1]===0x4B; // PK.. → docx/docm/dotx (Open XML)
+      const isOldOle = bytes[0]===0xD0 && bytes[1]===0xCF && bytes[2]===0x11 && bytes[3]===0xE0; // OLE compound file → .doc قديم (97-2003)
+
+      if (isOldOle) {
+        toast('هذا ملف Word قديم (97-2003) — مش مدعوم مباشرة. افتحه في Word ثم "حفظ باسم" واختر Word حديث (.docx)، وأعد الاستيراد', 'error');
+        return;
+      }
+      if (!isZip) {
+        toast('الملف مش بصيغة Word مدعومة (.docx). تأكد إنه ملف Word سليم غير تالف', 'error');
+        return;
+      }
+
       const result = await mammoth.convertToHtml({ arrayBuffer });
-      const guessedSubject = file.name.replace(/\.docx$/i, '').trim();
+      const guessedSubject = file.name.replace(/\.(docx|docm|dotx)$/i, '').trim();
       setEditing({ subject: guessedSubject, body: result.value, category: 'correspondence', isImportDraft: true });
       setShowForm(true);
       if (result.messages?.length) {
@@ -10459,7 +10555,7 @@ function LettersPage({ user }) {
           <p style={{fontSize:13,color:'var(--gray-500)',margin:0}}>{letters.length} كتاب</p>
         </div>
         <div className="flex gap-2">
-          <input type="file" accept=".docx" ref={fileInputRef} style={{display:'none'}} onChange={handleImportFile}/>
+          <input type="file" accept=".docx,.docm,.dotx,.doc" ref={fileInputRef} style={{display:'none'}} onChange={handleImportFile}/>
           <button className="btn btn-ghost" disabled={importBusy} onClick={()=>fileInputRef.current?.click()}>{importBusy?'⏳ جاري الاستيراد...':'📄 استيراد من Word'}</button>
           <button className="btn btn-primary" onClick={()=>{setEditing(null);setShowForm(true);}}>✉️ كتاب جديد</button>
         </div>
@@ -10649,7 +10745,7 @@ function RichTextEditor({ value, onChange, placeholder }) {
           <option value="24">واسع — 18pt</option>
         </select>
       </div>
-      <div ref={editorRef} className="rte-editor" contentEditable
+      <div ref={editorRef} className="rte-editor" contentEditable dir="rtl"
         data-placeholder={placeholder||''}
         onInput={syncContent}
         onBlur={syncContent}
@@ -11013,33 +11109,36 @@ function LetterPrint({ letter, onClose }) {
           </div>
         )}
         <div className="modal-body pq-preview-body" id="letter-print-content">
-          <div className="pq-page">
-            <div className="pq-page-inner"
-              style={!withHeader
-                ? {top:'52mm', bottom:'28mm', overflow:'hidden'}
-                : {bottom:'27mm', overflow:'hidden'}
-              }>
+          <div className="letter-page" style={withHeader ? {paddingTop:'6mm'} : {paddingTop:'52mm', paddingBottom:'28mm'}}>
 
-              {withHeader && <PqDocHeader/>}
+            <table className="letter-page-table">
+              <tbody><tr><td>
 
-              <table className="letter-info-table">
-                <tbody>
-                  <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
-                  <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
-                  <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
-                  <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
-                  <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
-                </tbody>
-              </table>
+                {withHeader && <PqDocHeader/>}
 
-              <div className="letter-body" dangerouslySetInnerHTML={{__html: letter.body}}/>
+                <table className="letter-info-table" dir="rtl">
+                  <tbody>
+                    <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
+                    <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
+                    <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
+                    <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
+                    <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
+                  </tbody>
+                </table>
 
-              <div className="letter-sig">
-                {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
-                {letter.signer_name  && <div className="sig-name">{letter.signer_name}</div>}
-              </div>
+                <div className="letter-body" dir="rtl" dangerouslySetInnerHTML={{__html: letter.body}}/>
 
-            </div>
+                <div className="letter-sig">
+                  {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
+                  {letter.signer_name  && <div className="sig-name">{letter.signer_name}</div>}
+                </div>
+
+              </td></tr></tbody>
+              {withHeader && (
+                <tfoot><tr><td><PqFooterBar/></td></tr></tfoot>
+              )}
+            </table>
+
             {showSig && (
               <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
                    onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
@@ -11047,7 +11146,6 @@ function LetterPrint({ letter, onClose }) {
                 <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
               </div>
             )}
-            {withHeader && <PqFooterBar/>}
           </div>
         </div>
       </div>
