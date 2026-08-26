@@ -1105,6 +1105,10 @@ const hasPerm = (user, key) => {
   return DEFAULT_EMPLOYEE_PERMS[key] === true;
 };
 
+// موديول العقارات مقتصر على شخصين بعينهما (مو صلاحية عامة) — د. محمد جوابرة والمهندس أسامة علاوي
+const PROPERTIES_ALLOWED_IDS = ['445bc65d-256f-48d3-9367-464a408e657b', 'ee095348-a2de-4906-a078-0e8a3f3560a9'];
+const isPropertiesUser = (user) => !!user && PROPERTIES_ALLOWED_IDS.includes(user.id);
+
 /* ===================== BADGE ===================== */
 const SBadge = ({ status, type='q' }) => {
   const label = type === 'q' ? SL[status] : OL[status];
@@ -1232,6 +1236,7 @@ const NAV = [
   { id: 'letters',   label: 'الكتب الرسمية الصادرة', icon: '📝', perm: 'letters_access' },
   { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
   { id: 'catalog',   label: 'إدارة الأصناف',       icon: '🗂️', perm: 'catalog_access' },
+  { id: 'properties', label: 'إدارة العقارات', icon: '🏘️', visible: isPropertiesUser },
   { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧', perm: 'change_requests_access' },
@@ -1250,7 +1255,7 @@ function Sidebar({ user, page, setPage, onLogout }) {
 
       <div className="sidebar-section">
         <div className="sidebar-section-label">القائمة</div>
-        {NAV.filter(item => !item.perm || hasPerm(user, item.perm)).map(item => (
+        {NAV.filter(item => item.visible ? item.visible(user) : (!item.perm || hasPerm(user, item.perm))).map(item => (
           <React.Fragment key={item.id}>
             <div className={`nav-item ${page===item.id?'active':''}`}
               onClick={() => setPage(item.id)}>
@@ -1306,7 +1311,7 @@ function BottomNav({ user, page, setPage, onMoreClick }) {
 
 function MobileSheet({ user, page, setPage, onClose, onLogout }) {
   const allNav = [];
-  NAV.filter(item => !item.perm || hasPerm(user, item.perm)).forEach(item => {
+  NAV.filter(item => item.visible ? item.visible(user) : (!item.perm || hasPerm(user, item.perm))).forEach(item => {
     allNav.push(item);
     if (item.id === 'activity' && user?.role === 'admin') {
       allNav.push({ id:'users', label:'المستخدمون', icon:'👥' });
@@ -11319,6 +11324,668 @@ async function createNotif({ userId, title, body='', type='info', linkType=null,
   await sb.from('notifications').insert({ user_id: userId, title, body, type, link_type: linkType, link_id: linkId });
 }
 
+/* ===================== PROPERTIES MODULE ===================== */
+
+const PROPERTY_TYPE_LABEL = { single: 'مفردة', building: 'مبنى' };
+const UNIT_STATUS = [
+  { key: 'vacant', label: 'شاغرة', color: '#16a34a', bg: '#dcfce7' },
+  { key: 'occupied', label: 'مؤجرة', color: '#2563eb', bg: '#dbeafe' },
+  { key: 'maintenance', label: 'صيانة', color: '#d97706', bg: '#fef3c7' },
+];
+const UNIT_STATUS_MAP = Object.fromEntries(UNIT_STATUS.map(s => [s.key, s]));
+const CONTRACT_STATUS = [
+  { key: 'active', label: 'فعّال', color: '#16a34a', bg: '#dcfce7' },
+  { key: 'expired', label: 'منتهي', color: '#6b7280', bg: '#f3f4f6' },
+  { key: 'terminated', label: 'مفسوخ', color: '#dc2626', bg: '#fee2e2' },
+];
+const CONTRACT_STATUS_MAP = Object.fromEntries(CONTRACT_STATUS.map(s => [s.key, s]));
+const CYCLE_LABEL = { monthly: 'شهري', quarterly: 'ربع سنوي', yearly: 'سنوي' };
+
+function PropertiesPage({ user }) {
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem('properties_unlocked') === 'true');
+  const [tab, setTab] = useState('properties');
+  const [showPassForm, setShowPassForm] = useState(false);
+
+  if (!unlocked) return <PropertiesUnlockGate user={user} onUnlock={() => setUnlocked(true)}/>;
+
+  const tabs = [
+    { id: 'properties', label: 'العقارات', icon: '🏢' },
+    { id: 'tenants', label: 'المستأجرين', icon: '👤' },
+    { id: 'contracts', label: 'العقود', icon: '📄' },
+  ];
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8}}>
+        <div style={{display:'flex', borderBottom:'2px solid var(--gray-200)', marginBottom:24}}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              padding:'10px 22px', border:'none', background:'transparent', cursor:'pointer',
+              borderBottom: tab===t.id ? '2px solid var(--primary)' : '2px solid transparent',
+              color: tab===t.id ? 'var(--primary)' : 'var(--gray-500)',
+              fontWeight: tab===t.id ? 700 : 400, fontSize:14, marginBottom:'-2px', transition:'all .15s'
+            }}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={() => setShowPassForm(true)}>🔒 تغيير باسورد الموديول</button>
+      </div>
+      {tab === 'properties' && <PropertiesTab user={user}/>}
+      {tab === 'tenants' && <PropertyTenantsTab/>}
+      {tab === 'contracts' && <PropertyContractsTab user={user}/>}
+      {showPassForm && <PropertiesSetPasswordForm onClose={() => setShowPassForm(false)}/>}
+    </div>
+  );
+}
+
+function PropertiesUnlockGate({ user, onUnlock }) {
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showSetPass, setShowSetPass] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    const { data, error: err } = await sb.rpc('properties_verify_password', { p_password: password });
+    setLoading(false);
+    if (err) { setError('خطأ: ' + err.message); return; }
+    if (data === true) {
+      sessionStorage.setItem('properties_unlocked', 'true');
+      onUnlock();
+    } else {
+      setError('باسورد غير صحيح');
+    }
+  };
+
+  return (
+    <div style={{display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'60px 20px'}}>
+      <div style={{fontSize:48, marginBottom:12}}>🔒</div>
+      <div style={{fontSize:16, fontWeight:700, marginBottom:4}}>إدارة العقارات محمية بباسورد إضافي</div>
+      <div style={{fontSize:12, color:'var(--gray-400)', marginBottom:20}}>أدخل الباسورد المشترك للمتابعة</div>
+      <form onSubmit={handleSubmit} style={{display:'flex', flexDirection:'column', gap:10, width:280}}>
+        <input type="password" className="form-control" value={password} onChange={e => setPassword(e.target.value)} placeholder="الباسورد" autoFocus/>
+        {error && <div style={{color:'var(--danger)', fontSize:12}}>{error}</div>}
+        <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? 'جاري التحقق...' : 'دخول'}</button>
+      </form>
+      <button className="btn" style={{marginTop:16, fontSize:12}} onClick={() => setShowSetPass(true)}>🔧 تعيين / تغيير الباسورد</button>
+      {showSetPass && <PropertiesSetPasswordForm onClose={() => setShowSetPass(false)}/>}
+    </div>
+  );
+}
+
+function PropertiesSetPasswordForm({ onClose }) {
+  const [p1, setP1] = useState('');
+  const [p2, setP2] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (p1.length < 4) { toast('الباسورد قصير جداً (4 أحرف على الأقل)', 'error'); return; }
+    if (p1 !== p2) { toast('الباسوردين مش متطابقين', 'error'); return; }
+    setSaving(true);
+    const { error } = await sb.rpc('properties_set_password', { p_password: p1 });
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم تحديث الباسورد', 'success');
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:360}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>تعيين باسورد العقارات</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-group"><label>باسورد جديد</label><input type="password" className="form-control" value={p1} onChange={e => setP1(e.target.value)}/></div>
+          <div className="form-group"><label>تأكيد الباسورد</label><input type="password" className="form-control" value={p2} onChange={e => setP2(e.target.value)}/></div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Properties ---------- */
+function PropertiesTab({ user }) {
+  const [properties, setProperties] = useState([]);
+  const [unitCounts, setUnitCounts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editProp, setEditProp] = useState(null);
+  const [unitsFor, setUnitsFor] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: props }, { data: units }] = await Promise.all([
+      sb.from('properties').select('*').order('created_at', { ascending: false }),
+      sb.from('property_units').select('id, property_id'),
+    ]);
+    setProperties(props || []);
+    const counts = {};
+    (units || []).forEach(u => { counts[u.property_id] = (counts[u.property_id]||0) + 1; });
+    setUnitCounts(counts);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = properties.filter(p => !search ||
+    p.name.includes(search) || (p.address||'').includes(search) || (p.city||'').includes(search));
+
+  const handleDelete = async (p) => {
+    if (!confirm(`حذف العقار "${p.name}"؟ سيتم حذف كل وحداته وعقوده المرتبطة.`)) return;
+    const { error } = await sb.from('properties').delete().eq('id', p.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم حذف العقار', 'success'); load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          <input className="form-control" placeholder="بحث بالاسم أو العنوان أو المدينة..." value={search} onChange={e => setSearch(e.target.value)} style={{width:240}}/>
+          <span style={{fontSize:13, color:'var(--gray-400)'}}>{filtered.length} عقار</span>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditProp(null); setShowForm(true); }}>+ إضافة عقار</button>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr>
+              <th>الاسم</th><th>النوع</th><th>العنوان</th><th>المدينة</th><th>الوحدات</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد عقارات{search ? ' بهذا البحث' : ''}</td></tr>
+              ) : filtered.map(p => (
+                <tr key={p.id}>
+                  <td style={{fontWeight:600}}>{p.name}</td>
+                  <td>{PROPERTY_TYPE_LABEL[p.type]||p.type}</td>
+                  <td>{p.address||'—'}</td>
+                  <td>{p.city||'—'}</td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={() => setUnitsFor(p)}>{unitCounts[p.id]||0} وحدة 👁</button></td>
+                  <td style={{display:'flex', gap:4}}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditProp(p); setShowForm(true); }}>✏️</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p)}>🗑</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && <PropertyForm user={user} editProp={editProp} onClose={() => setShowForm(false)} onSave={() => { setShowForm(false); load(); }}/>}
+      {unitsFor && <PropertyUnitsModal property={unitsFor} onClose={() => { setUnitsFor(null); load(); }}/>}
+    </div>
+  );
+}
+
+function PropertyForm({ user, editProp, onClose, onSave }) {
+  const isNew = !editProp;
+  const [form, setForm] = useState(() => ({
+    name: editProp?.name || '', type: editProp?.type || 'single',
+    address: editProp?.address || '', city: editProp?.city || '', notes: editProp?.notes || '',
+  }));
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast('اسم العقار مطلوب', 'error'); return; }
+    setSaving(true);
+    const payload = { ...form, updated_at: new Date().toISOString() };
+    let error;
+    if (isNew) { payload.created_by = user?.id || null; ({ error } = await sb.from('properties').insert(payload)); }
+    else ({ error } = await sb.from('properties').update(payload).eq('id', editProp.id));
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت إضافة العقار' : 'تم حفظ التعديلات', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:520}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>{isNew ? 'إضافة عقار جديد' : 'تعديل العقار'}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group" style={{gridColumn:'1 / -1'}}>
+              <label>اسم العقار *</label>
+              <input className="form-control" value={form.name} onChange={e => upd('name', e.target.value)} placeholder="مثال: عمارة الأمير حمزة"/>
+            </div>
+            <div className="form-group">
+              <label>النوع</label>
+              <select className="form-control" value={form.type} onChange={e => upd('type', e.target.value)} disabled={!isNew}>
+                <option value="single">عقار مفرد (وحدة واحدة)</option>
+                <option value="building">مبنى (وحدات متعددة)</option>
+              </select>
+              {!isNew && <small style={{color:'var(--gray-400)'}}>لا يمكن تغيير النوع بعد الإنشاء</small>}
+            </div>
+            <div className="form-group"><label>المدينة</label><input className="form-control" value={form.city} onChange={e => upd('city', e.target.value)}/></div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}><label>العنوان</label><input className="form-control" value={form.address} onChange={e => upd('address', e.target.value)}/></div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}><label>ملاحظات</label><textarea className="form-control" rows={2} value={form.notes} onChange={e => upd('notes', e.target.value)}/></div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PropertyUnitsModal({ property, onClose }) {
+  const [units, setUnits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editUnit, setEditUnit] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('property_units').select('*').eq('property_id', property.id).order('unit_number');
+    setUnits(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [property.id]);
+
+  const handleDelete = async (u) => {
+    if (property.type === 'single') { toast('لا يمكن حذف الوحدة الوحيدة لعقار مفرد', 'error'); return; }
+    if (!confirm('حذف هذه الوحدة؟')) return;
+    const { error } = await sb.from('property_units').delete().eq('id', u.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <>
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" style={{maxWidth:640, maxHeight:'85vh', overflowY:'auto'}} onClick={e => e.stopPropagation()}>
+          <div className="modal-header"><h3>وحدات: {property.name}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+          <div className="modal-body">
+            {property.type === 'building' && (
+              <div style={{marginBottom:12, textAlign:'left'}}>
+                <button className="btn btn-primary btn-sm" onClick={() => { setEditUnit(null); setShowForm(true); }}>+ إضافة وحدة</button>
+              </div>
+            )}
+            {loading ? <div style={{textAlign:'center', padding:20, color:'var(--gray-400)'}}>جاري التحميل...</div> : (
+              <table className="table">
+                <thead><tr><th>الوحدة</th><th>المساحة</th><th>الحالة</th><th>ملاحظات</th><th>إجراءات</th></tr></thead>
+                <tbody>
+                  {units.length === 0 ? (
+                    <tr><td colSpan={5} style={{textAlign:'center', padding:20, color:'var(--gray-400)'}}>لا يوجد وحدات</td></tr>
+                  ) : units.map(u => (
+                    <tr key={u.id}>
+                      <td>{u.unit_number || (property.type==='single' ? 'الوحدة الرئيسية' : '—')}</td>
+                      <td>{u.area ? `${u.area} م²` : '—'}</td>
+                      <td><span style={{background:UNIT_STATUS_MAP[u.status]?.bg, color:UNIT_STATUS_MAP[u.status]?.color, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:700}}>{UNIT_STATUS_MAP[u.status]?.label || u.status}</span></td>
+                      <td style={{fontSize:12, color:'var(--gray-500)'}}>{u.notes||'—'}</td>
+                      <td style={{display:'flex', gap:4}}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditUnit(u); setShowForm(true); }}>✏️</button>
+                        {property.type==='building' && <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>🗑</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+      {showForm && <PropertyUnitForm propertyId={property.id} editUnit={editUnit} onClose={() => setShowForm(false)} onSave={() => { setShowForm(false); load(); }}/>}
+    </>
+  );
+}
+
+function PropertyUnitForm({ propertyId, editUnit, onClose, onSave }) {
+  const isNew = !editUnit;
+  const [form, setForm] = useState(() => ({
+    unit_number: editUnit?.unit_number || '', area: editUnit?.area ?? '',
+    status: editUnit?.status || 'vacant', notes: editUnit?.notes || '',
+  }));
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    const payload = { unit_number: form.unit_number||null, area: form.area!==''?Number(form.area):null, status: form.status, notes: form.notes||null, updated_at: new Date().toISOString() };
+    let error;
+    if (isNew) { payload.property_id = propertyId; ({ error } = await sb.from('property_units').insert(payload)); }
+    else ({ error } = await sb.from('property_units').update(payload).eq('id', editUnit.id));
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت إضافة الوحدة' : 'تم الحفظ', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>{isNew ? 'إضافة وحدة' : 'تعديل الوحدة'}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-group"><label>رقم/اسم الوحدة</label><input className="form-control" value={form.unit_number} onChange={e => upd('unit_number', e.target.value)} placeholder="مثال: شقة 3"/></div>
+          <div className="form-group"><label>المساحة (م²)</label><input type="number" className="form-control" value={form.area} onChange={e => upd('area', e.target.value)} min="0"/></div>
+          <div className="form-group">
+            <label>الحالة</label>
+            <select className="form-control" value={form.status} onChange={e => upd('status', e.target.value)}>
+              {UNIT_STATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label>ملاحظات</label><textarea className="form-control" rows={2} value={form.notes} onChange={e => upd('notes', e.target.value)}/></div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Tenants ---------- */
+function PropertyTenantsTab() {
+  const [tenants, setTenants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editTenant, setEditTenant] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('property_tenants').select('*').order('full_name');
+    setTenants(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = tenants.filter(t => !search ||
+    t.full_name.includes(search) || (t.phone||'').includes(search) || (t.id_number||'').includes(search));
+
+  const handleDelete = async (t) => {
+    if (!confirm(`حذف المستأجر "${t.full_name}"؟`)) return;
+    const { error } = await sb.from('property_tenants').delete().eq('id', t.id);
+    if (error) { toast(error.message.includes('foreign key') ? 'لا يمكن حذف مستأجر لديه عقود مرتبطة' : 'خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          <input className="form-control" placeholder="بحث بالاسم أو الهاتف..." value={search} onChange={e => setSearch(e.target.value)} style={{width:220}}/>
+          <span style={{fontSize:13, color:'var(--gray-400)'}}>{filtered.length} مستأجر</span>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditTenant(null); setShowForm(true); }}>+ إضافة مستأجر</button>
+      </div>
+      {loading ? <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div> : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr><th>الاسم</th><th>الهاتف</th><th>رقم الهوية</th><th>البريد</th><th>إجراءات</th></tr></thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={5} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد مستأجرون{search ? ' بهذا البحث' : ''}</td></tr>
+              ) : filtered.map(t => (
+                <tr key={t.id}>
+                  <td style={{fontWeight:600}}>{t.full_name}</td>
+                  <td>{t.phone||'—'}</td>
+                  <td>{t.id_number||'—'}</td>
+                  <td>{t.email||'—'}</td>
+                  <td style={{display:'flex', gap:4}}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditTenant(t); setShowForm(true); }}>✏️</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(t)}>🗑</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showForm && <PropertyTenantForm editTenant={editTenant} onClose={() => setShowForm(false)} onSave={() => { setShowForm(false); load(); }}/>}
+    </div>
+  );
+}
+
+function PropertyTenantForm({ editTenant, onClose, onSave }) {
+  const isNew = !editTenant;
+  const [form, setForm] = useState(() => ({
+    full_name: editTenant?.full_name || '', phone: editTenant?.phone || '',
+    id_number: editTenant?.id_number || '', email: editTenant?.email || '', notes: editTenant?.notes || '',
+  }));
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.full_name.trim()) { toast('اسم المستأجر مطلوب', 'error'); return; }
+    setSaving(true);
+    const payload = { ...form, updated_at: new Date().toISOString() };
+    const { error } = isNew
+      ? await sb.from('property_tenants').insert(payload)
+      : await sb.from('property_tenants').update(payload).eq('id', editTenant.id);
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت الإضافة' : 'تم الحفظ', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:480}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>{isNew ? 'إضافة مستأجر' : 'تعديل المستأجر'}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-group"><label>الاسم الكامل *</label><input className="form-control" value={form.full_name} onChange={e => upd('full_name', e.target.value)}/></div>
+          <div className="form-grid-2">
+            <div className="form-group"><label>رقم الهاتف</label><input className="form-control" value={form.phone} onChange={e => upd('phone', e.target.value)}/></div>
+            <div className="form-group"><label>رقم الهوية</label><input className="form-control" value={form.id_number} onChange={e => upd('id_number', e.target.value)}/></div>
+          </div>
+          <div className="form-group"><label>البريد الإلكتروني</label><input type="email" className="form-control" value={form.email} onChange={e => upd('email', e.target.value)}/></div>
+          <div className="form-group"><label>ملاحظات</label><textarea className="form-control" rows={2} value={form.notes} onChange={e => upd('notes', e.target.value)}/></div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Contracts ---------- */
+function PropertyContractsTab({ user }) {
+  const [contracts, setContracts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showForm, setShowForm] = useState(false);
+  const [editContract, setEditContract] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await sb.from('property_contracts')
+      .select('*, property_units(unit_number, properties(name)), property_tenants(full_name)')
+      .order('end_date');
+    if (error) toast('خطأ: ' + error.message, 'error');
+    setContracts(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const isExpiringSoon = (c) => {
+    if (c.status !== 'active') return false;
+    const days = (new Date(c.end_date) - new Date()) / 86400000;
+    return days >= 0 && days <= 30;
+  };
+
+  const filtered = contracts.filter(c => statusFilter === 'all' || c.status === statusFilter);
+
+  const handleDelete = async (c) => {
+    if (!confirm('حذف هذا العقد؟')) return;
+    const { error } = await sb.from('property_contracts').delete().eq('id', c.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          <select className="form-control" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{width:160}}>
+            <option value="all">كل الحالات</option>
+            {CONTRACT_STATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+          <span style={{fontSize:13, color:'var(--gray-400)'}}>{filtered.length} عقد</span>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setEditContract(null); setShowForm(true); }}>+ عقد جديد</button>
+      </div>
+      {loading ? <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div> : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr><th>العقار / الوحدة</th><th>المستأجر</th><th>البداية</th><th>النهاية</th><th>الإيجار</th><th>الدورة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={8} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد عقود</td></tr>
+              ) : filtered.map(c => (
+                <tr key={c.id} style={isExpiringSoon(c) ? {background:'#fffbeb'} : {}}>
+                  <td>{c.property_units?.properties?.name || '—'}{c.property_units?.unit_number ? ` / ${c.property_units.unit_number}` : ''}</td>
+                  <td>{c.property_tenants?.full_name || '—'}</td>
+                  <td>{c.start_date}</td>
+                  <td>{c.end_date} {isExpiringSoon(c) && <span title="قارب على الانتهاء">⚠️</span>}</td>
+                  <td>{Number(c.rent_amount).toLocaleString()}</td>
+                  <td>{CYCLE_LABEL[c.payment_cycle]||c.payment_cycle}</td>
+                  <td><span style={{background:CONTRACT_STATUS_MAP[c.status]?.bg, color:CONTRACT_STATUS_MAP[c.status]?.color, padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:700}}>{CONTRACT_STATUS_MAP[c.status]?.label||c.status}</span></td>
+                  <td style={{display:'flex', gap:4}}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditContract(c); setShowForm(true); }}>✏️</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c)}>🗑</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {showForm && <PropertyContractForm user={user} editContract={editContract} onClose={() => setShowForm(false)} onSave={() => { setShowForm(false); load(); }}/>}
+    </div>
+  );
+}
+
+function PropertyContractForm({ user, editContract, onClose, onSave }) {
+  const isNew = !editContract;
+  const [properties, setProperties] = useState([]);
+  const [units, setUnits] = useState([]);
+  const [tenants, setTenants] = useState([]);
+  const [propertyId, setPropertyId] = useState('');
+  const [form, setForm] = useState(() => ({
+    unit_id: editContract?.unit_id || '',
+    tenant_id: editContract?.tenant_id || '',
+    start_date: editContract?.start_date || '',
+    end_date: editContract?.end_date || '',
+    rent_amount: editContract?.rent_amount ?? '',
+    payment_cycle: editContract?.payment_cycle || 'monthly',
+    status: editContract?.status || 'active',
+    contract_file_url: editContract?.contract_file_url || '',
+  }));
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    Promise.all([
+      sb.from('properties').select('id,name'),
+      sb.from('property_tenants').select('id,full_name').order('full_name'),
+    ]).then(([{ data: p }, { data: t }]) => { setProperties(p||[]); setTenants(t||[]); });
+  }, []);
+
+  useEffect(() => {
+    if (editContract?.unit_id) {
+      sb.from('property_units').select('property_id').eq('id', editContract.unit_id).single()
+        .then(({ data }) => { if (data) setPropertyId(data.property_id); });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!propertyId) { setUnits([]); return; }
+    sb.from('property_units').select('id,unit_number,status').eq('property_id', propertyId)
+      .then(({ data }) => setUnits(data||[]));
+  }, [propertyId]);
+
+  const handleSave = async () => {
+    if (!form.unit_id) { toast('يجب اختيار الوحدة', 'error'); return; }
+    if (!form.tenant_id) { toast('يجب اختيار المستأجر', 'error'); return; }
+    if (!form.start_date || !form.end_date) { toast('يجب تحديد تاريخ البداية والنهاية', 'error'); return; }
+    if (form.end_date <= form.start_date) { toast('تاريخ النهاية لازم يكون بعد تاريخ البداية', 'error'); return; }
+    if (!form.rent_amount || Number(form.rent_amount) <= 0) { toast('يجب إدخال قيمة الإيجار', 'error'); return; }
+    setSaving(true);
+    const payload = {
+      unit_id: form.unit_id, tenant_id: form.tenant_id,
+      start_date: form.start_date, end_date: form.end_date,
+      rent_amount: Number(form.rent_amount), payment_cycle: form.payment_cycle,
+      status: form.status, contract_file_url: form.contract_file_url || null,
+      updated_at: new Date().toISOString(),
+    };
+    let error;
+    if (isNew) { payload.created_by = user?.id || null; ({ error } = await sb.from('property_contracts').insert(payload)); }
+    else ({ error } = await sb.from('property_contracts').update(payload).eq('id', editContract.id));
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت إضافة العقد' : 'تم الحفظ', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:560}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header"><h3>{isNew ? 'عقد جديد' : 'تعديل العقد'}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group">
+              <label>العقار *</label>
+              <select className="form-control" value={propertyId} onChange={e => { setPropertyId(e.target.value); upd('unit_id',''); }}>
+                <option value="">اختر العقار</option>
+                {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>الوحدة *</label>
+              <select className="form-control" value={form.unit_id} onChange={e => upd('unit_id', e.target.value)} disabled={!propertyId}>
+                <option value="">اختر الوحدة</option>
+                {units.map(u => <option key={u.id} value={u.id}>{u.unit_number || 'الوحدة الرئيسية'}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}>
+              <label>المستأجر *</label>
+              <select className="form-control" value={form.tenant_id} onChange={e => upd('tenant_id', e.target.value)}>
+                <option value="">اختر المستأجر</option>
+                {tenants.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>تاريخ البداية *</label><input type="date" className="form-control" value={form.start_date} onChange={e => upd('start_date', e.target.value)}/></div>
+            <div className="form-group"><label>تاريخ النهاية *</label><input type="date" className="form-control" value={form.end_date} onChange={e => upd('end_date', e.target.value)}/></div>
+            <div className="form-group"><label>قيمة الإيجار *</label><input type="number" className="form-control" value={form.rent_amount} onChange={e => upd('rent_amount', e.target.value)} min="0"/></div>
+            <div className="form-group">
+              <label>دورة الدفع</label>
+              <select className="form-control" value={form.payment_cycle} onChange={e => upd('payment_cycle', e.target.value)}>
+                <option value="monthly">شهري</option><option value="quarterly">ربع سنوي</option><option value="yearly">سنوي</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>الحالة</label>
+              <select className="form-control" value={form.status} onChange={e => upd('status', e.target.value)}>
+                {CONTRACT_STATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}><label>رابط ملف العقد (اختياري)</label><input className="form-control" value={form.contract_file_url} onChange={e => upd('contract_file_url', e.target.value)} placeholder="https://..."/></div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== HR MODULE ===================== */
 
 function HRPage({ user }) {
@@ -12733,7 +13400,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد', properties:'إدارة العقارات' };
 
   return (
     <div className="app-layout">
@@ -12763,6 +13430,7 @@ function App() {
           {page==='tasks' && hasPerm(user,'tasks_access') && <TasksPage user={user}/>}
           {page==='change-requests' && hasPerm(user,'change_requests_access') && <ChangeRequestsPage user={user}/>}
           {page==='inbox' && hasPerm(user,'inbox_access') && <InboxPage user={user}/>}
+          {page==='properties' && isPropertiesUser(user) && <PropertiesPage user={user}/>}
         </div>
       </div>
       <BottomNav user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onMoreClick={() => setMobileMenuOpen(true)}/>
