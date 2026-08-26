@@ -1102,7 +1102,6 @@ const hasPerm = (user, key) => {
   const perms = user.permissions || {};
   if (key in perms) return perms[key] === true;
   // مفتاح جديد غير موجود في DB بعد → نرجع للقيمة الافتراضية للدور
-  if (user.role === 'manager') return true;
   return DEFAULT_EMPLOYEE_PERMS[key] === true;
 };
 
@@ -1271,7 +1270,7 @@ function Sidebar({ user, page, setPage, onLogout }) {
           <div className="user-avatar">{(user?.full_name||user?.email||'U').charAt(0)}</div>
           <div>
             <div className="user-name">{user?.full_name || user?.email}</div>
-            <div className="user-role">{user?.role === 'admin' ? 'مدير النظام' : user?.role === 'manager' ? 'مدير' : 'موظف'}</div>
+            <div className="user-role">{user?.role === 'admin' ? 'مدير النظام' : 'موظف'}</div>
           </div>
         </div>
         <button className="logout-btn" onClick={onLogout}>تسجيل الخروج</button>
@@ -1323,7 +1322,7 @@ function MobileSheet({ user, page, setPage, onClose, onLogout }) {
           <div className="user-avatar">{(user?.full_name||user?.email||'U').charAt(0)}</div>
           <div>
             <div className="ms-user-name">{user?.full_name || user?.email}</div>
-            <div className="ms-user-role">{user?.role==='admin'?'مدير النظام':user?.role==='manager'?'مدير':'موظف'}</div>
+            <div className="ms-user-role">{user?.role==='admin'?'مدير النظام':'موظف'}</div>
           </div>
         </div>
         <div className="ms-grid">
@@ -2313,6 +2312,17 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [showSaveCustomer, setShowSaveCustomer] = useState(false);
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null); // item ينتظر اختيار الفئة
 
+  // منظّم العرض (created_by) — تعديل/إحالة محصورة بمدير النظام فقط
+  const isAdmin = user?.role === 'admin';
+  const [issuerId, setIssuerId] = useState(editQuote?.created_by || null);
+  const [employeeList, setEmployeeList] = useState([]);
+  useEffect(() => {
+    if (isAdmin && editQuote?.id) {
+      sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name')
+        .then(({data})=>setEmployeeList(data||[]));
+    }
+  }, []);
+
   const addItem = () => setItems(i => [...i, { item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:(parseFloat(form.tax_pct)||0), origin:'CHINA', delivery:'PROMPT', notes:'' }]);
   const removeItem = (idx) => setItems(i => i.filter((_,j)=>j!==idx));
   // إضافة خيار بديل لنفس المنتج (يربط الصفوف بنفس option_group)
@@ -2417,6 +2427,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       delete payload.total_price;
       if (!payload.valid_until) payload.valid_until = null;
       if (!editQuote?.id) { payload.created_by = user?.id || null; }
+      else if (isAdmin) { payload.created_by = issuerId || null; }
       else { delete payload.created_by; }
 
       let qId;
@@ -2476,6 +2487,13 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       toast(editQuote ? 'تم التعديل بنجاح' : 'تم الإنشاء بنجاح', 'success');
       if (editQuote?.id) {
         createLog(user, `عدّل عرض السعر ${editQuote.number||''}`, 'quote', editQuote.id, editQuote.number);
+        if (isAdmin && (issuerId||null) !== (editQuote.created_by||null)) {
+          const newIssuerName = employeeList.find(e=>e.id===issuerId)?.full_name || 'غير محدد';
+          createLog(user, `أحال منظّم عرض السعر ${editQuote.number||''} إلى ${newIssuerName}`, 'quote', editQuote.id, editQuote.number);
+          if (issuerId) {
+            createNotif({ userId: issuerId, title: `تم إحالة عرض السعر ${editQuote.number||''} إليك`, body: `العميل: ${payload.customer_name||''} — بواسطة: ${user?.full_name||''}`, type: 'info', linkType: 'quote', linkId: editQuote.id });
+          }
+        }
       } else {
         createLog(user, `أنشأ عرض سعر جديد ${payload.number||''}`, 'quote', qId, payload.number);
       }
@@ -2661,6 +2679,19 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
               </div>
             </div>
           </div>
+
+          {/* منظّم العرض — تعديل/إحالة محصورة بمدير النظام فقط */}
+          {isAdmin && editQuote?.id && (
+            <div className="mb-4" style={{background:'#FEF3F2',border:'1.5px dashed #fca5a5',borderRadius:8,padding:'10px 14px'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--danger)',marginBottom:8,display:'flex',alignItems:'center',gap:5,textTransform:'uppercase',letterSpacing:.4}}>
+                🔒 منظّم العرض <span style={{fontWeight:400,fontSize:10}}>(صلاحية مدير النظام فقط — داخلي، لا يُطبع)</span>
+              </div>
+              <select className="form-control" style={{maxWidth:320}} value={issuerId||''} onChange={e=>setIssuerId(e.target.value||null)}>
+                <option value="">— غير محدد —</option>
+                {employeeList.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* مدة الصلاحية إلزامية — {QUOTE_VALIDITY_DAYS} يوم افتراضياً،
               ولا تُعدَّل إلا بصلاحية quotes_validity_override */}
@@ -5644,8 +5675,8 @@ function ActivityPage() {
 }
 
 /* ===================== USERS PAGE ===================== */
-const ROLE_LABELS = { admin:'مدير النظام', manager:'مدير', employee:'موظف', user:'موظف' };
-const ROLE_BADGE  = { admin:'badge-approved', manager:'badge-converted', employee:'badge-sent', user:'badge-sent' };
+const ROLE_LABELS = { admin:'مدير النظام', employee:'موظف', user:'موظف' };
+const ROLE_BADGE  = { admin:'badge-approved', employee:'badge-sent', user:'badge-sent' };
 
 const PERM_GROUPS = [
   { label: 'عروض الأسعار', icon: '📄', perms: [
@@ -5718,15 +5749,13 @@ const DEFAULT_EMPLOYEE_PERMS = {
   tasks_access: true, change_requests_access: true, inbox_access: true,
 };
 
-const DEFAULT_MANAGER_PERMS = Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: true }), {});
-
 function UserForm({ editUser, currentUser, onSave, onClose }) {
   const isNew = !editUser;
 
   const [form, setForm] = useState(() => {
-    const initPerms = ((editUser?.role === 'employee' || editUser?.role === 'manager') && editUser?.permissions && Object.keys(editUser.permissions).length > 0)
+    const initPerms = (editUser?.role === 'employee' && editUser?.permissions && Object.keys(editUser.permissions).length > 0)
       ? Object.keys(DEFAULT_EMPLOYEE_PERMS).reduce((acc, k) => ({ ...acc, [k]: editUser.permissions[k] === true }), {})
-      : editUser?.role === 'manager' ? { ...DEFAULT_MANAGER_PERMS } : { ...DEFAULT_EMPLOYEE_PERMS };
+      : { ...DEFAULT_EMPLOYEE_PERMS };
     return {
       full_name:   editUser?.full_name  || '',
       email:       editUser?.email      || '',
@@ -5760,7 +5789,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
     }
     if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل', 'error'); return; }
 
-    const permsToSave = (form.role === 'employee' || form.role === 'manager') ? form.permissions : {};
+    const permsToSave = (form.role === 'employee') ? form.permissions : {};
     setLoading(true);
     try {
       if (isNew) {
@@ -5809,7 +5838,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth: (form.role === 'employee' || form.role === 'manager') ? 700 : 480}}>
+      <div className="modal" style={{maxWidth: (form.role === 'employee') ? 700 : 480}}>
         <div className="modal-header">
           <span className="modal-title">{isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -5864,10 +5893,9 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
               <label className="form-label">الصلاحية</label>
               <select className="form-control" value={form.role} onChange={e => {
                 const r = e.target.value;
-                setForm(f => ({...f, role: r, permissions: isNew ? (r === 'manager' ? {...DEFAULT_MANAGER_PERMS} : {...DEFAULT_EMPLOYEE_PERMS}) : f.permissions}));
+                setForm(f => ({...f, role: r, permissions: isNew ? {...DEFAULT_EMPLOYEE_PERMS} : f.permissions}));
               }}>
                 <option value="admin">مدير النظام (Admin)</option>
-                <option value="manager">مدير (Manager)</option>
                 <option value="employee">موظف (Employee)</option>
               </select>
             </div>
@@ -5882,8 +5910,8 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Checklist الصلاحيات — للمديرين والموظفين */}
-          {(form.role === 'employee' || form.role === 'manager') && (() => {
+          {/* Checklist الصلاحيات — للموظفين */}
+          {(form.role === 'employee') && (() => {
             const totalPerms = Object.keys(form.permissions).length;
             const activePerms = Object.values(form.permissions).filter(Boolean).length;
             const toggleGroup = (group, val) => {
@@ -5895,7 +5923,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
             <div style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'12px 14px',background:'#f8fafc'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                 <div>
-                  <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 {form.role === 'manager' ? 'صلاحيات المدير' : 'صلاحيات الموظف'}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--gray-700)'}}>🔒 صلاحيات الموظف</span>
                   <span style={{fontSize:11,color:'var(--primary)',fontWeight:600,marginRight:8,background:'#e0f0ff',padding:'1px 8px',borderRadius:10}}>
                     {activePerms} / {totalPerms} مُفعّلة
                   </span>
@@ -6029,7 +6057,6 @@ function UsersPage({ currentUser }) {
 
   const activeCount = users.filter(u=>u.is_active).length;
   const adminCount  = users.filter(u=>u.role==='admin').length;
-  const mgrCount    = users.filter(u=>u.role==='manager').length;
   const empCount    = users.filter(u=>u.role==='employee'||u.role==='user').length;
 
   const filterTab = (label, val, count) => (
@@ -6084,7 +6111,7 @@ function UsersPage({ currentUser }) {
         <div>
           <h2 style={{fontSize:20,fontWeight:800,margin:0}}>إدارة المستخدمين والصلاحيات</h2>
           <p style={{color:'var(--gray-500)',fontSize:13,margin:'4px 0 0'}}>
-            {users.length} مستخدم إجمالاً — {activeCount} نشط — {adminCount} مدير نظام — {mgrCount} مدير — {empCount} موظف
+            {users.length} مستخدم إجمالاً — {activeCount} نشط — {adminCount} مدير نظام — {empCount} موظف
           </p>
         </div>
         <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ مستخدم جديد</button>
@@ -6095,7 +6122,6 @@ function UsersPage({ currentUser }) {
         <div style={{display:'flex',gap:6}}>
           {filterTab('الكل', 'all', users.length)}
           {filterTab('مدير النظام', 'admin', adminCount)}
-          {filterTab('مدير', 'manager', mgrCount)}
           {filterTab('موظف', 'employee', empCount)}
         </div>
         <div style={{display:'flex',gap:6,marginRight:'auto'}}>
@@ -6140,7 +6166,7 @@ function UsersPage({ currentUser }) {
                   <tr style={{opacity: u.is_active ? 1 : 0.5, transition:'opacity .2s', background: isExpanded ? '#f0f7ff' : ''}}>
                     <td>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <div style={{width:38,height:38,borderRadius:'50%',background: isAdmin ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : u.role==='manager' ? 'linear-gradient(135deg,#0369a1,#0ea5e9)' : 'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:15,flexShrink:0}}>
+                        <div style={{width:38,height:38,borderRadius:'50%',background: isAdmin ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : 'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontWeight:700,fontSize:15,flexShrink:0}}>
                           {(u.full_name||u.email||'؟').charAt(0).toUpperCase()}
                         </div>
                         <div>
@@ -9719,7 +9745,7 @@ function TasksPage({ user }) {
   const [filterBy, setFilterBy]         = useState('all');
   const [dragTaskId, setDragTaskId]     = useState(null);
   const [dragOverCol, setDragOverCol]   = useState(null);
-  const canManage = user?.role==='admin'||user?.role==='manager';
+  const canManage = user?.role==='admin';
 
   useEffect(()=>{
     sb.from('profiles').select('id,full_name').then(({data})=>{
@@ -10467,6 +10493,16 @@ function LettersPage({ user }) {
   const [unlockReq, setUnlockReq] = useState(null);
   const fileInputRef = useRef(null);
 
+  // تبويب المحذوفات
+  const [tab, setTab] = useState('active');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [profiles, setProfiles] = useState({});
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').then(({data})=>{
+      const m={}; (data||[]).forEach(p=>{ m[p.id]=p.full_name; }); setProfiles(m);
+    });
+  }, []);
+
   const openLetter = (l, action) => {
     if (l.is_private && l.access_code_hash && !unlocked.has(l.id)) { setUnlockReq({ letter: l, action }); return; }
     if (action === 'preview') setPreviewing(l);
@@ -10492,17 +10528,45 @@ function LettersPage({ user }) {
 
   const canManageLetters = hasPerm(user, 'letters_manage');
 
-  const filtered = letters.filter(l => {
+  const activeLetters  = letters.filter(l => !l.deleted_at);
+  const deletedLetters = letters.filter(l => l.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
+
+  const filtered = activeLetters.filter(l => {
     const ms = !search || l.recipient?.toLowerCase().includes(search.toLowerCase()) || l.subject?.toLowerCase().includes(search.toLowerCase()) || String(l.number).includes(search);
     const mc = catFilter === 'all' || l.category === catFilter;
     return ms && mc;
   });
 
-  const deleteLetter = async (l) => {
-    if (!confirm(`حذف الكتاب رقم ${l.number}؟`)) return;
+  const deleteLetter = async (reason) => {
+    if (!deleteTarget) return;
+    const l = deleteTarget;
+    const { error } = await sb.from('official_letters').update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: user?.id || null,
+      delete_reason: reason,
+    }).eq('id', l.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `حذف الكتاب رقم ${l.number} — السبب: ${reason}`, 'letter', l.id, String(l.number));
+    toast('تم نقل الكتاب إلى المحذوفات', 'success');
+    setDeleteTarget(null);
+    load();
+  };
+
+  const restoreLetter = async (l) => {
+    if (!confirm(`استعادة الكتاب رقم ${l.number}؟`)) return;
+    const { error } = await sb.from('official_letters').update({ deleted_at: null, deleted_by: null, delete_reason: null }).eq('id', l.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `استعاد الكتاب رقم ${l.number}`, 'letter', l.id, String(l.number));
+    toast('تم استعادة الكتاب ✓', 'success');
+    load();
+  };
+
+  const hardDeleteLetter = async (l) => {
+    if (!confirm(`حذف نهائي للكتاب رقم ${l.number}؟ لا يمكن التراجع`)) return;
     const { error } = await sb.from('official_letters').delete().eq('id', l.id);
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
-    toast('تم الحذف', 'success');
+    createLog(user, `حذف نهائي للكتاب رقم ${l.number}`, 'letter', l.id, String(l.number));
+    toast('تم الحذف النهائي', 'success');
     load();
   };
 
@@ -10553,7 +10617,7 @@ function LettersPage({ user }) {
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:10}}>
         <div>
           <h2 style={{fontSize:20,fontWeight:900,color:'var(--gray-800)',margin:'0 0 4px'}}>الكتب الرسمية</h2>
-          <p style={{fontSize:13,color:'var(--gray-500)',margin:0}}>{letters.length} كتاب</p>
+          <p style={{fontSize:13,color:'var(--gray-500)',margin:0}}>{activeLetters.length} كتاب</p>
         </div>
         <div className="flex gap-2">
           <input type="file" accept=".docx,.docm,.dotx,.doc" ref={fileInputRef} style={{display:'none'}} onChange={handleImportFile}/>
@@ -10562,6 +10626,20 @@ function LettersPage({ user }) {
         </div>
       </div>
 
+      {canManageLetters && (
+        <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)',width:'fit-content',marginBottom:16}}>
+          <button type="button" onClick={()=>setTab('active')}
+            style={{padding:'7px 16px',fontSize:13,fontWeight:700,border:'none',cursor:'pointer',background:tab==='active'?'var(--primary)':'#fff',color:tab==='active'?'#fff':'var(--primary)'}}>
+            📋 الكتب
+          </button>
+          <button type="button" onClick={()=>setTab('deleted')}
+            style={{padding:'7px 16px',fontSize:13,fontWeight:700,border:'none',cursor:'pointer',background:tab==='deleted'?'var(--primary)':'#fff',color:tab==='deleted'?'#fff':'var(--primary)'}}>
+            🗑️ المحذوفات {deletedLetters.length>0 && `(${deletedLetters.length})`}
+          </button>
+        </div>
+      )}
+
+      {tab==='active' && (<>
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
         <input className="form-control" style={{maxWidth:300}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالرقم أو السادة أو الموضوع..."/>
         {canManageLetters && (
@@ -10595,7 +10673,7 @@ function LettersPage({ user }) {
                     <div className="flex gap-2">
                       <button className="btn btn-ghost btn-sm" onClick={()=>openLetter(l,'preview')} title="معاينة وطباعة">👁</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>openLetter(l,'edit')} title="تعديل">✏️</button>
-                      {canManageLetters && <button className="btn btn-danger btn-sm" onClick={()=>deleteLetter(l)} title="حذف">🗑️</button>}
+                      {canManageLetters && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(l)} title="حذف">🗑️</button>}
                     </div>
                   </td>
                 </tr>
@@ -10605,7 +10683,49 @@ function LettersPage({ user }) {
           </table>
         </div>
       </div>
+      </>)}
 
+      {tab==='deleted' && canManageLetters && (
+        <div className="card">
+          {deletedLetters.length===0 ? (
+            <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
+              <div style={{fontSize:48,marginBottom:12}}>✅</div>
+              <div style={{fontWeight:600}}>لا توجد كتب محذوفة</div>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>الرقم</th><th>السادة</th><th>الموضوع</th>
+                    <th>تاريخ الحذف</th><th>حذفه</th><th>سبب الحذف</th><th>إجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deletedLetters.map(l => (
+                    <tr key={l.id}>
+                      <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{l.number}</td>
+                      <td>{l.recipient}</td>
+                      <td>{l.subject}</td>
+                      <td className="text-sm text-muted">{l.deleted_at?.slice(0,10)}</td>
+                      <td className="text-sm">{profiles[l.deleted_by]||'—'}</td>
+                      <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>{l.delete_reason||'—'}</td>
+                      <td>
+                        <div className="flex gap-1">
+                          <button className="btn btn-ghost btn-sm" onClick={()=>restoreLetter(l)} title="استعادة">↩️</button>
+                          {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDeleteLetter(l)} title="حذف نهائي">🗑️</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {deleteTarget && <LetterDeleteReasonModal letter={deleteTarget} onConfirm={deleteLetter} onClose={()=>setDeleteTarget(null)}/>}
       {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
       {previewing && <LetterPrint letter={previewing} onClose={()=>setPreviewing(null)}/>}
       {unlockReq && (
@@ -10621,6 +10741,45 @@ function LettersPage({ user }) {
           checkCode={async pwd => (await sha256Hex(pwd)) === unlockReq.letter.access_code_hash}
         />
       )}
+    </div>
+  );
+}
+
+/* ===================== LETTER DELETE REASON MODAL ===================== */
+function LetterDeleteReasonModal({ letter, onConfirm, onClose }) {
+  const [reason, setReason] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <div className="modal-overlay" style={{zIndex:1100}}>
+      <div className="modal" style={{maxWidth:460}}>
+        <div className="modal-header">
+          <span className="modal-title">🗑️ حذف الكتاب {letter.number}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:'20px 22px'}}>
+          <div style={{background:'#fef2f2',border:'1.5px solid #fecaca',borderRadius:10,padding:'12px 16px',marginBottom:18,fontSize:13}}>
+            ⚠️ سيبقى الكتاب مرئياً في <strong>تبويب المحذوفات</strong> مع سبب الحذف — ويمكن استعادته لاحقاً.
+          </div>
+          <div style={{marginBottom:14,fontSize:13}}>
+            <strong>السادة:</strong> {letter.recipient} &nbsp;|&nbsp; <strong>الموضوع:</strong> {letter.subject}
+          </div>
+          <label style={{display:'block',marginBottom:6,fontWeight:700,fontSize:13}}>
+            سبب الحذف <span style={{color:'var(--danger)'}}>*</span>
+          </label>
+          <textarea className="erp-input" rows={3} autoFocus
+            value={reason} onChange={e=>setReason(e.target.value)}
+            placeholder="مثال: خطأ في البيانات، تكرار، مسودة لم تعد لازمة..."
+            style={{width:'100%',resize:'vertical'}}/>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-danger" disabled={!reason.trim()||loading}
+            onClick={async()=>{ setLoading(true); await onConfirm(reason.trim()); setLoading(false); }}>
+            {loading ? '...' : '🗑️ تأكيد الحذف'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -11949,7 +12108,7 @@ function SalaryNoteCell({ value, onSave }) {
 
 /* إشعار للمدراء — تُستخدم عند إنشاء عرض جديد */
 async function notifyAdmins(title, body, linkType, linkId) {
-  const { data: admins } = await sb.from('profiles').select('id').in('role', ['admin', 'manager']).eq('is_active', true);
+  const { data: admins } = await sb.from('profiles').select('id').eq('role', 'admin').eq('is_active', true);
   if (!admins?.length) return;
   const rows = admins.map(a => ({ user_id: a.id, title, body, type: 'info', link_type: linkType, link_id: linkId }));
   await sb.from('notifications').insert(rows);
