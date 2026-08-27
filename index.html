@@ -1964,6 +1964,63 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     printDoc('print-content', pdfTitle);
   };
 
+  const exportToExcel = () => {
+    const docLabel = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
+    const rows = [];
+    rows.push([COMPANY.name_ar]);
+    rows.push([`${docLabel} رقم: ${doc.number || ''}`]);
+    rows.push([]);
+    rows.push(['السادة:', doc.customer_name || '']);
+    rows.push(['عناية:', doc.attention || '']);
+    rows.push(['المرجع:', doc.reference || '']);
+    rows.push(['التاريخ:', doc.date || '']);
+    if (doc.valid_until) rows.push(['صالح حتى:', doc.valid_until]);
+    rows.push([]);
+
+    const header = detailed
+      ? ['#', 'الصنف', 'الوحدة', 'الكمية', 'سعر الوحدة', 'الضريبة%', 'شامل الضريبة', 'الإجمالي', 'المنشأ', 'التسليم']
+      : ['#', 'الصنف', 'الوحدة', 'الكمية', 'سعر الوحدة', 'الإجمالي', 'المنشأ', 'التسليم'];
+    rows.push(header);
+
+    items.forEach((item, i) => {
+      const taxRate = parseFloat(item.tax_pct ?? doc.tax_pct ?? 16) || 0;
+      const qty = parseFloat(item.quantity || 0);
+      const unitPrice = parseFloat(item.unit_price || 0);
+      const withTax = unitPrice * (1 + taxRate / 100);
+      if (detailed) {
+        rows.push([i + 1, item.item_name || '', item.unit || 'EACH', qty, unitPrice, taxRate,
+          parseFloat(withTax.toFixed(3)), parseFloat((qty * withTax).toFixed(3)), item.origin || '', item.delivery || '']);
+      } else {
+        rows.push([i + 1, item.item_name || '', item.unit || 'EACH', qty, unitPrice,
+          parseFloat((qty * unitPrice).toFixed(3)), item.origin || '', item.delivery || '']);
+      }
+    });
+
+    rows.push([]);
+    rows.push(['Sub Total', parseFloat(doc.subtotal || 0)]);
+    rows.push([`Discount ${doc.discount_type === 'amt' ? `(${doc.currency})` : `(${doc.discount_pct || 0}%)`}`, parseFloat(doc.discount_amt || 0)]);
+    rows.push(['Grand Total', parseFloat(doc.subtotal || 0) - parseFloat(doc.discount_amt || 0)]);
+    rows.push(['Sales Tax', parseFloat(doc.tax_amt || 0)]);
+    rows.push(['Nett Price', parseFloat(doc.nett_price || 0), doc.currency || 'JOD']);
+
+    if (doc.notes) {
+      rows.push([]);
+      rows.push(['ملاحظات:']);
+      doc.notes.split('\n').filter(l => l.trim()).forEach(line => rows.push([line]));
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = detailed
+      ? [{ wch: 4 }, { wch: 35 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }]
+      : [{ wch: 4 }, { wch: 35 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+
+    const wb = XLSX.utils.book_new();
+    wb.Workbook = { Views: [{ RTL: true }] };
+    XLSX.utils.book_append_sheet(wb, ws, docLabel);
+    const fname = `${docLabel}_${doc.number || ''}_${doc.customer_name || ''}`.replace(/[\\/:*?"<>|]/g, '').trim() + '.xlsx';
+    XLSX.writeFile(wb, fname);
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920}}>
@@ -1975,6 +2032,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             </button>
             {onConfirmDraft && <button className="btn btn-success btn-sm" onClick={onConfirmDraft}>✅ اعتماد العرض</button>}
             <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
+            <button className="btn btn-ghost btn-sm" onClick={exportToExcel} title="تصدير بيانات المستند إلى ملف Excel">📊 Excel</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="btn btn-whatsapp btn-sm" onClick={sendViaWhatsApp} title="احفظ PDF من نافذة الطباعة ثم سيفتح واتساب مع رسالة جاهزة — أرفق الملف يدوياً">💬 واتساب</button>
             <button className="modal-close" onClick={onClose}>✕</button>
@@ -2687,11 +2745,11 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
           {/* منظّم العرض — تعديل/إحالة محصورة بمدير النظام فقط */}
           {isAdmin && editQuote?.id && (
-            <div className="mb-4" style={{background:'#FEF3F2',border:'1.5px dashed #fca5a5',borderRadius:8,padding:'10px 14px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'var(--danger)',marginBottom:8,display:'flex',alignItems:'center',gap:5,textTransform:'uppercase',letterSpacing:.4}}>
+            <div className="mb-4" style={{background:'#FEF3F2',border:'1.5px dashed #fca5a5',borderRadius:8,padding:'10px 14px',width:'fit-content'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--danger)',marginBottom:8,display:'flex',alignItems:'center',gap:5,textTransform:'uppercase',letterSpacing:.4,whiteSpace:'nowrap'}}>
                 🔒 منظّم العرض <span style={{fontWeight:400,fontSize:10}}>(صلاحية مدير النظام فقط — داخلي، لا يُطبع)</span>
               </div>
-              <select className="form-control" style={{maxWidth:320}} value={issuerId||''} onChange={e=>setIssuerId(e.target.value||null)}>
+              <select className="form-control" style={{width:'fit-content'}} value={issuerId||''} onChange={e=>setIssuerId(e.target.value||null)}>
                 <option value="">— غير محدد —</option>
                 {employeeList.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
