@@ -1339,7 +1339,7 @@ const NAV = [
   { id: 'letters',   label: 'الكتب الرسمية الصادرة', icon: '📝', perm: 'letters_access' },
   { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
   { id: 'catalog',   label: 'إدارة الأصناف',       icon: '🗂️', perm: 'catalog_access' },
-  { id: 'properties', label: 'إدارة العقارات', icon: '🏘️', visible: isPropertiesUser },
+  { id: 'properties', label: 'إدارة الأصول', icon: '🏘️', visible: isPropertiesUser },
   { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
   { id: 'change-requests', label: 'طلبات التعديل', icon: '🔧', perm: 'change_requests_access' },
@@ -4402,7 +4402,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <td>{q.customer_name}</td>
                   <td className="text-sm text-muted">{q.date}</td>
                   <td>
-                    {hasPerm(user,'quotes_edit')
+                    {hasPerm(user,'quotes_edit_all')
                       ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={q.status} onChange={e=>changeArchiveStatus(q,e.target.value)}>
                           {Object.entries(SL).filter(([k])=>!['approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
                         </select>
@@ -5801,7 +5801,7 @@ function ArchivePage({ user, quotes, orders, onReload }) {
               <td className="font-bold">{q.number}</td>
               <td>{q.customer_name}</td>
               <td className="text-sm text-muted">{q.date}</td>
-              <td>{hasPerm(user,'quotes_edit')
+              <td>{hasPerm(user,'quotes_edit_all')
                 ? <select className="form-control" style={selStyle} value={q.status} onChange={e=>changeStatusQ(q,e.target.value)}>
                     {Object.entries(SL).filter(([k])=>!['approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
                   </select>
@@ -13726,7 +13726,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد', properties:'إدارة العقارات' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد', properties:'إدارة الأصول' };
 
   return (
     <div className="app-layout">
