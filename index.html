@@ -1520,6 +1520,11 @@ function Dashboard({ quotes, orders, logs, user }) {
   );
 }
 
+/* علامة "غير متوفر" على مستوى البند — نُخزّنها داخل عمود notes الموجود أصلاً
+   (بدون إضافة عمود جديد بقاعدة البيانات) لتفادي أي تعديل على الـ schema. */
+const UNAVAIL_FLAG = 'UNAVAILABLE';
+function isItemUnavailable(it) { return !!it && it.notes === UNAVAIL_FLAG; }
+
 /* ===== أدوات المصادر البديلة للبنود =====
    الصفوف بنفس option_group = مصادر بديلة لنفس المنتج.
    ضمن كل مجموعة يُحتسب في المجموع الخيار الأعلى قيمة (شامل الضريبة) فقط. */
@@ -1726,12 +1731,14 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     const m = printMeta[i];
     const grouped = detailed && m.groupSize > 1;
     const counted = printCounted.has(i);
+    const unavail = isItemUnavailable(item);
     return (
       <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
         <td>{detailed ? (m.no ?? '↳') : i+1}</td>
         <td className="item-name">
           {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'خيار بديل — '}</span>}
-          {item.item_name}
+          <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{item.item_name}</span>
+          {unavail && <span style={{color:'#dc2626',fontWeight:800,fontSize:11}}> — {isEn ? 'NOT AVAILABLE' : 'غير متوفر'}</span>}
           {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
         </td>
         <td className="unit-cell">{item.unit||'EACH'}</td>
@@ -2843,8 +2850,9 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                   const meta = itemsMeta[i];
                   const grouped = meta.groupSize > 1;
                   const isCounted = counted.has(i);
+                  const unavail = isItemUnavailable(item);
                   return (
-                    <tr key={i} style={grouped ? {background: meta.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
+                    <tr key={i} style={{...(grouped ? {background: meta.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}), ...(unavail ? {background:'#FEF2F2'} : {})}}>
                       <td>{meta.no ?? '↳'}</td>
                       <td>
                         {meta.isAlt && <div style={{fontSize:10,fontWeight:700,color:'#b45309',marginBottom:2}}>↳ خيار بديل</div>}
@@ -2863,9 +2871,13 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                         </div>
                         <div style={{display:'flex',gap:8,alignItems:'center',marginTop:3,flexWrap:'wrap'}}>
                           <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ خيار بديل</button>
+                          <button type="button" onClick={()=>setItem(i,'notes', unavail ? '' : UNAVAIL_FLAG)} style={{background:'none',border:'none',color: unavail ? '#dc2626' : 'var(--gray-400)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>
+                            {unavail ? '✕ إلغاء "غير متوفر"' : '🚫 وضع كغير متوفر'}
+                          </button>
                           {grouped && (isCounted
                             ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
                             : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
+                          {unavail && <span style={{fontSize:10,fontWeight:800,color:'#dc2626'}}>🚫 غير متوفر</span>}
                         </div>
                       </td>
                       <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH" style={{width:'100%'}}/></td>
