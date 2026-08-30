@@ -437,9 +437,18 @@ th:last-child, td:last-child { border-left: none; }
 .alt-theme-eyad_harb .print-totals table { border: none; border-radius: 0; }
 .alt-theme-eyad_harb .print-totals td { border-bottom: 1px solid #ddd; }
 .alt-theme-eyad_harb .print-totals tr:last-child td { background: none; border-top: 2.5px solid var(--acc); }
-/* صندوق العميل يتحوّل لسطور متدفقة (chips) بدل الصندوق الشبكي — قراءة مختلفة تماماً عن الحياة */
-.alt-theme-eyad_harb .print-client-grid { display: block; }
-.alt-theme-eyad_harb .print-client-grid .field-row { display: inline-flex; margin-inline-end: 26px; margin-bottom: 7px; }
+/* صندوق العميل بطراز خطاب رسمي: تحية + مرجع، بدل الصندوق الشبكي تماماً */
+.eh-letter { display: flex; justify-content: space-between; align-items: flex-start; gap: 22px; }
+.eh-letter-salute { font-size: 13px; line-height: 2; }
+.eh-letter-salute .eh-to { font-weight: 800; font-size: 14.5px; margin-bottom: 2px; }
+.eh-letter-ref { font-size: 11.5px; direction: ltr; text-align: left; flex-shrink: 0; }
+.eh-letter-ref div { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 5px; }
+.eh-letter-ref span { color: var(--acc); font-weight: 700; }
+.eh-letter-ref strong { color: #111; }
+/* توقيع وختم أسفل الوثيقة — عنصر مميز لطراز الخطاب الرسمي */
+.eh-signature { margin-top: 22px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.eh-signature span { font-size: 10.5px; color: #888; }
+.eh-sig-line { width: 160px; border-top: 1px dashed #999; }
 /* لون ورق دافئ + خط هامش رسمي كامل الطول — بدل الأبيض الصافي لكل صفحات الحياة */
 .pq-page.alt-theme-eyad_harb { background: #FFFEF7; }
 .pq-page.alt-theme-eyad_harb::before { content: ''; position: absolute; top: 9mm; bottom: 9mm; right: 5mm; width: 2px; background: var(--acc); border-radius: 1px; }
@@ -455,6 +464,19 @@ th:last-child, td:last-child { border-left: none; }
 .alt-theme-beken .print-items tr:nth-child(even) td { background: #F7F8FC; }
 .alt-theme-beken .print-totals table { border: none; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.07); }
 .alt-theme-beken .print-totals tr:last-child td { background: var(--acc); color: #fff; }
+/* صندوق العميل بطراز شريط أيقونات أفقي بدل الجدول الشبكي، وأرقام البنود كشارات دائرية */
+.bk-strip { display: flex; }
+.bk-strip-item { flex: 1; display: flex; align-items: center; gap: 8px; padding: 2px 10px; border-left: 1px solid #eef0f5; }
+.bk-strip-item:last-child { border-left: none; }
+.bk-strip-item .bk-ico { font-size: 17px; }
+.bk-strip-item label { display: block; font-size: 9.5px; color: #8993a4; font-weight: 700; }
+.bk-strip-item strong { font-size: 12.5px; color: #111; }
+.bk-strip-sub { display: flex; gap: 18px; flex-wrap: wrap; font-size: 11px; color: #555; padding: 8px 2px 0; margin-top: 6px; border-top: 1px dashed #e5e7eb; }
+.alt-theme-beken .print-items td:first-child { position: relative; }
+.alt-theme-beken .print-items tbody td:first-child { color: var(--acc); font-weight: 800; }
+/* شريط "الإجمالي المستحق" الفوري أعلى الصفحة — يظهر السعر قبل تفاصيل البنود، عكس ترتيب الحياة وإياد حرب */
+.bk-hero-total { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: #fff; border-radius: 12px; padding: 10px 18px; margin: 4px 0 14px; font-size: 12.5px; font-weight: 700; box-shadow: 0 3px 12px rgba(0,0,0,.14); }
+.bk-hero-total strong { font-size: 19px; font-weight: 900; }
 
 /* صورة الختم والتوقيع */
 .print-sign-img { width: 500px; opacity: 0.9; object-fit: contain; display: block; }
@@ -1100,6 +1122,18 @@ const ALT_COMPANIES = {
     address_lines: ['ALABDALI – JORDAN ISLAMIC BANK BUILDING - 4th FLOOR – OFFICE NO. 405, AMMAN-JORDAN'],
     tel: '00962-79-1075601',
     email: 'eharb04@gmail.com',
+    terms_ar: [
+      'الأسعار المذكورة أعلاه بالدينار الأردني وشاملة الضريبة العامة على المبيعات',
+      'تُستورد الأصناف المعروضة وفق مواصفات فنية معتمدة من الجهات المصنّعة',
+      'الأجهزة مشمولة بكفالة الشركة المصنّعة لمدة سنة، ولا تشمل الكسر أو سوء الاستخدام أو الحريق',
+      'لمزيد من التفاصيل يرجى التواصل معنا مباشرة على أرقام الهاتف أعلاه',
+    ],
+    terms_en: [
+      'Prices above are in JOD and inclusive of general sales tax.',
+      'Items offered are imported per technical specifications approved by the manufacturers.',
+      'Devices carry a 1-year manufacturer warranty (excl. breakage, misuse & fire).',
+      'For further details, please contact us directly on the numbers above.',
+    ],
   },
   beken: {
     key: 'beken',
@@ -1114,6 +1148,18 @@ const ALT_COMPANIES = {
     address_lines: ['Jordan - Amman | الأردن - عمان'],
     tel: '962777199958',
     email: 'virogiene@gmail.com',
+    terms_ar: [
+      'الأسعار الموضحة بالجدول أعلاه بالدينار الأردني وتشمل ضريبة المبيعات',
+      'جميع المنتجات مستوردة وفق مقاييس جودة عالمية معتمدة',
+      'فترة الضمان على الأجهزة سنة واحدة من تاريخ التسليم، ولا تغطي سوء الاستخدام',
+      'للاستفسار وطلب عروض إضافية، تواصلوا معنا عبر البريد الإلكتروني أو الهاتف',
+    ],
+    terms_en: [
+      'Prices shown in the table above are in JOD and include sales tax.',
+      'All products are imported to approved international quality standards.',
+      'Devices carry a 1-year warranty from delivery date; misuse is not covered.',
+      'For inquiries or additional quotes, reach us by email or phone.',
+    ],
   },
 };
 const ISSUER_COMPANY_LABEL = { hayat: 'مؤسسة الحياة العلمية', eyad_harb: 'مؤسسة إياد حرب العلمية', beken: 'مؤسسة بكين للتجهيزات العلمية' };
@@ -1916,8 +1962,40 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     );
   };
 
-  /* رأس الصفحة الأولى: ترويسة الشركة + عنوان الوثيقة + بيانات العميل */
-  const clientBox = (
+  /* رأس الصفحة الأولى: ترويسة الشركة + عنوان الوثيقة + بيانات العميل
+     — بنية مختلفة جذرياً لكل شركة بديلة، مش بس ألوان: إياد حرب بطراز خطاب رسمي
+     (تحية + مرجع)، بكين بطراز شريط أيقونات حديث، الحياة بالصندوق الشبكي الأصلي */
+  const clientBox = altCompany?.key === 'eyad_harb' ? (
+    <div className="print-client-box eh-letter" dir="rtl" style={{direction:'rtl'}}>
+      <div className="eh-letter-salute">
+        <div className="eh-to">السادة: <strong>{doc.customer_name}{doc.customer_name ? ' المحترمين' : ''}</strong></div>
+        <div>عناية: {doc.attention||'قسم المشتريات المحترمين'}</div>
+        {doc.phone && <div>هاتف: {doc.phone}</div>}
+      </div>
+      <div className="eh-letter-ref">
+        <div><span>رقم العرض</span><strong>{doc.number}</strong></div>
+        <div><span>المرجع</span><strong>{doc.reference||'—'}</strong></div>
+        <div><span>التاريخ</span><strong>{doc.date}</strong></div>
+        {doc.valid_until && <div><span>صالح حتى</span><strong style={{color: new Date(doc.valid_until) < new Date() ? '#dc2626' : '#166534'}}>{doc.valid_until}</strong></div>}
+      </div>
+    </div>
+  ) : altCompany?.key === 'beken' ? (
+    <div className="print-client-box bk-card" dir="rtl">
+      <div className="bk-strip">
+        <div className="bk-strip-item"><span className="bk-ico">👤</span><div><label>السادة</label><strong>{doc.customer_name}</strong></div></div>
+        <div className="bk-strip-item"><span className="bk-ico">#</span><div><label>رقم العرض</label><strong>{doc.number}</strong></div></div>
+        <div className="bk-strip-item"><span className="bk-ico">📅</span><div><label>التاريخ</label><strong>{doc.date}</strong></div></div>
+        {doc.valid_until && <div className="bk-strip-item"><span className="bk-ico">⏳</span><div><label>صالح حتى</label><strong>{doc.valid_until}</strong></div></div>}
+      </div>
+      {(doc.attention || doc.reference || doc.phone) && (
+        <div className="bk-strip-sub">
+          {doc.attention && <span>عناية: <strong>{doc.attention}</strong></span>}
+          {doc.reference && <span>المرجع: <strong>{doc.reference}</strong></span>}
+          {doc.phone && <span>هاتف: <strong>{doc.phone}</strong></span>}
+        </div>
+      )}
+    </div>
+  ) : (
     <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
       <div className="print-client-grid">
         <div className="field-row"><label>السادة:</label> <strong>{doc.customer_name}{doc.customer_name ? ' المحترمين' : ''}</strong></div>
@@ -1940,6 +2018,12 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
       <PqDocHeader company={altCompany}/>
       <div className="print-doc-title">{docTitle}</div>
       {clientBox}
+      {altCompany?.key === 'beken' && (
+        <div className="bk-hero-total">
+          <span>الإجمالي المستحق (شامل الضريبة)</span>
+          <strong>{parseFloat(doc.nett_price||0).toFixed(3)} {doc.currency}</strong>
+        </div>
+      )}
     </>
   );
 
@@ -1948,7 +2032,12 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     <>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end'}}>
         <div style={{fontSize:11,color:'#888',maxWidth:380}}>
-          {isEn ? <>
+          {altCompany ? <>
+            {(isEn ? altCompany.terms_en : altCompany.terms_ar).map((line,i) => (
+              <p key={i} style={{whiteSpace:'nowrap'}}>* {line}</p>
+            ))}
+            {hasOptions && <p style={{whiteSpace:'nowrap'}}>{isEn ? '* Marked items (✓) are the selected option; alternatives for reference only.' : '* البنود المعلَّمة (خيار بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)'}</p>}
+          </> : (isEn ? <>
             <p style={{whiteSpace:'nowrap'}}>* Prices in JOD, inclusive of sales tax.</p>
             {hasOptions && <p style={{whiteSpace:'nowrap'}}>* Marked items (✓) are the selected option; alternatives for reference only.</p>}
             <p style={{whiteSpace:'nowrap'}}>* All goods imported per our quality standards.</p>
@@ -1962,7 +2051,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
             <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
             {docType==='invoice' && <p style={{marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included ( 16%) Reg No.{COMPANY.tax_no}</p>}
-          </>}
+          </>)}
         </div>
         <div className="print-totals">
           <table>
@@ -1984,6 +2073,12 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
               <li key={i} style={{marginBottom:2}}>{line}</li>
             ))}
           </ul>
+        </div>
+      )}
+      {altCompany?.key === 'eyad_harb' && (
+        <div className="eh-signature">
+          <span>التوقيع والختم</span>
+          <div className="eh-sig-line"></div>
         </div>
       )}
     </>
@@ -2132,7 +2227,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
   const exportToExcel = () => {
     const docLabel = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
     const rows = [];
-    rows.push([COMPANY.name_ar]);
+    rows.push([altCompany ? altCompany.name_ar : COMPANY.name_ar]);
     rows.push([`${docLabel} رقم: ${doc.number || ''}`]);
     rows.push([]);
     rows.push(['السادة:', doc.customer_name || '']);
@@ -3804,11 +3899,13 @@ function QuotesList({ user, quotes, onReload }) {
   const [searchIssuer, setSearchIssuer] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
 
+  const isAltCo = q => !!q.issuer_company && q.issuer_company !== 'hayat';
   const active = quotes.filter(q => !q.archived && !q.deleted_at);
-  const allOfficial   = active.filter(q => q.status !== 'draft');
+  const allOfficial   = active.filter(q => q.status !== 'draft' && !isAltCo(q));
   const officialQuotes = allOfficial.filter(q => q.quote_type !== 'tender');
   const tenderQuotes  = allOfficial.filter(q => q.quote_type === 'tender');
-  const draftQuotes   = active.filter(q => q.status === 'draft');
+  const draftQuotes   = active.filter(q => q.status === 'draft' && !isAltCo(q));
+  const altCoQuotes   = active.filter(isAltCo);
   const archivedQuotes = quotes.filter(q => q.archived);
   const deletedQuotes  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const [archiveSearch, setArchiveSearch] = useState('');
@@ -3830,6 +3927,9 @@ function QuotesList({ user, quotes, onReload }) {
     return ms && mf && md && mi;
   }).sort(sortByNum);
   const filteredDrafts = draftQuotes.filter(q => {
+    return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
+  }).sort(sortByNum);
+  const filteredAltCo = altCoQuotes.filter(q => {
     return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
   }).sort(sortByNum);
   const filteredArchive = archivedQuotes.filter(q =>
@@ -4103,6 +4203,11 @@ function QuotesList({ user, quotes, onReload }) {
         <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
           المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
         </button>
+        {hasPerm(user,'quotes_clone_other_company') && (
+        <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
+          🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
+        </button>
+        )}
         <button onClick={()=>setTab('archive')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='archive'?'3px solid #6b7280':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='archive'?'#374151':'var(--gray-500)',marginBottom:-2}}>
           الأرشيف <span style={{background:'var(--gray-100)',color:'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{archivedQuotes.length}</span>
         </button>
@@ -4378,6 +4483,81 @@ function QuotesList({ user, quotes, onReload }) {
                 </tr>
               ))}
               {filteredDrafts.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد مسودات</p></div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        )}
+      </div>
+      )}
+
+      {/* قائمة عروض الشركات الأخرى (إياد حرب / بكين) — منفصلة تماماً عن تسلسل الحياة */}
+      {tab === 'altco' && (
+      <div className="card">
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredAltCo.length} عرض</span>
+        </div>
+        {isMobile ? (
+          <div style={{padding:'12px'}}>
+            {filteredAltCo.map(q => {
+              const co = ALT_COMPANIES[q.issuer_company];
+              return (
+                <div key={q.id} className="qcard" style={{borderRight:`3px solid ${co?.accent||'#6d28d9'}`}}>
+                  <div className="qcard-top">
+                    <span className="qcard-num">{q.number}</span>
+                    <SBadge status={q.status}/>
+                  </div>
+                  <div style={{fontSize:11,fontWeight:700,color:co?.accent||'#6d28d9',marginBottom:2}}>{co?.name_ar||q.issuer_company}</div>
+                  <div className="qcard-customer">{q.customer_name}</div>
+                  <div className="qcard-meta">
+                    <span>📅 {q.date}</span>
+                    {q.reference && <span>· {q.reference}</span>}
+                    {canViewIssuer && profiles[q.created_by] && <span style={{color:'var(--gray-400)'}}>· {profiles[q.created_by]}</span>}
+                  </div>
+                  <div className="qcard-actions">
+                    <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                    {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
+                    {q.status==='draft' && <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>}
+                    {q.status!=='converted'&&q.status!=='invoiced'&&q.status!=='draft'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
+                    {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
+                  </div>
+                </div>
+              );
+            })}
+            {filteredAltCo.length===0&&<div className="empty-state"><p>لا توجد عروض بأسماء شركات أخرى</p></div>}
+          </div>
+        ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>الرقم</th><th>الشركة</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th>الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+            </thead>
+            <tbody>
+              {filteredAltCo.map(q => {
+                const co = ALT_COMPANIES[q.issuer_company];
+                return (
+                <tr key={q.id}>
+                  <td className="font-bold" style={{color:co?.accent||'#6d28d9',whiteSpace:'nowrap'}}>{q.number}</td>
+                  <td style={{fontSize:12,fontWeight:700,color:co?.accent||'#6d28d9',whiteSpace:'nowrap'}}>{co?.name_ar||q.issuer_company}</td>
+                  <td style={{width:160,whiteSpace:'normal',wordBreak:'break-word'}}>{q.customer_name}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>{q.date}</td>
+                  <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
+                  <td>
+                    <ActionMenu actions={[
+                      { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
+                      { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
+                      { icon:'✅', label:'اعتماد', hidden:q.status!=='draft', onClick:()=>confirmDraft(q) },
+                      { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced'||q.status==='draft', onClick:()=>setOrderingQ(q) },
+                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
+                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
+                    ]}/>
+                  </td>
+                  {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
+                </tr>
+                );
+              })}
+              {filteredAltCo.length===0 && <tr><td colSpan={canViewIssuer?7:6}><div className="empty-state"><p>لا توجد عروض بأسماء شركات أخرى</p></div></td></tr>}
             </tbody>
           </table>
         </div>
