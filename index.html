@@ -368,7 +368,7 @@ th:last-child, td:last-child { border-left: none; }
 .print-items td { padding: 6px 9px; border-bottom: 1px solid var(--acc-tint2, #B8DCF0); text-align: center; vertical-align: middle; }
 .print-items td.item-name { text-align: right; max-width: 150px; white-space: normal; word-break: break-word; line-height: 1.4; }
 .print-items td.item-notes { max-width: 80px; white-space: normal; word-break: break-word; font-size: 10px; line-height: 1.4; }
-.print-items td.unit-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.print-items td.unit-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 3px; padding-right: 3px; }
 .print-items tr:nth-child(even) td { background: var(--acc-tint, #F0F8FD); }
 .print-totals { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .print-totals table { width: 300px; font-size: 12px; border: 1px solid var(--acc-tint2, #B8DCF0); border-radius: 8px; overflow: hidden; direction: ltr; }
@@ -1167,7 +1167,12 @@ const ISSUER_COMPANY_LABEL = { hayat: 'مؤسسة الحياة العلمية', 
 /* ===================== UTILS ===================== */
 const fmt = (n, cur = 'JOD') => {
   const num = parseFloat(n) || 0;
-  return num.toLocaleString('ar-JO', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' ' + cur;
+  return num.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + ' ' + cur;
+};
+/* تنسيق الأرقام الكبيرة بفواصل الآلاف (12500 → 12,500.000) بدون تغيير القيمة الفعلية المخزّنة */
+const numFmt = (n, decimals = 3) => {
+  const num = parseFloat(n) || 0;
+  return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 };
 const today = () => new Date().toISOString().slice(0,10);
 const sha256Hex = async (text) => {
@@ -1836,13 +1841,13 @@ function PqItemsTable({ detailed, children }) {
     <table className="print-items">
       {detailed ? (
         <colgroup>
-          <col style={{width:'4.5%'}}/><col style={{width:'22.5%'}}/><col style={{width:'7.5%'}}/><col style={{width:'6%'}}/>
+          <col style={{width:'4.5%'}}/><col style={{width:'20.5%'}}/><col style={{width:'9.5%'}}/><col style={{width:'6%'}}/>
           <col style={{width:'10%'}}/><col style={{width:'6%'}}/><col style={{width:'11%'}}/><col style={{width:'12%'}}/>
           <col style={{width:'10.5%'}}/><col style={{width:'10%'}}/>
         </colgroup>
       ) : (
         <colgroup>
-          <col style={{width:'6%'}}/><col style={{width:'31.5%'}}/><col style={{width:'9%'}}/><col style={{width:'8%'}}/>
+          <col style={{width:'6%'}}/><col style={{width:'30%'}}/><col style={{width:'10.5%'}}/><col style={{width:'8%'}}/>
           <col style={{width:'12%'}}/><col style={{width:'14%'}}/><col style={{width:'9.5%'}}/><col style={{width:'10%'}}/>
         </colgroup>
       )}
@@ -1921,7 +1926,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
   // مجموعات المصادر البديلة للطباعة
   const printMeta = itemsGroupMeta(items);
   const printCounted = pickCountedIndices(items, doc.tax_pct ?? 16);
-  const hasOptions = detailed && printMeta.some(m => m.groupSize > 1);
+  const hasOptions = printMeta.some(m => m.groupSize > 1);
 
   const docTitle = isEn
     ? (docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'PRICE QUOTATION — OFFER')
@@ -1933,12 +1938,12 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     const taxRate = parseFloat(itemTax) || 0;
     const withTax = parseFloat(item.unit_price||0) * (1 + taxRate/100);
     const m = printMeta[i];
-    const grouped = detailed && m.groupSize > 1;
+    const grouped = m.groupSize > 1;
     const counted = printCounted.has(i);
     const unavail = isItemUnavailable(item);
     return (
       <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
-        <td>{detailed ? (m.no ?? '↳') : i+1}</td>
+        <td>{m.no ?? '↳'}</td>
         <td className="item-name">
           {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'خيار بديل — '}</span>}
           <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{item.item_name}</span>
@@ -1948,13 +1953,13 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
         <td className="unit-cell">{item.unit||'EACH'}</td>
         <td>{item.quantity}</td>
         {detailed ? <>
-          <td>{parseFloat(item.unit_price).toFixed(3)}</td>
+          <td>{numFmt(item.unit_price)}</td>
           <td>{taxRate}%</td>
-          <td>{withTax.toFixed(3)}</td>
-          <td><strong>{(parseFloat(item.quantity||0)*withTax).toFixed(3)}</strong></td>
+          <td>{numFmt(withTax)}</td>
+          <td><strong>{numFmt(parseFloat(item.quantity||0)*withTax)}</strong></td>
         </> : <>
-          <td>{parseFloat(item.unit_price).toFixed(3)}</td>
-          <td><strong>{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toFixed(3)}</strong></td>
+          <td>{numFmt(item.unit_price)}</td>
+          <td><strong>{numFmt(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0))}</strong></td>
         </>}
         <td>{item.origin||'CHINA'}</td>
         <td>{item.delivery||'PROMPT'}</td>
@@ -2021,7 +2026,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
       {altCompany?.key === 'beken' && (
         <div className="bk-hero-total">
           <span>الإجمالي المستحق (شامل الضريبة)</span>
-          <strong>{parseFloat(doc.nett_price||0).toFixed(3)} {doc.currency}</strong>
+          <strong>{numFmt(doc.nett_price)} {doc.currency}</strong>
         </div>
       )}
     </>
@@ -2036,17 +2041,17 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             {(isEn ? altCompany.terms_en : altCompany.terms_ar).map((line,i) => (
               <p key={i} style={{whiteSpace:'nowrap'}}>* {line}</p>
             ))}
-            {hasOptions && <p style={{whiteSpace:'nowrap'}}>{isEn ? '* Marked items (✓) are the selected option; alternatives for reference only.' : '* البنود المعلَّمة (خيار بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)'}</p>}
+            {hasOptions && <p style={{whiteSpace:'nowrap'}}>{isEn ? '* Where alternatives exist for an item, the highest-priced option (✓) is used in the total.' : '* عند توفّر بدائل لنفس الصنف، يُعتمد سعر البديل الأعلى (✓) ضمن الإجمالي'}</p>}
           </> : (isEn ? <>
             <p style={{whiteSpace:'nowrap'}}>* Prices in JOD, inclusive of sales tax.</p>
-            {hasOptions && <p style={{whiteSpace:'nowrap'}}>* Marked items (✓) are the selected option; alternatives for reference only.</p>}
+            {hasOptions && <p style={{whiteSpace:'nowrap'}}>* Where alternatives exist for an item, the highest-priced option (✓) is used in the total.</p>}
             <p style={{whiteSpace:'nowrap'}}>* All goods imported per our quality standards.</p>
             <p style={{whiteSpace:'nowrap'}}>* Devices: 1-year manufacturer warranty (excl. breakage, fire & misuse).</p>
             <p style={{whiteSpace:'nowrap'}}>* For inquiries, contact us via our official channels.</p>
             {docType==='invoice' && <p style={{whiteSpace:'nowrap',marginTop:6,color:'var(--primary)',fontWeight:700}}>* Sales Tax Not Included (16%) — Reg No. {COMPANY.tax_no}</p>}
           </> : <>
             <p>* السعر بالدينار الأردني والأسعار شاملة ضريبة المبيعات</p>
-            {hasOptions && <p>* البنود المعلَّمة (خيار بديل) خيارات بديلة للمنتج نفسه؛ الإجمالي محسوب على الخيار المعتمد (✓)</p>}
+            {hasOptions && <p>* عند توفّر بدائل لنفس الصنف، يُعتمد سعر البديل الأعلى (✓) ضمن الإجمالي</p>}
             <p>* البضائع المعروضة تم استيرادها وفق معايير ومقاييس جودة المؤسسة</p>
             <p>* الأجهزة الواردة مكفولة لمدة سنة كفالة مصنعيه ما عدا الكسر، الحريق، سوء الاستخدام</p>
             <p>* لأية استفسارات، نرجو عدم التردد في الاتصال معنا على قنوات الاتصال المعتمدة</p>
@@ -2056,11 +2061,11 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
         <div className="print-totals">
           <table>
             <tbody>
-              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{parseFloat(doc.subtotal||0).toFixed(3)}</td></tr>
-              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Discount {doc.discount_type==='amt'?`(${doc.currency})`:`(${doc.discount_pct||0}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{parseFloat(doc.discount_amt||0).toFixed(2)}</td></tr>
-              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Grand Total</td><td style={{textAlign:'left'}}>{(parseFloat(doc.subtotal||0)-parseFloat(doc.discount_amt||0)).toFixed(2)}</td></tr>
-              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sales Tax</td><td style={{textAlign:'left'}}>{parseFloat(doc.tax_amt||0).toFixed(3)}</td></tr>
-              <tr><td>Nett Price</td><td style={{textAlign:'left'}}>{parseFloat(doc.nett_price||0).toFixed(3)} {doc.currency}</td></tr>
+              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sub Total</td><td style={{textAlign:'left'}}>{numFmt(doc.subtotal)}</td></tr>
+              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Discount {doc.discount_type==='amt'?`(${doc.currency})`:`(${doc.discount_pct||0}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{numFmt(doc.discount_amt,2)}</td></tr>
+              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Grand Total</td><td style={{textAlign:'left'}}>{numFmt(parseFloat(doc.subtotal||0)-parseFloat(doc.discount_amt||0),2)}</td></tr>
+              <tr><td style={{background:'#E8F4FB',fontWeight:700}}>Sales Tax</td><td style={{textAlign:'left'}}>{numFmt(doc.tax_amt)}</td></tr>
+              <tr><td>Nett Price</td><td style={{textAlign:'left'}}>{numFmt(doc.nett_price)} {doc.currency}</td></tr>
             </tbody>
           </table>
         </div>
@@ -2135,8 +2140,8 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     const handleAfterPrint = () => {
       window.removeEventListener('afterprint', handleAfterPrint);
       setTimeout(() => {
-        const grandTotal = (parseFloat(doc.subtotal||0) - parseFloat(doc.discount_amt||0)).toFixed(2);
-        const nett      = parseFloat(doc.nett_price||0).toFixed(3);
+        const grandTotal = numFmt(parseFloat(doc.subtotal||0) - parseFloat(doc.discount_amt||0), 2);
+        const nett      = numFmt(doc.nett_price);
         const currency  = doc.currency || 'JOD';
         const docLabel  = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
 
@@ -2176,8 +2181,8 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     const handleAfterPrint = () => {
       window.removeEventListener('afterprint', handleAfterPrint);
       setTimeout(() => {
-        const grandTotal = (parseFloat(doc.subtotal||0) - parseFloat(doc.discount_amt||0)).toFixed(2);
-        const nett      = parseFloat(doc.nett_price||0).toFixed(3);
+        const grandTotal = numFmt(parseFloat(doc.subtotal||0) - parseFloat(doc.discount_amt||0), 2);
+        const nett      = numFmt(doc.nett_price);
         const currency  = doc.currency || 'JOD';
         const docLabel  = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
 
@@ -2301,6 +2306,13 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
         {showSig && (
           <div className="no-print" style={{display:'flex',alignItems:'center',gap:12,padding:'8px 16px',background:'#f0fdf4',borderBottom:'1px solid #86efac'}}>
             <span style={{fontSize:11,color:'#16a34a'}}>🖱️ اسحب الختم على الورقة لتحديد مكانه — والمربع الأزرق بزاويته للتكبير/التصغير</span>
+          </div>
+        )}
+        {docType === 'quote' && doc.needs_pricing && (
+          <div className="no-print" style={{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',background:'#fef3c7',borderBottom:'1px solid #fde68a'}}>
+            <span style={{fontSize:12,fontWeight:700,color:'#92400e'}}>
+              🏷️ هذا العرض بحاجة إلى تسعير{doc.pricing_note?` — ${doc.pricing_note}`:''}
+            </span>
           </div>
         )}
         <div className="modal-body pq-preview-body" id="print-content">
@@ -3147,10 +3159,10 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                       <td><input type="number" min="0" step="0.001" value={item.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                       {detailed ? <>
                         <td><input type="number" min="0" step="0.5" value={item.tax_pct ?? ''} onChange={e=>setItem(i,'tax_pct',e.target.value)}/></td>
-                        <td style={{fontWeight:600,color:'var(--gray-600)'}}>{withTax}</td>
-                        <td style={{fontWeight:700,color:'var(--primary)'}}>{(parseFloat(item.quantity||0)*parseFloat(withTax)).toFixed(3)}</td>
+                        <td style={{fontWeight:600,color:'var(--gray-600)'}}>{numFmt(withTax)}</td>
+                        <td style={{fontWeight:700,color:'var(--primary)'}}>{numFmt(parseFloat(item.quantity||0)*parseFloat(withTax))}</td>
                       </> : (
-                        <td style={{fontWeight:700,color:'var(--primary)'}}>{(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toFixed(3)}</td>
+                        <td style={{fontWeight:700,color:'var(--primary)'}}>{numFmt(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0))}</td>
                       )}
                       <td><OriginSelect value={item.origin} onChange={v=>setItem(i,'origin',v)}/></td>
                       <td><DeliverySelect value={item.delivery} onChange={v=>setItem(i,'delivery',v)}/></td>
@@ -3197,11 +3209,11 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
             <div style={{background:'#F0F8FD',border:'1.5px solid #B8DCF0',borderRadius:10,padding:16}}>
               <table style={{width:'100%',fontSize:13}}>
                 <tbody>
-                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Sub Total</td><td style={{textAlign:'left',fontWeight:600}}>{subtotal.toFixed(3)}</td></tr>
-                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Discount {form.discount_type==='amt'?`(${form.currency})`: `(${disc_pct}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{disc_amt.toFixed(3)}</td></tr>
-                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Grand Total</td><td style={{textAlign:'left',fontWeight:600}}>{after_disc.toFixed(3)}</td></tr>
-                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Sales Tax</td><td style={{textAlign:'left'}}>{tax_amt.toFixed(3)}</td></tr>
-                  <tr style={{borderTop:'2px solid var(--primary)'}}><td style={{padding:'8px 0',fontWeight:800,color:'var(--primary)'}}>Nett Price</td><td style={{textAlign:'left',fontWeight:800,fontSize:15,color:'var(--primary)'}}>{nett.toFixed(3)} {form.currency}</td></tr>
+                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Sub Total</td><td style={{textAlign:'left',fontWeight:600}}>{numFmt(subtotal)}</td></tr>
+                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Discount {form.discount_type==='amt'?`(${form.currency})`: `(${disc_pct}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{numFmt(disc_amt)}</td></tr>
+                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Grand Total</td><td style={{textAlign:'left',fontWeight:600}}>{numFmt(after_disc)}</td></tr>
+                  <tr><td style={{padding:'5px 0',color:'var(--gray-500)'}}>Sales Tax</td><td style={{textAlign:'left'}}>{numFmt(tax_amt)}</td></tr>
+                  <tr style={{borderTop:'2px solid var(--primary)'}}><td style={{padding:'8px 0',fontWeight:800,color:'var(--primary)'}}>Nett Price</td><td style={{textAlign:'left',fontWeight:800,fontSize:15,color:'var(--primary)'}}>{numFmt(nett)} {form.currency}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -3269,7 +3281,7 @@ function DeleteReasonModal({ quote, onConfirm, onClose, initialReason='', editMo
             </div>
           )}
           <div style={{marginBottom:14,fontSize:13}}>
-            <strong>العميل:</strong> {quote.customer_name} &nbsp;|&nbsp; <strong>القيمة:</strong> {parseFloat(quote.nett_price||0).toFixed(3)} {quote.currency}
+            <strong>العميل:</strong> {quote.customer_name} &nbsp;|&nbsp; <strong>القيمة:</strong> {numFmt(quote.nett_price)} {quote.currency}
           </div>
           <label style={{display:'block',marginBottom:6,fontWeight:700,fontSize:13}}>
             سبب الحذف <span style={{color:'var(--danger)'}}>*</span>
@@ -3364,7 +3376,7 @@ function DeletedQuotesPage({ user, quotes, onReload }) {
                     <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{q.number}</td>
                     <td>{q.customer_name}</td>
                     <td className="text-sm text-muted">{q.date}</td>
-                    <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                    <td className="font-bold">{numFmt(q.nett_price)}</td>
                     <td className="text-sm text-muted">{q.deleted_at?.slice(0,10)}</td>
                     <td className="text-sm">{profiles[q.created_by]||'—'}</td>
                     <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>{q.delete_reason||'—'}</td>
@@ -3570,6 +3582,73 @@ function FollowUpModal({ quote, user, onClose }) {
   );
 }
 
+/* طلب تسعير من مستخدم آخر لعرض مسودة غير مسعر */
+function PricingRequestModal({ quote, user, onClose, onSaved }) {
+  const [profileList, setProfileList] = useState([]);
+  const [target, setTarget] = useState(quote.pricing_requested_to || '');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name')
+      .then(({data}) => setProfileList((data||[]).filter(p => p.id !== user?.id)));
+  }, []);
+
+  const submit = async () => {
+    if (!target) { toast('اختر المستخدم المطلوب منه التسعير', 'error'); return; }
+    setSaving(true);
+    const { error } = await sb.from('quotations').update({
+      needs_pricing: true,
+      pricing_requested_to: target,
+      pricing_requested_by: user?.id,
+      pricing_requested_at: new Date().toISOString(),
+      pricing_note: note.trim() || null,
+    }).eq('id', quote.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); setSaving(false); return; }
+    await createNotif({
+      userId: target,
+      title: `🏷️ عرض بحاجة لتسعير — ${quote.number}`,
+      body: `العميل: ${quote.customer_name}` + (note.trim() ? ` — ${note.trim()}` : ''),
+      type: 'warning',
+      linkType: 'quote',
+      linkId: quote.id,
+    });
+    createLog(user, `طلب تسعير العرض ${quote.number} من مستخدم آخر`, 'quote', quote.id, quote.number);
+    toast('تم إرسال طلب التسعير ✓', 'success');
+    setSaving(false);
+    onSaved();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:440}}>
+        <div className="modal-header">
+          <span className="modal-title">🏷️ طلب تسعير — {quote.number}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">بحاجة إلى تسعير من *</label>
+            <select className="form-control" value={target} onChange={e=>setTarget(e.target.value)}>
+              <option value="">اختر مستخدماً...</option>
+              {profileList.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{marginBottom:0}}>
+            <label className="form-label">ملاحظة (اختياري)</label>
+            <textarea className="form-control" rows={3} value={note} onChange={e=>setNote(e.target.value)}
+              placeholder="مثال: أسعار الأصناف 3 و5 غير محددة..." style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!target||saving}>{saving?'...':'📨 إرسال الطلب'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== ACTION MENU ===================== */
 function ActionMenu({ actions }) {
   const [open, setOpen] = useState(false);
@@ -3706,6 +3785,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [editDeleteTarget, setEditDeleteTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [discussTarget, setDiscussTarget]   = useState(null);
+  const [pricingTarget, setPricingTarget]   = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -4048,6 +4128,18 @@ function QuotesList({ user, quotes, onReload }) {
     createLog(user, `اعتمد المسودة ${q.number} كعرض رسمي`, 'quote', q.id, q.number);
     toast('تم الاعتماد وتخصيص رقم رسمي ✓', 'success');
     setPreviewQ(null);
+    onReload();
+  };
+
+  const markPriced = async (q) => {
+    if (!confirm(`تأكيد أن العرض "${q.number}" أصبح مسعّراً بالكامل؟`)) return;
+    const { error } = await sb.from('quotations').update({ needs_pricing: false }).eq('id', q.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `أكمل تسعير العرض ${q.number}`, 'quote', q.id, q.number);
+    toast('تم تحديث حالة التسعير ✓', 'success');
+    if (q.pricing_requested_by && q.pricing_requested_by !== user?.id) {
+      createNotif({ userId: q.pricing_requested_by, title: `✅ تم تسعير العرض ${q.number}`, body: `العميل: ${q.customer_name}`, type: 'success', linkType: 'quote', linkId: q.id });
+    }
     onReload();
   };
 
@@ -4427,14 +4519,22 @@ function QuotesList({ user, quotes, onReload }) {
                     <span style={{fontSize:12,fontWeight:700,color:ageColor}}>{d===0?'اليوم':d!==null?`${d} يوم`:'—'}</span>
                   </div>
                   <div className="qcard-customer">{q.customer_name}</div>
+                  {q.needs_pricing && (
+                    <div style={{fontSize:11,fontWeight:700,color:'#b45309',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,padding:'3px 8px',margin:'4px 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}
+                      title={`بحاجة تسعير من ${profiles[q.pricing_requested_to]||'—'}${q.pricing_note?' — '+q.pricing_note:''}`}>
+                      🏷️ بحاجة تسعير من {profiles[q.pricing_requested_to]||'—'}{q.pricing_note?` — ${q.pricing_note}`:''}
+                    </div>
+                  )}
                   <div className="qcard-meta">
                     <span>📅 {q.date}</span>
                     <span className={q.quote_type==='tender'?'badge-type-tender':'badge-type-quote'}>{QT[q.quote_type]||'عرض سعر'}</span>
-                    <span style={{fontWeight:700,color:'var(--gray-700)'}}>{parseFloat(q.nett_price||0).toFixed(3)} د.أ</span>
+                    <span style={{fontWeight:700,color:'var(--gray-700)'}}>{numFmt(q.nett_price)} د.أ</span>
                   </div>
                   <div className="qcard-actions">
                     <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
                     {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
+                    {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&!q.needs_pricing&&<button className="btn btn-ghost btn-sm" onClick={()=>setPricingTarget(q)}>🏷️ طلب تسعير</button>}
+                    {q.needs_pricing&&(q.pricing_requested_to===user?.id||q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>markPriced(q)}>✅ تم التسعير</button>}
                     <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>
                     {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
                   </div>
@@ -4453,7 +4553,15 @@ function QuotesList({ user, quotes, onReload }) {
               {filteredDrafts.map(q => (
                 <tr key={q.id} style={{background:'#fffbeb'}}>
                   <td className="font-bold" style={{color:'#92400e'}}>{q.number}</td>
-                  <td>{q.customer_name}</td>
+                  <td>
+                    {q.customer_name}
+                    {q.needs_pricing && (
+                      <div style={{fontSize:10.5,fontWeight:700,color:'#b45309',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,padding:'2px 7px',marginTop:3,display:'block',maxWidth:150,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}
+                        title={`بحاجة تسعير من ${profiles[q.pricing_requested_to]||'—'}${q.pricing_note?' — '+q.pricing_note:''}`}>
+                        🏷️ بحاجة تسعير من {profiles[q.pricing_requested_to]||'—'}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{q.date}</td>
                   <td style={{textAlign:'center'}}>
                     {(() => {
@@ -4463,7 +4571,7 @@ function QuotesList({ user, quotes, onReload }) {
                       return <span style={{fontWeight:700, color, fontSize:12}}>{d === 0 ? 'اليوم' : `${d} يوم`}</span>;
                     })()}
                   </td>
-                  <td className="font-bold" style={{textAlign:'center'}}>{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                  <td className="font-bold" style={{textAlign:'center'}}>{numFmt(q.nett_price)}</td>
                   <td style={{textAlign:'center'}}>
                     <span className={q.quote_type==='tender' ? 'badge-type-tender' : 'badge-type-quote'}>
                       {QT[q.quote_type] || 'عرض سعر'}
@@ -4473,6 +4581,8 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
+                      { icon:'🏷️', label:'طلب تسعير', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))||q.needs_pricing, onClick:()=>setPricingTarget(q) },
+                      { icon:'✅', label:'تم التسعير', hidden:!q.needs_pricing||!(q.pricing_requested_to===user?.id||q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>markPriced(q) },
                       { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'🏢', label:'نسخ باسم شركة أخرى', hidden:!hasPerm(user,'quotes_clone_other_company'), onClick:()=>setAltCloneTarget(q) },
                       { icon:'✅', label:'اعتماد', onClick:()=>confirmDraft(q) },
@@ -4630,7 +4740,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{q.number}</td>
                     <td>{q.customer_name}</td>
                     <td className="text-sm text-muted">{q.date}</td>
-                    <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)}</td>
+                    <td className="font-bold">{numFmt(q.nett_price)}</td>
                     <td className="text-sm text-muted">{q.deleted_at?.slice(0,10)}</td>
                     <td className="text-sm">{profiles[q.created_by]||'—'}</td>
                     <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>
@@ -4679,6 +4789,7 @@ function QuotesList({ user, quotes, onReload }) {
       {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
       {followUpTarget && <FollowUpModal quote={followUpTarget} user={user} onClose={()=>setFollowUpTarget(null)}/>}
       {discussTarget && <QuoteDiscussionModal quote={discussTarget} user={user} onClose={()=>setDiscussTarget(null)}/>}
+      {pricingTarget && <PricingRequestModal quote={pricingTarget} user={user} onClose={()=>setPricingTarget(null)} onSaved={()=>{setPricingTarget(null);onReload();}}/>}
     </div>
   );
 }
@@ -4948,7 +5059,7 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
                     <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                     <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
                     <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.tax_pct} onChange={e=>setItem(i,'tax_pct',e.target.value)}/></td>
-                    <td style={{textAlign:'center'}}><strong>{((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0)).toFixed(3)}</strong></td>
+                    <td style={{textAlign:'center'}}><strong>{numFmt(parseFloat(it.quantity||0)*parseFloat(it.unit_price||0))}</strong></td>
                     <td><input className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.origin} onChange={e=>setItem(i,'origin',e.target.value)}/></td>
                     <td><input className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.delivery} onChange={e=>setItem(i,'delivery',e.target.value)}/></td>
                     <td style={{textAlign:'center'}}>
@@ -4965,13 +5076,13 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
 
           <div style={{display:'flex',justifyContent:'flex-end',gap:14,alignItems:'flex-end'}}>
             <div style={{fontSize:12,color:'var(--gray-500)',textAlign:'left'}}>
-              <div>المجموع قبل الخصم: <strong>{subtotal.toFixed(3)}</strong></div>
-              {disc_amt > 0 && <div>الخصم: <strong style={{color:'var(--danger)'}}>−{disc_amt.toFixed(3)}</strong></div>}
-              <div>الضريبة: <strong>{tax_amt.toFixed(3)}</strong></div>
+              <div>المجموع قبل الخصم: <strong>{numFmt(subtotal)}</strong></div>
+              {disc_amt > 0 && <div>الخصم: <strong style={{color:'var(--danger)'}}>−{numFmt(disc_amt)}</strong></div>}
+              <div>الضريبة: <strong>{numFmt(tax_amt)}</strong></div>
             </div>
             <div style={{background: isEdit ? '#EFF8FF' : '#F0FFF4', border:`1.5px solid ${accent}`, borderRadius:8, padding:'10px 20px', textAlign:'center'}}>
               <div style={{fontSize:11,color:'var(--gray-500)',fontWeight:700}}>القيمة الإجمالية</div>
-              <div style={{fontSize:22,fontWeight:900,color:accent}}>{total.toFixed(3)} {form.currency}</div>
+              <div style={{fontSize:22,fontWeight:900,color:accent}}>{numFmt(total)} {form.currency}</div>
             </div>
           </div>
         </div>
@@ -5159,7 +5270,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
               </thead>
               <tbody>
                 {items.map((item,i) => {
-                  const tot = (parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)).toFixed(3);
+                  const tot = numFmt(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0));
                   return (
                     <tr key={i}>
                       <td>{i+1}</td>
@@ -5199,10 +5310,10 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
           <div style={{marginTop:12, background:'#F0F8FD', border:'1.5px solid #B8DCF0', borderRadius:8, padding:12, maxWidth:280, marginRight:'auto'}}>
             <table style={{width:'100%',fontSize:12}}>
               <tbody>
-                <tr><td>Sub Total</td><td style={{textAlign:'left'}}>{subtotal.toFixed(3)}</td></tr>
-                <tr><td>Discount {form.discount_type==='amt'?`(${form.currency})`:`(${form.discount_pct}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{disc_amt.toFixed(3)}</td></tr>
-                <tr><td>Sales Tax ({form.tax_pct}%)</td><td style={{textAlign:'left'}}>{tax_amt.toFixed(3)}</td></tr>
-                <tr style={{borderTop:'2px solid var(--primary)'}}><td style={{fontWeight:800,color:'var(--primary)'}}>Nett Price</td><td style={{textAlign:'left',fontWeight:800,color:'var(--primary)'}}>{nett.toFixed(3)} {form.currency}</td></tr>
+                <tr><td>Sub Total</td><td style={{textAlign:'left'}}>{numFmt(subtotal)}</td></tr>
+                <tr><td>Discount {form.discount_type==='amt'?`(${form.currency})`:`(${form.discount_pct}%)`}</td><td style={{textAlign:'left',color:'var(--danger)'}}>{numFmt(disc_amt)}</td></tr>
+                <tr><td>Sales Tax ({form.tax_pct}%)</td><td style={{textAlign:'left'}}>{numFmt(tax_amt)}</td></tr>
+                <tr style={{borderTop:'2px solid var(--primary)'}}><td style={{fontWeight:800,color:'var(--primary)'}}>Nett Price</td><td style={{textAlign:'left',fontWeight:800,color:'var(--primary)'}}>{numFmt(nett)} {form.currency}</td></tr>
               </tbody>
             </table>
           </div>
@@ -5245,7 +5356,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
   const handleAdd = async () => {
     const amt = parseFloat(form.amount);
     if (!amt || amt <= 0) { toast('أدخل مبلغاً صحيحاً','error'); return; }
-    if (amt > remaining + 0.001) { toast(`المبلغ أكبر من المتبقي (${remaining.toFixed(3)})`, 'error'); return; }
+    if (amt > remaining + 0.001) { toast(`المبلغ أكبر من المتبقي (${numFmt(remaining)})`, 'error'); return; }
     setSaving(true);
     const { error } = await sb.from('payments').insert({ quotation_id: invoice.id, amount: amt, payment_date: form.payment_date, method: form.method, reference_no: form.reference_no||null, notes: form.notes||null, created_by: user.id });
     setSaving(false);
@@ -5290,15 +5401,15 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:10}}>
               <div style={{textAlign:'center', background:'#fff', borderRadius:8, padding:'8px 4px', border:'1px solid #e5e7eb'}}>
                 <div style={{fontSize:10, color:'var(--gray-400)'}}>إجمالي الفاتورة</div>
-                <div style={{fontWeight:800, fontSize:14}}>{total.toFixed(3)}</div>
+                <div style={{fontWeight:800, fontSize:14}}>{numFmt(total)}</div>
               </div>
               <div style={{textAlign:'center', background:'#dcfce7', borderRadius:8, padding:'8px 4px', border:'1px solid #bbf7d0'}}>
                 <div style={{fontSize:10, color:'#166534'}}>المدفوع</div>
-                <div style={{fontWeight:800, fontSize:14, color:'#16a34a'}}>{totalPaid.toFixed(3)}</div>
+                <div style={{fontWeight:800, fontSize:14, color:'#16a34a'}}>{numFmt(totalPaid)}</div>
               </div>
               <div style={{textAlign:'center', background: remaining<=0.001?'#f0fdf4':'#fff7ed', borderRadius:8, padding:'8px 4px', border:`1px solid ${remaining<=0.001?'#bbf7d0':'#fed7aa'}`}}>
                 <div style={{fontSize:10, color: remaining<=0.001?'#166534':'#92400e'}}>المتبقي</div>
-                <div style={{fontWeight:800, fontSize:14, color: remaining<=0.001?'#16a34a':'#b45309'}}>{Math.max(0,remaining).toFixed(3)}</div>
+                <div style={{fontWeight:800, fontSize:14, color: remaining<=0.001?'#16a34a':'#b45309'}}>{numFmt(Math.max(0,remaining))}</div>
               </div>
             </div>
             <div className="pay-progress">
@@ -5317,7 +5428,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
                   <div style={{fontWeight:700}}>{p.method} {p.reference_no ? <span style={{fontSize:11,color:'var(--gray-400)'}}>— {p.reference_no}</span> : ''}</div>
                   <div style={{fontSize:11,color:'var(--gray-400)'}}>{p.payment_date}{p.notes ? ` · ${p.notes}` : ''}</div>
                 </div>
-                <div className="pay-amount">+{parseFloat(p.amount).toFixed(3)}</div>
+                <div className="pay-amount">+{numFmt(p.amount)}</div>
                 {canDeletePayment && <button onClick={()=>handleDelete(p)} style={{background:'none',border:'none',color:'#dc2626',cursor:'pointer',fontSize:16,padding:'0 4px'}}>×</button>}
               </div>
             ))}
@@ -5330,7 +5441,7 @@ function PaymentModal({ user, invoice, onClose, onSaved }) {
               <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10}}>
                 <div className="form-group">
                   <label className="form-label">المبلغ *</label>
-                  <input className="form-control" type="number" min="0.001" step="0.001" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder={`الحد الأقصى ${remaining.toFixed(3)}`}/>
+                  <input className="form-control" type="number" min="0.001" step="0.001" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} placeholder={`الحد الأقصى ${numFmt(remaining)}`}/>
                 </div>
                 <div className="form-group">
                   <label className="form-label">التاريخ</label>
@@ -5431,10 +5542,10 @@ function InvoicesPage({ user, quotes, onReload }) {
                     <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
                     <td>{q.customer_name}</td>
                     <td className="text-sm text-muted">{q.date}</td>
-                    <td className="font-bold">{total.toFixed(3)} <span style={{fontSize:11,color:'var(--gray-400)'}}>{q.currency}</span></td>
+                    <td className="font-bold">{numFmt(total)} <span style={{fontSize:11,color:'var(--gray-400)'}}>{q.currency}</span></td>
                     <td>
-                      <div style={{fontSize:13,fontWeight:700,color:'#16a34a'}}>{paid.toFixed(3)}</div>
-                      {paid>0 && paid<total && <div style={{fontSize:11,color:'#b45309'}}>متبقي: {(total-paid).toFixed(3)}</div>}
+                      <div style={{fontSize:13,fontWeight:700,color:'#16a34a'}}>{numFmt(paid)}</div>
+                      {paid>0 && paid<total && <div style={{fontSize:11,color:'#b45309'}}>متبقي: {numFmt(total-paid)}</div>}
                     </td>
                     <td>{getPayBadge(q)}</td>
                     <td>
@@ -5809,7 +5920,7 @@ function OrdersPage({ user, orders, onReload }) {
                     <td>{o.customer_name}</td>
                     <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
                     <td className="text-sm text-muted">{o.reference||'—'}</td>
-                    <td className="font-bold" style={{whiteSpace:'nowrap'}}>{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
+                    <td className="font-bold" style={{whiteSpace:'nowrap'}}>{numFmt(o.total_amount)} {o.currency}</td>
                     <td className="text-sm text-muted">{o.prepared_by||'—'}</td>
                     <td className="text-sm text-muted">{o.delivered_by||'—'}</td>
                     <td>{hasPerm(user,'orders_edit')
@@ -5848,7 +5959,7 @@ function OrdersPage({ user, orders, onReload }) {
                   <tr key={o.id}>
                     <td className="font-bold" style={{color:'var(--primary)'}}>{o.number}</td>
                     <td>{o.customer_name}</td>
-                    <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
+                    <td className="font-bold">{numFmt(o.total_amount)} {o.currency}</td>
                     <td><SBadge status={o.status} type="o"/></td>
                     <td className="text-sm text-muted">{o.archive_note||'—'}</td>
                     <td>
@@ -5890,7 +6001,7 @@ function OrdersPage({ user, orders, onReload }) {
                     <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{o.number||'—'}</td>
                     <td>{o.customer_name}</td>
                     <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
-                    <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)} {o.currency}</td>
+                    <td className="font-bold">{numFmt(o.total_amount)} {o.currency}</td>
                     <td className="text-sm text-muted">{o.deleted_at?.slice(0,10)}</td>
                     <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>
                       {o.delete_reason||'—'}
@@ -6002,7 +6113,7 @@ function ArchivePage({ user, quotes, orders, onReload }) {
             {archivedO.map(o=><tr key={o.id}>
               <td className="font-bold">{o.number}</td>
               <td>{o.customer_name}</td>
-              <td className="font-bold">{parseFloat(o.total_amount||0).toFixed(3)}</td>
+              <td className="font-bold">{numFmt(o.total_amount)}</td>
               <td>{hasPerm(user,'orders_edit')
                 ? <select className="form-control" style={selStyle} value={o.status} onChange={e=>changeStatusO(o,e.target.value)}>
                     {Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
@@ -7118,7 +7229,7 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       `<tr>
         <td style="font-weight:700;color:#1C6A99">${q.number||'—'}</td>
         <td>${q.date||'—'}</td>
-        <td style="font-weight:700">${parseFloat(q.nett_price||0).toFixed(3)} ${q.currency||''}</td>
+        <td style="font-weight:700">${numFmt(q.nett_price)} ${q.currency||''}</td>
         <td>${SL[q.status]||q.status||'—'}</td>
       </tr>`).join('');
 
@@ -7315,7 +7426,7 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
                   <tr key={q.id}>
                     <td className="font-bold" style={{color:'var(--primary)'}}>{q.number}</td>
                     <td className="text-sm text-muted">{q.date}</td>
-                    <td className="font-bold">{parseFloat(q.nett_price||0).toFixed(3)} {q.currency}</td>
+                    <td className="font-bold">{numFmt(q.nett_price)} {q.currency}</td>
                     <td><SBadge status={q.status}/></td>
                     <td>
                       <button title="عرض" disabled={loadingPreview}
@@ -7512,7 +7623,7 @@ function ItemNameCell({ value, catalogItems, historyItems=[], onSelect, onNameCh
               {c._isHistory
                 ? <span style={{fontSize:10,color:'var(--gray-400)'}}>🕐 سبق استخدامه</span>
                 : <span style={{fontSize:11,color:'var(--gray-400)',marginRight:8}}>
-                    {[c.unit, c.unit_price?parseFloat(c.unit_price).toFixed(3):'', c.origin].filter(Boolean).join(' · ')}
+                    {[c.unit, c.unit_price?numFmt(c.unit_price):'', c.origin].filter(Boolean).join(' · ')}
                   </span>
               }
             </div>
@@ -7645,7 +7756,7 @@ function CatalogPicker({ onSelect, onClose }) {
                     <div className="cat-picker-name">{it.name}</div>
                     <div className="cat-picker-meta">{[it.category, it.unit, it.origin, it.delivery].filter(Boolean).join(' · ')}</div>
                   </div>
-                  <div className="cat-picker-price">{parseFloat(it.unit_price||0).toFixed(3)}</div>
+                  <div className="cat-picker-price">{numFmt(it.unit_price)}</div>
                 </div>
               ))}
             </div>
@@ -7974,7 +8085,7 @@ function CatalogPage({ user }) {
                           : <span className="text-muted">—</span>}
                       </td>
                       <td className="text-sm">{it.unit || '—'}</td>
-                      <td className="font-bold" style={{color:'var(--primary)'}}>{parseFloat(it.unit_price||0).toFixed(3)}</td>
+                      <td className="font-bold" style={{color:'var(--primary)'}}>{numFmt(it.unit_price)}</td>
                       <td className="text-sm">{it.origin || '—'}</td>
                       <td className="text-sm">{it.delivery || '—'}</td>
                       <td>
@@ -8393,7 +8504,7 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
       <tr>
         <td style="font-weight:700;color:#1C6A99">${p.number||'—'}</td>
         <td>${p.date||'—'}</td>
-        <td style="font-weight:700">${parseFloat(p.total||0).toFixed(3)} ${p.currency||'JOD'}</td>
+        <td style="font-weight:700">${numFmt(p.total)} ${p.currency||'JOD'}</td>
         <td>${PO_STATUSES[p.status]||p.status||'—'}</td>
       </tr>`).join('');
 
@@ -8401,8 +8512,8 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
       <tr>
         <td>${i.supplier_invoice_no||'—'}</td>
         <td>${i.date||'—'}</td>
-        <td style="font-weight:700">${parseFloat(i.total||0).toFixed(3)}</td>
-        <td style="color:#16a34a">${parseFloat(i.paid_amount||0).toFixed(3)}</td>
+        <td style="font-weight:700">${numFmt(i.total)}</td>
+        <td style="color:#16a34a">${numFmt(i.paid_amount)}</td>
         <td>${SI_STATUSES[i.status]||i.status||'—'}</td>
       </tr>`).join('');
 
@@ -8420,9 +8531,9 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
 
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
         <div style="background:#f0f8fd;border:1px solid #B8DCF0;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#1C6A99">${totalOrders}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">أوامر الشراء</div></div>
-        <div style="background:#f0f8fd;border:1px solid #B8DCF0;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#1C6A99">${totalPOValue.toFixed(3)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">إجمالي الطلبات</div></div>
-        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#16a34a">${totalPaid.toFixed(3)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">إجمالي المدفوع</div></div>
-        <div style="background:${balance>0?'#fee2e2':'#dcfce7'};border:1px solid ${balance>0?'#fca5a5':'#86efac'};border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:${balance>0?'#dc2626':'#16a34a'}">${balance.toFixed(3)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">الرصيد المستحق</div></div>
+        <div style="background:#f0f8fd;border:1px solid #B8DCF0;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#1C6A99">${numFmt(totalPOValue)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">إجمالي الطلبات</div></div>
+        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:#16a34a">${numFmt(totalPaid)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">إجمالي المدفوع</div></div>
+        <div style="background:${balance>0?'#fee2e2':'#dcfce7'};border:1px solid ${balance>0?'#fca5a5':'#86efac'};border-radius:8px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:900;color:${balance>0?'#dc2626':'#16a34a'}">${numFmt(balance)}</div><div style="font-size:10px;color:#7a8fa6;font-weight:700">الرصيد المستحق</div></div>
       </div>
 
       <div style="font-size:12px;font-weight:800;color:#1C6A99;border-bottom:2px solid #1C6A99;padding-bottom:3px;margin:14px 0 8px">📋 أوامر الشراء (${pos.length})</div>
@@ -8503,9 +8614,9 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
         {/* Stats */}
         {[
           {label:'أوامر الشراء', val:totalOrders, color:'var(--primary)'},
-          {label:'إجمالي الطلبات', val:totalPOValue.toFixed(3), color:'#7c3aed'},
-          {label:'إجمالي المدفوع', val:totalPaid.toFixed(3), color:'#16a34a'},
-          {label:'الرصيد المستحق', val:balance.toFixed(3), color: balance>0?'#dc2626':'#16a34a'},
+          {label:'إجمالي الطلبات', val:numFmt(totalPOValue), color:'#7c3aed'},
+          {label:'إجمالي المدفوع', val:numFmt(totalPaid), color:'#16a34a'},
+          {label:'الرصيد المستحق', val:numFmt(balance), color: balance>0?'#dc2626':'#16a34a'},
         ].map((s,i)=>(
           <div key={i} style={{textAlign:'center',padding:'8px 16px',borderRight:'1px solid #e2edf5'}}>
             <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>{s.label}</div>
@@ -8548,10 +8659,10 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
               <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
                 {[
                   {l:'عدد أوامر الشراء',   v:totalOrders,             c:'var(--primary)'},
-                  {l:'إجمالي قيمة الطلبات', v:totalPOValue.toFixed(3)+' JOD', c:'#7c3aed'},
-                  {l:'إجمالي الفواتير',    v:totalInvoiced.toFixed(3)+' JOD', c:'#0ea5e9'},
-                  {l:'إجمالي المدفوع',      v:totalPaid.toFixed(3)+' JOD',    c:'#16a34a'},
-                  {l:'الرصيد المستحق',      v:balance.toFixed(3)+' JOD',      c:balance>0?'#dc2626':'#16a34a'},
+                  {l:'إجمالي قيمة الطلبات', v:numFmt(totalPOValue)+' JOD', c:'#7c3aed'},
+                  {l:'إجمالي الفواتير',    v:numFmt(totalInvoiced)+' JOD', c:'#0ea5e9'},
+                  {l:'إجمالي المدفوع',      v:numFmt(totalPaid)+' JOD',    c:'#16a34a'},
+                  {l:'الرصيد المستحق',      v:numFmt(balance)+' JOD',      c:balance>0?'#dc2626':'#16a34a'},
                   {l:'أصناف يوردها',        v:items.length+' صنف',            c:'#f59e0b'},
                 ].map((row,i)=>(
                   <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 10px',background:'#f8fafc',borderRadius:8}}>
@@ -8577,7 +8688,7 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
                   <div style={{fontWeight:800,color:'#1C6A99',fontSize:13}}>{p.number}</div>
                   <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
                   <div style={{fontSize:12,color:'var(--gray-400)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.notes||'—'}</div>
-                  <div style={{fontWeight:700,color:'var(--primary)'}}>{parseFloat(p.total||0).toFixed(3)} {p.currency}</div>
+                  <div style={{fontWeight:700,color:'var(--primary)'}}>{numFmt(p.total)} {p.currency}</div>
                   <div><POBadge status={p.status}/></div>
                   <div><button className="btn btn-ghost btn-sm" onClick={()=>setViewingPO(p)} style={{padding:'3px 8px'}}>👁 عرض</button></div>
                 </div>
@@ -8591,9 +8702,9 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
             {/* ملخص مالي */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:14}}>
               {[
-                {l:'إجمالي الفواتير',  v:totalInvoiced.toFixed(3)+' JOD', c:'#0ea5e9', bg:'#e0f2fe'},
-                {l:'إجمالي المدفوع',   v:totalPaid.toFixed(3)+' JOD',    c:'#16a34a', bg:'#dcfce7'},
-                {l:'الرصيد المستحق',  v:balance.toFixed(3)+' JOD',       c:balance>0?'#dc2626':'#16a34a', bg:balance>0?'#fee2e2':'#dcfce7'},
+                {l:'إجمالي الفواتير',  v:numFmt(totalInvoiced)+' JOD', c:'#0ea5e9', bg:'#e0f2fe'},
+                {l:'إجمالي المدفوع',   v:numFmt(totalPaid)+' JOD',    c:'#16a34a', bg:'#dcfce7'},
+                {l:'الرصيد المستحق',  v:numFmt(balance)+' JOD',       c:balance>0?'#dc2626':'#16a34a', bg:balance>0?'#fee2e2':'#dcfce7'},
               ].map((card,i)=>(
                 <div key={i} style={{padding:'14px 18px',background:card.bg,borderRadius:10,border:`1.5px solid ${card.c}22`}}>
                   <div style={{fontSize:11,fontWeight:700,color:card.c,marginBottom:4}}>{card.l}</div>
@@ -8612,8 +8723,8 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
                     <div style={{fontWeight:700,fontSize:13}}>{inv.supplier_invoice_no||'—'}</div>
                     <div style={{fontSize:12,color:'#0ea5e9'}}>{inv.po_number||'—'}</div>
                     <div style={{fontSize:12,color:'var(--gray-500)'}}>{inv.date}</div>
-                    <div style={{fontWeight:700}}>{parseFloat(inv.total||0).toFixed(3)}</div>
-                    <div style={{fontWeight:700,color:'#16a34a'}}>{parseFloat(inv.paid_amount||0).toFixed(3)}</div>
+                    <div style={{fontWeight:700}}>{numFmt(inv.total)}</div>
+                    <div style={{fontWeight:700,color:'#16a34a'}}>{numFmt(inv.paid_amount)}</div>
                     <div><SIBadge status={inv.status}/></div>
                   </div>
                 ))}
@@ -8632,7 +8743,7 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
               : payments.map((p,i)=>(
                 <div key={p.id} style={{display:'grid',gridTemplateColumns:'110px 130px 120px 130px 1fr',padding:'10px 16px',borderBottom:'1px solid #f0f4f8',background:i%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
                   <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
-                  <div style={{fontWeight:800,color:'#16a34a',fontSize:14}}>{parseFloat(p.amount||0).toFixed(3)} JOD</div>
+                  <div style={{fontWeight:800,color:'#16a34a',fontSize:14}}>{numFmt(p.amount)} JOD</div>
                   <div style={{fontSize:12}}>{PAYMENT_METHODS[p.method]||p.method||'—'}</div>
                   <div style={{fontSize:12,color:'var(--gray-400)'}}>{p.reference||'—'}</div>
                   <div style={{fontSize:12,color:'var(--gray-400)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.notes||'—'}</div>
@@ -8641,7 +8752,7 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
             {payments.length>0 && (
               <div style={{padding:'10px 16px',background:'#f0f8fd',borderTop:'2px solid #B8DCF0',display:'flex',justifyContent:'flex-end',gap:6,fontSize:13,fontWeight:800}}>
                 <span>الإجمالي:</span>
-                <span style={{color:'#16a34a'}}>{totalPaid.toFixed(3)} JOD</span>
+                <span style={{color:'#16a34a'}}>{numFmt(totalPaid)} JOD</span>
               </div>
             )}
           </div>
@@ -8660,7 +8771,7 @@ function SupplierDetail({ supplier, user, onBack, onEdit }) {
                   <div style={{fontWeight:700,fontSize:13,color:'#1a2e3d'}}>{it.item_name}</div>
                   <div style={{fontSize:12,color:'var(--gray-500)'}}>{it.unit||'—'}</div>
                   <div style={{fontSize:13,fontWeight:700,color:'var(--primary)',textAlign:'center'}}>{parseFloat(it.total_qty).toFixed(2)}</div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#7c3aed',textAlign:'center'}}>{parseFloat(it.total_value).toFixed(3)}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#7c3aed',textAlign:'center'}}>{numFmt(it.total_value)}</div>
                   <div style={{fontSize:12,textAlign:'center',color:'var(--gray-500)'}}>{it.orders}</div>
                 </div>
               ))}
@@ -8925,7 +9036,7 @@ function POForm({ po, onSave, onClose }) {
               <tbody>
                 {items.map((item,i)=>{
                   const rowTax = (item.tax_pct===''||item.tax_pct==null)?parseFloat(form.tax_pct||0):parseFloat(item.tax_pct||0);
-                  const rowTotal = (parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)*(1+rowTax/100)).toFixed(3);
+                  const rowTotal = numFmt(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0)*(1+rowTax/100));
                   return (
                     <tr key={i}>
                       <td>{i+1}</td>
@@ -8954,13 +9065,13 @@ function POForm({ po, onSave, onClose }) {
               <textarea className="form-control" rows={2} value={form.notes||''} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:260,textAlign:'left',direction:'ltr'}}>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}><span>المجموع قبل الضريبة:</span><strong>{subtotal.toFixed(3)} {form.currency}</strong></div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}><span>المجموع قبل الضريبة:</span><strong>{numFmt(subtotal)} {form.currency}</strong></div>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:13}}>
                 <span>الضريبة <input type="number" min="0" max="100" value={form.tax_pct} onChange={e=>setF('tax_pct',e.target.value)} style={{width:50,padding:'2px 4px',textAlign:'center',border:'1px solid var(--gray-300)',borderRadius:4}} />%:</span>
-                <strong>{tax_amt.toFixed(3)} {form.currency}</strong>
+                <strong>{numFmt(tax_amt)} {form.currency}</strong>
               </div>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)',borderTop:'2px solid var(--primary)',paddingTop:6}}>
-                <span>الإجمالي:</span><span>{total.toFixed(3)} {form.currency}</span>
+                <span>الإجمالي:</span><span>{numFmt(total)} {form.currency}</span>
               </div>
             </div>
           </div>
@@ -9019,18 +9130,18 @@ function PODetail({ po, onClose, onEdit }) {
                     <td style={{fontWeight:600}}>{it.item_name}</td>
                     <td>{it.unit}</td>
                     <td style={{textAlign:'center'}}>{it.quantity}</td>
-                    <td style={{textAlign:'center'}}>{parseFloat(it.unit_price||0).toFixed(3)}</td>
+                    <td style={{textAlign:'center'}}>{numFmt(it.unit_price)}</td>
                     <td style={{textAlign:'center'}}>{it.tax_pct||0}%</td>
-                    <td style={{fontWeight:700,color:'var(--primary)',textAlign:'center'}}>{parseFloat(it.total||0).toFixed(3)}</td>
+                    <td style={{fontWeight:700,color:'var(--primary)',textAlign:'center'}}>{numFmt(it.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           <div style={{textAlign:'left',direction:'ltr',marginTop:12,padding:'10px 16px',background:'#f8fafc',borderRadius:8}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}><span>المجموع:</span><strong>{parseFloat(po.subtotal||0).toFixed(3)} {po.currency}</strong></div>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}><span>الضريبة:</span><strong>{parseFloat(po.tax_amt||0).toFixed(3)} {po.currency}</strong></div>
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}><span>الإجمالي:</span><span>{parseFloat(po.total||0).toFixed(3)} {po.currency}</span></div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}><span>المجموع:</span><strong>{numFmt(po.subtotal)} {po.currency}</strong></div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}><span>الضريبة:</span><strong>{numFmt(po.tax_amt)} {po.currency}</strong></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}><span>الإجمالي:</span><span>{numFmt(po.total)} {po.currency}</span></div>
           </div>
           {po.notes && <div style={{marginTop:12,padding:'10px 14px',background:'#fffbeb',borderRadius:8,fontSize:13,color:'#92400e'}}>{po.notes}</div>}
         </div>
@@ -9111,7 +9222,7 @@ function SupplierInvoiceForm({ invoice, suppliers, onSave, onClose }) {
                 if(p?.total) setF('total',p.total);
               }}>
                 <option value="">— بدون ارتباط بـ PO —</option>
-                {pos.map(p=><option key={p.id} value={p.id}>{p.number} ({parseFloat(p.total||0).toFixed(3)} {p.currency})</option>)}
+                {pos.map(p=><option key={p.id} value={p.id}>{p.number} ({numFmt(p.total)} {p.currency})</option>)}
               </select>
             </div>
           </div>
@@ -9171,7 +9282,7 @@ function SupplierPaymentForm({ suppliers, onSave, onClose }) {
   },[form.supplier_id]);
 
   const selectedInv = invoices.find(i=>i.id===form.invoice_id);
-  const balance = selectedInv ? (parseFloat(selectedInv.total||0)-parseFloat(selectedInv.paid_amount||0)).toFixed(3) : null;
+  const balance = selectedInv ? numFmt(parseFloat(selectedInv.total||0)-parseFloat(selectedInv.paid_amount||0)) : null;
 
   const handleSave = async () => {
     if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
@@ -9216,7 +9327,7 @@ function SupplierPaymentForm({ suppliers, onSave, onClose }) {
             <select className="form-control" value={form.invoice_id} onChange={e=>{ setF('invoice_id',e.target.value); const inv=invoices.find(i=>i.id===e.target.value); if(inv) setF('amount',(parseFloat(inv.total||0)-parseFloat(inv.paid_amount||0)).toFixed(3)); }}>
               <option value="">— اختر فاتورة —</option>
               {invoices.map(i=>{
-                const bal = (parseFloat(i.total||0)-parseFloat(i.paid_amount||0)).toFixed(3);
+                const bal = numFmt(parseFloat(i.total||0)-parseFloat(i.paid_amount||0));
                 return <option key={i.id} value={i.id}>{i.supplier_invoice_no||i.id.slice(0,8)} — المتبقي: {bal} {i.currency}</option>;
               })}
             </select>
@@ -9380,7 +9491,7 @@ function ProcurementPage({ user }) {
         <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🏭</div>
         <div>
           <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>وحدة المشتريات والموردين</div>
-          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{suppliers.length} مورد · {pos.length} أمر شراء · مستحق: {totalPayable.toFixed(3)} JOD</div>
+          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{suppliers.length} مورد · {pos.length} أمر شراء · مستحق: {numFmt(totalPayable)} JOD</div>
         </div>
         <div style={{flex:1}}/>
         {tab==='suppliers' && <>
@@ -9456,7 +9567,7 @@ function ProcurementPage({ user }) {
                 <div style={{fontWeight:800,color:'#1C6A99',fontSize:13}}>{p.number}</div>
                 <div style={{fontWeight:600,fontSize:13}}>{p.supplier_name}</div>
                 <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
-                <div style={{fontSize:13,fontWeight:700,color:'var(--primary)'}}>{parseFloat(p.total||0).toFixed(3)} {p.currency}</div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--primary)'}}>{numFmt(p.total)} {p.currency}</div>
                 <div>
                   {hasPerm(user,'suppliers_edit')
                     ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={p.status} onChange={e=>changePOStatus(p,e.target.value)}>
@@ -9492,8 +9603,8 @@ function ProcurementPage({ user }) {
                   </div>
                   <div style={{fontSize:12,fontWeight:600}}>{inv.supplier_invoice_no||'—'}</div>
                   <div style={{fontSize:12,color:'var(--gray-500)'}}>{inv.date}</div>
-                  <div style={{fontSize:13,fontWeight:700}}>{parseFloat(inv.total||0).toFixed(3)}</div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#16a34a'}}>{parseFloat(inv.paid_amount||0).toFixed(3)}</div>
+                  <div style={{fontSize:13,fontWeight:700}}>{numFmt(inv.total)}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#16a34a'}}>{numFmt(inv.paid_amount)}</div>
                   <div><SIBadge status={inv.status}/></div>
                   <div style={{display:'flex',gap:4}}>
                     {hasPerm(user,'supplier_invoices_create') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingInv(inv);setShowInvForm(true);}} style={{padding:'3px 7px'}}>✏️</button>}
@@ -9519,7 +9630,7 @@ function ProcurementPage({ user }) {
                 <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 120px 110px 120px 100px',padding:'11px 18px',...rowStyle(i)}}>
                   <div style={{fontWeight:700,fontSize:13}}>{sup?.name||'—'}</div>
                   <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.date}</div>
-                  <div style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>{parseFloat(p.amount||0).toFixed(3)}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>{numFmt(p.amount)}</div>
                   <div style={{fontSize:12}}>{PAYMENT_METHODS[p.method]||p.method||'—'}</div>
                   <div style={{fontSize:12,color:'var(--gray-500)'}}>{p.reference||'—'}</div>
                   <div>
@@ -13430,7 +13541,7 @@ function VoucherPrintModal({ voucher, onClose }) {
   const [stampW,   setStampW]   = React.useState(500);
 
   const fmtD = d => { if (!d) return ''; const p=d.split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; };
-  const fmtAmt = (a,c) => `${parseFloat(a||0).toFixed(3)} ${c||'JOD'}`;
+  const fmtAmt = (a,c) => `${numFmt(a)} ${c||'JOD'}`;
 
   const handlePrint = () => printDoc('voucher-print-content', `${typeLabel} ${voucher.number}`);
 
@@ -13636,7 +13747,7 @@ function FormsPage({ user, quotes, onReload }) {
     { label:'التاريخ',     w:100, render: v => v.date?.slice(0,10) },
     { label: tab==='payment' ? 'المدفوع له' : 'المستلَم من', render: v => v.party || '—' },
     { label:'البيان',      render: v => v.description || '—' },
-    { label:'المبلغ',      w:120, render: v => <strong>{parseFloat(v.amount||0).toFixed(3)} {v.currency}</strong> },
+    { label:'المبلغ',      w:120, render: v => <strong>{numFmt(v.amount)} {v.currency}</strong> },
     { label:'طريقة الدفع', w:120, render: v => v.payment_method },
     { label:'إجراءات',     w:130, render: v => (
       <div className="flex gap-1">
