@@ -332,19 +332,14 @@ th:last-child, td:last-child { border-left: none; }
    من getBoundingClientRect ويصير القياس أقل من الواقع (تداخل بالطباعة) */
 .pq-measure .pqm-head, .pq-measure .pqm-conthead, .pq-measure .pqm-rows,
 .pq-measure .pqm-tail, .pq-measure .pqm-footer { display: flow-root; }
-/* كتب رسمية: تدفق طبيعي بلا ارتفاع ثابت ولا overflow:hidden — يسمح للمحتوى
-   الطويل بالامتداد على أكثر من صفحة A4 بدل القص. منفصل عن .pq-page (عروض الأسعار)
-   ولا يفرض table-layout ولا direction على المحتوى الداخلي — فقط يمنع طفح الصور. */
-.letter-page { width: 210mm; min-height: 297mm; background: white; margin: 0 auto 18px; position: relative; box-sizing: border-box; box-shadow: 0 3px 14px rgba(0,0,0,.35); direction: rtl; padding: 6mm 10mm 10mm; }
-.letter-page:last-child { margin-bottom: 0; }
+/* كتب رسمية: نفس نظام الصفحات الحقيقية المستخدم بعروض الأسعار (.pq-page) —
+   توزيع محتوى نص الكتاب (فقرات/جداول) على صفحات A4 فعلية بالقياس في JS،
+   والفوتر position:absolute داخل كل .pq-page (وليس tfoot أو position:fixed). */
 .letter-body img { max-width: 100%; height: auto; }
-/* الفوتر (print-footer-bar) داخل tfoot حتى يتكرر تلقائياً أسفل كل صفحة مطبوعة
-   عندما يمتد الكتاب لأكثر من صفحة A4 — تقنية طباعة قياسية بلا حاجة لقياس JS */
-.letter-page-table { width: 100%; border-collapse: collapse; }
-.letter-page-table > tbody > tr > td, .letter-page-table > tfoot > tr > td { padding: 0; border: none; }
-@media print {
-  .letter-page { box-shadow: none !important; margin: 0 auto !important; }
-}
+.letter-body > * { margin: 0 0 14px; }
+.letter-body > *:last-child { margin-bottom: 0; }
+.pq-measure .pqm-lhead, .pq-measure .pqm-lcont, .pq-measure .pqm-lbody,
+.pq-measure .pqm-lsig, .pq-measure .pqm-lfooter { display: flow-root; }
 .print-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
 .print-center { flex-shrink: 0; }
 .print-center .hayat-logo { width: 130px; height: 130px; object-fit: contain; display: block; }
@@ -11096,6 +11091,123 @@ function NotificationBell({ userId }) {
   );
 }
 
+/* ===================== دليل الاستخدام / آخر التحديثات ===================== */
+function ChangelogButton({ user }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className="notif-btn" onClick={()=>setOpen(true)} title="دليل الاستخدام وآخر التحديثات">❓</button>
+      {open && <ChangelogModal user={user} onClose={()=>setOpen(false)}/>}
+    </>
+  );
+}
+
+function ChangelogModal({ user, onClose }) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const isAdmin = user?.role === 'admin';
+
+  const load = () => {
+    sb.from('changelog_entries').select('*').order('created_at', {ascending:false})
+      .then(({data}) => { setEntries(data||[]); setLoading(false); });
+  };
+  useEffect(() => { load(); }, []);
+
+  const del = async (id) => {
+    if (!confirm('حذف هذا التحديث؟')) return;
+    await sb.from('changelog_entries').delete().eq('id', id);
+    load();
+  };
+
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('ar-JO', {year:'numeric', month:'long', day:'numeric'});
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:560}}>
+        <div className="modal-header">
+          <span className="modal-title">📖 دليل الاستخدام وآخر التحديثات</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {isAdmin && (
+            <button className="btn btn-primary btn-sm" style={{marginBottom:14}} onClick={()=>{setEditing(null);setShowForm(true);}}>+ إضافة تحديث جديد</button>
+          )}
+          {loading ? <div style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>جارٍ التحميل...</div>
+          : entries.length===0 ? <div className="empty-state"><p>لا توجد تحديثات بعد</p></div>
+          : (
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              {entries.map(e => (
+                <div key={e.id} style={{padding:'12px 14px',borderRadius:8,background:'#f8fafc',border:'1px solid var(--gray-200)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}}>
+                    <div style={{fontWeight:700,fontSize:14,color:'var(--primary)'}}>📌 {e.title}</div>
+                    <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+                      <span style={{fontSize:11,color:'var(--gray-400)',whiteSpace:'nowrap'}}>{fmtDate(e.created_at)}</span>
+                      {isAdmin && <>
+                        <button onClick={()=>{setEditing(e);setShowForm(true);}} style={{background:'none',border:'none',cursor:'pointer',color:'var(--primary)',fontSize:13}} title="تعديل">✏️</button>
+                        <button onClick={()=>del(e.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--danger)',fontSize:13}} title="حذف">🗑️</button>
+                      </>}
+                    </div>
+                  </div>
+                  {e.description && <div style={{fontSize:13,color:'var(--gray-700)',marginTop:6,whiteSpace:'pre-wrap'}}>{e.description}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {showForm && <ChangelogForm entry={editing} user={user} onClose={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);load();}}/>}
+    </div>
+  );
+}
+
+function ChangelogForm({ entry, user, onClose, onSaved }) {
+  const [title, setTitle] = useState(entry?.title||'');
+  const [description, setDescription] = useState(entry?.description||'');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!title.trim()) { toast('أدخل عنوان التحديث', 'error'); return; }
+    setSaving(true);
+    let error;
+    if (entry) {
+      ({error} = await sb.from('changelog_entries').update({ title: title.trim(), description: description.trim()||null }).eq('id', entry.id));
+    } else {
+      ({error} = await sb.from('changelog_entries').insert({ title: title.trim(), description: description.trim()||null, created_by: user?.id }));
+    }
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(entry ? 'تم تعديل التحديث ✓' : 'تمت الإضافة ✓', 'success');
+    onSaved();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:440}}>
+        <div className="modal-header">
+          <span className="modal-title">{entry ? '✏️ تعديل تحديث' : '+ تحديث جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">العنوان *</label>
+            <input className="form-control" value={title} onChange={e=>setTitle(e.target.value)} placeholder="مثال: رابط المنتج بالطباعة"/>
+          </div>
+          <div className="form-group" style={{marginBottom:0}}>
+            <label className="form-label">الوصف</label>
+            <textarea className="form-control" rows={4} value={description} onChange={e=>setDescription(e.target.value)} placeholder="وصف قصير للميزة أو التحديث..." style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={submit} disabled={!title.trim()||saving}>{saving ? '...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== OFFICIAL LETTERS — الكتب الرسمية ===================== */
 const LETTER_CATS = [
   { id:'circular', label:'تعميم' },
@@ -11727,6 +11839,92 @@ function LetterPrint({ letter, onClose }) {
     return parts.length===3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : d;
   };
 
+  const infoTable = (
+    <table className="letter-info-table" dir="rtl">
+      <tbody>
+        <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
+        <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
+        <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
+        <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
+        <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
+      </tbody>
+    </table>
+  );
+  const letterHead = withHeader ? <PqDocHeader/> : <div style={{height:'46mm'}}/>;
+  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : <div style={{height:'46mm'}}/>;
+  const letterSig = (
+    <div className="letter-sig">
+      {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
+      {letter.signer_name  && <div className="sig-name">{letter.signer_name}</div>}
+    </div>
+  );
+
+  /* نص الكتاب (HTML خام من محرر النصوص) إلى مصفوفة "كتل" — كل عنصر من المستوى
+     الأول (فقرة/جدول/إلخ) يُعامَل كوحدة توزيع لا تتجزأ بين الصفحات، تماماً كصفوف
+     جدول عروض الأسعار — فيتوزّع نص الكتاب الطويل على صفحات A4 حقيقية بدل القص. */
+  const bodyBlocks = React.useMemo(() => {
+    const div = document.createElement('div');
+    div.innerHTML = letter.body || '';
+    const out = [];
+    Array.from(div.childNodes).forEach(node => {
+      if (node.nodeType === 1) out.push(node.outerHTML);
+      else if (node.nodeType === 3 && node.textContent.trim()) {
+        const p = document.createElement('p');
+        p.textContent = node.textContent;
+        out.push(p.outerHTML);
+      }
+    });
+    return out.length ? out : ['<p></p>'];
+  }, [letter.body]);
+
+  const [pages, setPages] = React.useState(null);
+  const measureRef = React.useRef(null);
+  const pagesSigRef = React.useRef('');
+
+  React.useLayoutEffect(() => {
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const headH = H(mEl.querySelector('.pqm-lhead'));
+      const contH = H(mEl.querySelector('.pqm-lcont'));
+      const bodyEl = mEl.querySelector('.pqm-lbody');
+      const blockHs = Array.from(bodyEl ? bodyEl.children : []).map(el => {
+        const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
+        return H(el) + mb;
+      });
+      const sigH = H(mEl.querySelector('.pqm-lsig'));
+      const footH = H(mEl.querySelector('.pqm-lfooter'));
+
+      // مساحة المحتوى المتاحة بكل صفحة: فوتر حقيقي مقاس لو فيه ترويسة،
+      // أو هامش ثابت 28مم لو الطباعة على ورق مطبوع مسبقاً (بدون فوتر النظام)
+      const reserveMm = withHeader ? (PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap) : 28;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      // 30px = margin-top الثابت لـ .letter-body (فجوة قبل أول كتلة بكل صفحة)
+      const BODY_GAP = 30;
+      const out = [];
+      let cur = [], used = headH + BODY_GAP, first = true;
+      blockHs.forEach((bh, i) => {
+        if (used + bh > contentPx && cur.length > 0) {
+          out.push({ blocks: cur, first, tail: false });
+          cur = []; used = contH + BODY_GAP; first = false;
+        }
+        cur.push(i); used += bh;
+      });
+      if (used + sigH <= contentPx) {
+        out.push({ blocks: cur, first, tail: true });
+      } else {
+        out.push({ blocks: cur, first, tail: false });
+        out.push({ blocks: [], first: false, tail: true });
+      }
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  });
+
   const onStampPointerDown = (e) => {
     e.preventDefault();
     const startX = e.clientX, startY = e.clientY;
@@ -11903,44 +12101,39 @@ function LetterPrint({ letter, onClose }) {
           </div>
         )}
         <div className="modal-body pq-preview-body" id="letter-print-content">
-          <div className="letter-page" style={withHeader ? {paddingTop:'6mm'} : {paddingTop:'52mm', paddingBottom:'28mm'}}>
-
-            <table className="letter-page-table">
-              <tbody><tr><td>
-
-                {withHeader && <PqDocHeader/>}
-
-                <table className="letter-info-table" dir="rtl">
-                  <tbody>
-                    <tr><td className="letter-label">السادة</td><td style={{minWidth:220}}>{letter.recipient}</td></tr>
-                    <tr><td className="letter-label">عناية</td><td>{letter.attention || '—'}</td></tr>
-                    <tr><td className="letter-label">التاريخ</td><td>{fmtD(letter.date)}</td></tr>
-                    <tr><td className="letter-label">الموضوع</td><td><strong>{letter.subject}</strong></td></tr>
-                    <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
-                  </tbody>
-                </table>
-
-                <div className="letter-body" dir="rtl" dangerouslySetInnerHTML={{__html: letter.body}}/>
-
-                <div className="letter-sig">
-                  {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
-                  {letter.signer_name  && <div className="sig-name">{letter.signer_name}</div>}
-                </div>
-
-              </td></tr></tbody>
-              {withHeader && (
-                <tfoot><tr><td><PqFooterBar/></td></tr></tfoot>
-              )}
-            </table>
-
-            {showSig && (
-              <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
-                   onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
-                <div className="pq-stamp-resize" onPointerDown={onStampResizeDown} title="اسحب للتكبير/التصغير"></div>
-                <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
-              </div>
-            )}
+          {/* حاوية قياس مخفية — بعرض منطقة المحتوى الفعلية داخل الصفحة */}
+          <div className="pq-measure" ref={measureRef} aria-hidden="true">
+            <div className="pq-measure-inner" dir="rtl">
+              <div className="pqm-lhead">{letterHead}{infoTable}</div>
+              <div className="pqm-lcont">{letterContHead}</div>
+              <div className="letter-body pqm-lbody" dir="rtl" dangerouslySetInnerHTML={{__html: bodyBlocks.join('')}}/>
+              <div className="pqm-lsig">{letterSig}</div>
+              <div className="pqm-lfooter">{withHeader && <PqFooterBar/>}</div>
+            </div>
           </div>
+
+          {/* الصفحات النهائية — ما تراه هنا هو ما يُطبع حرفياً */}
+          {(pages || [{blocks: bodyBlocks.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
+            <div className="pq-page" key={pi}>
+              <div className="pq-page-inner" dir="rtl">
+                {pg.first ? letterHead : letterContHead}
+                {pg.first && infoTable}
+                {pg.blocks.length > 0 && (
+                  <div className="letter-body" dir="rtl" dangerouslySetInnerHTML={{__html: pg.blocks.map(i => bodyBlocks[i]).join('')}}/>
+                )}
+                {pg.tail && letterSig}
+              </div>
+              {pg.tail && showSig && (
+                <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
+                     onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
+                  <div className="pq-stamp-resize" onPointerDown={onStampResizeDown} title="اسحب للتكبير/التصغير"></div>
+                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
+                </div>
+              )}
+              {withHeader && <PqFooterBar/>}
+              {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -14039,6 +14232,7 @@ function App() {
           <span className="topbar-title">{titles[page]||''}</span>
           <div className="flex items-center gap-3">
             <span className="topbar-date" style={{fontSize:12,color:'var(--gray-400)'}}>{new Date().toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span>
+            <ChangelogButton user={user}/>
             <NotificationBell userId={user?.id}/>
           </div>
         </div>
