@@ -1949,6 +1949,13 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
           <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{item.item_name}</span>
           {unavail && <span style={{color:'#dc2626',fontWeight:800,fontSize:11}}> — {isEn ? 'NOT AVAILABLE' : 'غير متوفر'}</span>}
           {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
+          {item.product_url && (
+            <div>
+              <a href={item.product_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10,fontWeight:700,color:'#fff',background:'#2563eb',textDecoration:'none',borderRadius:4,padding:'1px 7px',display:'inline-block',marginTop:2}}>
+                🔗 {isEn ? 'View Product' : 'رابط المنتج'}
+              </a>
+            </div>
+          )}
         </td>
         <td className="unit-cell">{item.unit||'EACH'}</td>
         <td>{item.quantity}</td>
@@ -2517,7 +2524,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
         item_name: i.item_name, description: i.description||'',
         unit: i.unit||'EACH', quantity: i.quantity||1, unit_price: i.unit_price||'',
         tax_pct: i.tax_pct??16, origin: i.origin||'CHINA', delivery: i.delivery||'PROMPT',
-        notes: i.notes||'', option_group: i.option_group||null,
+        notes: i.notes||'', option_group: i.option_group||null, product_url: i.product_url||null,
       }));
     }
     return [{ item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:16, origin:'CHINA', delivery:'PROMPT', notes:'' }];
@@ -2784,6 +2791,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
         unit_price: parseFloat(i.unit_price)||0,
         tax_pct: (i.tax_pct===''||i.tax_pct==null) ? (parseFloat(form.tax_pct)||0) : (parseFloat(i.tax_pct)||0),
         option_group: i.option_group || null,
+        product_url: i.product_url || null,
         origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
         delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
         notes: i.notes,
@@ -3147,6 +3155,10 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                           <button type="button" onClick={()=>addAlternative(i)} style={{background:'none',border:'none',color:'var(--primary)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>＋ خيار بديل</button>
                           <button type="button" onClick={()=>setItem(i,'notes', unavail ? '' : UNAVAIL_FLAG)} style={{background:'none',border:'none',color: unavail ? '#dc2626' : 'var(--gray-400)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>
                             {unavail ? '✕ إلغاء "غير متوفر"' : '🚫 وضع كغير متوفر'}
+                          </button>
+                          <button type="button" onClick={()=>{ let url = window.prompt('رابط المنتج على موقعكم:', item.product_url||''); if (url === null) return; url = url.trim(); if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url; setItem(i,'product_url', url||null); }}
+                            style={{background:'none',border:'none',color: item.product_url ? '#2563eb' : 'var(--gray-400)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>
+                            {item.product_url ? '🔗 تعديل الرابط' : '🔗 إضافة رابط المنتج'}
                           </button>
                           {grouped && (isCounted
                             ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
@@ -5201,7 +5213,7 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         unit_price: parseFloat(i.unit_price)||0,
         origin: (!i.origin||i.origin==='__custom__') ? 'CHINA' : i.origin,
         delivery: (!i.delivery||i.delivery==='__custom__') ? 'PROMPT' : i.delivery,
-        notes: i.notes||''
+        notes: i.notes||'', product_url: i.product_url||null,
       }));
       if (itemRows.length) {
         const { error: insErr } = await sb.from('quotation_items').insert(itemRows);
