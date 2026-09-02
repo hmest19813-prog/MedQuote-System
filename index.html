@@ -4527,7 +4527,7 @@ function QuotesList({ user, quotes, onReload }) {
                   </div>
                   <div className="qcard-customer">{q.customer_name}</div>
                   {q.needs_pricing && (
-                    <div style={{fontSize:11,fontWeight:700,color:'#b45309',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,padding:'3px 8px',margin:'4px 0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}
+                    <div style={{fontSize:11,fontWeight:700,color:'#b45309',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,padding:'3px 8px',margin:'4px 0',whiteSpace:'normal',wordBreak:'break-word'}}
                       title={`بحاجة تسعير من ${profiles[q.pricing_requested_to]||'—'}${q.pricing_note?' — '+q.pricing_note:''}`}>
                       🏷️ بحاجة تسعير من {profiles[q.pricing_requested_to]||'—'}{q.pricing_note?` — ${q.pricing_note}`:''}
                     </div>
@@ -4563,9 +4563,9 @@ function QuotesList({ user, quotes, onReload }) {
                   <td>
                     {q.customer_name}
                     {q.needs_pricing && (
-                      <div style={{fontSize:10.5,fontWeight:700,color:'#b45309',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,padding:'2px 7px',marginTop:3,display:'block',maxWidth:150,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}
+                      <div style={{fontSize:10.5,fontWeight:700,color:'#b45309',background:'#fef3c7',border:'1px solid #fde68a',borderRadius:6,padding:'2px 7px',marginTop:3,display:'block',whiteSpace:'normal',wordBreak:'break-word'}}
                         title={`بحاجة تسعير من ${profiles[q.pricing_requested_to]||'—'}${q.pricing_note?' — '+q.pricing_note:''}`}>
-                        🏷️ بحاجة تسعير من {profiles[q.pricing_requested_to]||'—'}
+                        🏷️ بحاجة تسعير من {profiles[q.pricing_requested_to]||'—'}{q.pricing_note?` — ${q.pricing_note}`:''}
                       </div>
                     )}
                   </td>
