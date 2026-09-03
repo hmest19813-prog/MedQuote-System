@@ -4520,29 +4520,36 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th style={{width:110}}>المرجع</th><th>الحالة</th><th>تغيير الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr>
+                <th style={{width:88,whiteSpace:'nowrap'}}>الرقم</th>
+                <th style={{width:160}}>العميل</th>
+                <th style={{width:165}}>المرجع</th>
+                <th style={{width:96}}>التاريخ</th>
+                <th style={{width:128}}>تغيير الحالة</th>
+                <th style={{width:100}}>إجراءات</th>
+                {canViewIssuer && <th style={{width:96}}>المُصدِر</th>}
+              </tr>
             </thead>
             <tbody>
               {filteredTenders.map(q => (
                 <tr key={q.id}>
-                  <td className="font-bold" style={{color:'#854d0e', whiteSpace:'nowrap'}}>{q.number}</td>
-                  <td style={{width:160, whiteSpace:'normal', wordBreak:'break-word'}}>{q.customer_name}</td>
-                  <td className="text-sm text-muted" style={{textAlign:'center'}}>
+                  <td className="font-bold" style={{color:'#854d0e',whiteSpace:'nowrap',padding:'8px 10px'}}>{q.number}</td>
+                  <td style={{width:160,whiteSpace:'normal',wordBreak:'break-word',padding:'8px 10px'}}>{q.customer_name}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center',padding:'8px 6px'}}>{q.reference||'—'}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center',padding:'8px 6px'}}>
                     {q.date}
                     {q.valid_until && (() => {
                       const expired = new Date(q.valid_until) < new Date();
-                      return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت الصلاحية':`✓ صالح حتى ${q.valid_until}`}</div>;
+                      return <div style={{fontSize:10,marginTop:2,color:expired?'#dc2626':'#16a34a',fontWeight:600}}>{expired?'⚠️ انتهت':`✓ حتى ${q.valid_until}`}</div>;
                     })()}
                   </td>
-                  <td className="text-sm text-muted" style={{textAlign:'center', width:110}}>{q.reference||'—'}</td>
-                  <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
-                  <td style={{textAlign:'center'}}>
+                  <td style={{textAlign:'center',padding:'8px 6px'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
                       {Object.entries(SL).filter(([k])=>!['draft','approved','invoiced'].includes(k)).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
                   </td>
-                  <td>
+                  <td style={{textAlign:'center',padding:'8px 6px',whiteSpace:'nowrap'}}>
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
@@ -4555,10 +4562,10 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
                   </td>
-                  {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
+                  {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center',whiteSpace:'nowrap',padding:'8px 6px'}}>{profiles[q.created_by] || '—'}</td>}
                 </tr>
               ))}
-              {filteredTenders.length===0 && <tr><td colSpan={canViewIssuer?8:7}><div className="empty-state"><p>لا توجد عطاءات</p></div></td></tr>}
+              {filteredTenders.length===0 && <tr><td colSpan={canViewIssuer?7:6}><div className="empty-state"><p>لا توجد عطاءات</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -4707,7 +4714,7 @@ function QuotesList({ user, quotes, onReload }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>الرقم</th><th>الشركة</th><th style={{width:160}}>العميل</th><th>التاريخ</th><th>الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
+              <tr><th>الرقم</th><th style={{width:160}}>العميل</th><th>الشركة</th><th>التاريخ</th><th>الحالة</th><th>إجراءات</th>{canViewIssuer && <th>المُصدِر</th>}</tr>
             </thead>
             <tbody>
               {filteredAltCo.map(q => {
@@ -4715,8 +4722,8 @@ function QuotesList({ user, quotes, onReload }) {
                 return (
                 <tr key={q.id}>
                   <td className="font-bold" style={{color:co?.accent||'#6d28d9',whiteSpace:'nowrap'}}>{q.number}</td>
-                  <td style={{fontSize:12,fontWeight:700,color:co?.accent||'#6d28d9',whiteSpace:'nowrap'}}>{co?.name_ar||q.issuer_company}</td>
                   <td style={{width:160,whiteSpace:'normal',wordBreak:'break-word'}}>{q.customer_name}</td>
+                  <td style={{fontSize:12,fontWeight:700,color:co?.accent||'#6d28d9',whiteSpace:'nowrap'}}>{co?.name_ar||q.issuer_company}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{q.date}</td>
                   <td style={{textAlign:'center'}}><SBadge status={q.status}/></td>
                   <td>
