@@ -3913,24 +3913,69 @@ function QuotesList({ user, quotes, onReload }) {
       }
 
       // استخراج البنود
+      // عمود "No." قد يكون: رقم صحيح (بند عادي) — أو "رقم-حرف" مثل "2-a"/"27-b" (خيار بديل
+      // ضمن مجموعة بنفس الرقم المشترك، يُربط عبر option_group) — أو فاضي (صف تكميلي تابع
+      // للبند السابق: إمّا نص مواصفات إضافي، أو مكوّن سعري يُجمع ضمن رأس مجموعة بلا سعر مباشر
+      // مثل "28-a"، أو بند إضافي مستقل السعر تحت رقم مشترك بلا حرف مثل بند 25).
       const items = [];
+      let currentItem = null;
+      let currentIsBundle = false; // آخر بند مُضاف بلا سعر خاص فيه — يجمع المكوّنات التالية ضمنه
       for (let i = headerRowIdx + 1; i < data.length; i++) {
         const row = data[i];
-        const no = row[0];
-        if (!no || typeof no !== 'number' || !Number.isInteger(no) || no <= 0) continue;
+        const noStr = String(row[0] || '').trim();
         const itemName = String(row[1] || '').trim();
-        if (!itemName) continue;
-        const unit = (String(row[2] || 'EACH').trim().toUpperCase()) || 'EACH';
-        const qty = parseFloat(row[3]) || 1;
-        const rawPrice = row[4];
-        const unitPrice = (rawPrice === 'XX' || rawPrice === '' || rawPrice == null) ? 0 : (parseFloat(rawPrice) || 0);
-        const origin = (String(row[6] || 'CHINA').trim().toUpperCase()) || 'CHINA';
-        const notes = String(row[8] || '').trim();
-        items.push({ sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, origin, delivery: 'PROMPT', notes });
+        const rawQty = row[3], rawPrice = row[4];
+        const hasPriceData = rawPrice !== '' && rawPrice != null && rawPrice !== 'XX';
+        const altMatch = noStr.match(/^(\d+)\s*-\s*([a-zA-Z])$/);
+        const isPlainNo = noStr !== '' && /^\d+$/.test(noStr);
+
+        if (altMatch || isPlainNo) {
+          if (!itemName && !hasPriceData) continue;
+          const unit = (String(row[2] || 'EACH').trim().toUpperCase()) || 'EACH';
+          const qty = parseFloat(rawQty) || 1;
+          const unitPrice = hasPriceData ? (parseFloat(rawPrice) || 0) : 0;
+          const origin = (String(row[6] || 'CHINA').trim().toUpperCase()) || 'CHINA';
+          const notes = String(row[8] || '').trim();
+          const option_group = altMatch ? ('imp-' + altMatch[1]) : null;
+          currentItem = { sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, origin, delivery: 'PROMPT', notes, option_group };
+          currentIsBundle = !hasPriceData;
+          items.push(currentItem);
+          continue;
+        }
+
+        if (!currentItem) continue; // نص يسبق أول بند فعلي — يُتجاهل
+        if (hasPriceData) {
+          const subQty = parseFloat(rawQty) || 1;
+          const subPrice = parseFloat(rawPrice) || 0;
+          if (currentIsBundle) {
+            // رأس مجموعة بديلة بلا سعر مباشر (مثل "28-a") — نجمع مكوّناتها ضمن نفس البند
+            currentItem.unit_price = (parseFloat(currentItem.unit_price) || 0) + subQty * subPrice;
+            currentItem.quantity = 1;
+            if (itemName) currentItem.item_name += (currentItem.item_name ? '\n' : '') + itemName;
+          } else {
+            // مكوّن له سعره وكميته الخاصة بلا رقم مستقل (مثل تابع بند 25) — بند منفصل يُحتسب بالكامل
+            currentItem = {
+              sort_order: items.length,
+              item_name: itemName || currentItem.item_name,
+              unit: (String(row[2] || currentItem.unit).trim().toUpperCase()) || 'EACH',
+              quantity: subQty, unit_price: subPrice,
+              origin: (String(row[6] || currentItem.origin).trim().toUpperCase()) || 'CHINA',
+              delivery: 'PROMPT', notes: String(row[8] || '').trim(), option_group: null,
+            };
+            currentIsBundle = false;
+            items.push(currentItem);
+          }
+        } else if (itemName) {
+          // نص مواصفات تكميلي فقط (بلا سعر) — يُلحق بوصف آخر بند
+          currentItem.item_name += (currentItem.item_name ? '\n' : '') + itemName;
+        }
       }
       if (!items.length) { toast('لم يتم العثور على أصناف في الملف', 'error'); return; }
 
-      const subtotal = items.reduce((s, it) => s + it.quantity * it.unit_price, 0);
+      // المجموع يُحسب مثل بقية النظام: ضمن كل مجموعة خيارات بديلة (نفس option_group)
+      // يُحتسب الخيار الأعلى قيمة فقط — بقية البدائل تُستورد وتُعرض لكن لا تُضاف للمجموع
+      const counted = pickCountedIndices(items, 0);
+      const subtotal = items.reduce((s, it, idx) => counted.has(idx) ? s + it.quantity * it.unit_price : s, 0);
       const todayStr = today();
       const valid_until = addDays(todayStr, QUOTE_VALIDITY_DAYS);
 
