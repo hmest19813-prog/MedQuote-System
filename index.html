@@ -3935,9 +3935,11 @@ function QuotesList({ user, quotes, onReload }) {
           const qty = parseFloat(rawQty) || 1;
           const unitPrice = hasPriceData ? (parseFloat(rawPrice) || 0) : 0;
           const origin = (String(row[6] || 'CHINA').trim().toUpperCase()) || 'CHINA';
-          const notes = String(row[8] || '').trim();
+          const delivery = String(row[7] || '').trim() || 'PROMPT';
+          // عمود "Warranty" بالإكسل (index 8) لا يُستورد: لا يوجد له عمود بالنظام، وحقل notes
+          // مخصص حصراً كعلامة "غير متوفر" (UNAVAIL_FLAG) — لا يُعرض بأي مكان كنص حر.
           const option_group = altMatch ? ('imp-' + altMatch[1]) : null;
-          currentItem = { sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, origin, delivery: 'PROMPT', notes, option_group };
+          currentItem = { sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, origin, delivery, notes: '', option_group };
           currentIsBundle = !hasPriceData;
           items.push(currentItem);
           continue;
@@ -3960,7 +3962,8 @@ function QuotesList({ user, quotes, onReload }) {
               unit: (String(row[2] || currentItem.unit).trim().toUpperCase()) || 'EACH',
               quantity: subQty, unit_price: subPrice,
               origin: (String(row[6] || currentItem.origin).trim().toUpperCase()) || 'CHINA',
-              delivery: 'PROMPT', notes: String(row[8] || '').trim(), option_group: null,
+              delivery: String(row[7] || currentItem.delivery || '').trim() || 'PROMPT',
+              notes: '', option_group: null,
             };
             currentIsBundle = false;
             items.push(currentItem);
@@ -3977,7 +3980,18 @@ function QuotesList({ user, quotes, onReload }) {
       const counted = pickCountedIndices(items, 0);
       const subtotal = items.reduce((s, it, idx) => counted.has(idx) ? s + it.quantity * it.unit_price : s, 0);
       const todayStr = today();
-      const valid_until = addDays(todayStr, QUOTE_VALIDITY_DAYS);
+      // مدة الصلاحية: نقرأها من نص الملف لو منصوص عليها صراحة (مثال: "مدة صلاحية العرض 120 يوما"
+      // أو "Validity: 120 days")، وإلا نرجع للافتراضي الثابت بالنظام
+      let validityDays = QUOTE_VALIDITY_DAYS;
+      outer: for (const row of data) {
+        for (const cell of row) {
+          const s = String(cell || '');
+          if (!/صلاحي|validity/i.test(s)) continue;
+          const m = s.match(/(\d{1,4})\s*(يوم|day)/i);
+          if (m) { validityDays = parseInt(m[1], 10); break outer; }
+        }
+      }
+      const valid_until = addDays(todayStr, validityDays);
 
       const { data: q, error: qErr } = await sb.from('quotations').insert({
         customer_name: customer_name || '',
@@ -3996,7 +4010,7 @@ function QuotesList({ user, quotes, onReload }) {
       }).select().single();
       if (qErr) throw qErr;
 
-      const { error: iErr } = await sb.from('quotation_items').insert(items.map(it => ({ ...it, quotation_id: q.id })));
+      const { error: iErr } = await sb.from('quotation_items').insert(items.map(it => ({ ...it, quotation_id: q.id, tax_pct: 0 })));
       if (iErr) throw iErr;
 
       upsertItemHistory(items.map(it => it.item_name));
