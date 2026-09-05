@@ -18,5 +18,8 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           include: |
             index.html
+            manifest.json
+            sw.js
+            Hayat logo.png
             lib/**
           dangerous-clean-slate: false

@@ -1,0 +1,19 @@
+# تبعيات محلية
+node_modules/
+
+# إعدادات Claude Code المحلية
+.claude/
+
+# ملفات عمل شخصية / عروض أسعار عملاء — مو جزء من كود التطبيق
+*.xlsx
+*.docx
+*.pdf
+cv-taha-alawi.html
+print-design-editable.html
+tes7.png.png
+verify_03_quotes.png
+Gemini_Generated_Image_4x6fza4x6fza4x6f (2).png
+مواصفات-صفحة-ادارة-العقارات.md
+اتفاقيات/
+تعاميم/
+شركات اخرى/
