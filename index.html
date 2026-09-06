@@ -850,7 +850,7 @@ th:last-child, td:last-child { border-left: none; }
 .inbox-type-other   { background: #f3f4f6; color: #6b7280; }
 
 @media (max-width: 768px) {
-  .chat-fab { bottom: 72px; left: 12px; width: 48px; height: 48px; }
+  .chat-fab { bottom: 72px; left: 12px; width: 48px; height: 48px; z-index: 140; }
   .chat-panel { bottom: 126px; left: 8px; right: 8px; width: auto; max-height: 65vh; border-radius: 16px; }
 }
 
@@ -858,7 +858,7 @@ th:last-child, td:last-child { border-left: none; }
 @media (max-width: 768px) {
   .sidebar { transform: translateX(100%); transition: transform .28s cubic-bezier(.4,0,.2,1); }
   .sidebar.mobile-open { transform: translateX(0); }
-  .main { margin-right: 0; }
+  .main { margin-right: 0; min-width: 0; }
   .topbar { padding: 0 14px; }
   .topbar-title { font-size: 15px; }
   .topbar-date { display: none !important; }
@@ -884,6 +884,8 @@ th:last-child, td:last-child { border-left: none; }
   .qcard-actions .btn { flex: 1 1 calc(33% - 7px); justify-content: center; font-size: 13px; padding: 10px 6px; min-width: 82px; }
   .filter-bar { flex-direction: column; gap: 8px; }
   .filter-bar .search-input, .filter-bar .form-control { width: 100% !important; max-width: 100% !important; }
+  .qtabs-row { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .qtabs-row button { flex: 0 0 auto; }
 
   /* Toast above bottom nav */
   .toast-container { bottom: 76px !important; left: 10px !important; right: 10px !important; }
@@ -4351,7 +4353,7 @@ function QuotesList({ user, quotes, onReload }) {
       </div>
 
       {/* تبويبات */}
-      <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)'}}>
+      <div className="qtabs-row" style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)'}}>
         <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='official'?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='official'?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
           عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
         </button>
