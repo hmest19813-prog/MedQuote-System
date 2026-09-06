@@ -6982,7 +6982,7 @@ const printDoc = (containerId, title) => {
       @page { margin: 0; size: A4 portrait; }
       #temp-print-div { position: static !important; left: auto !important; width: 100% !important; }
       #temp-print-div .pq-measure { display: none !important; }
-      #temp-print-div .pq-page { margin: 0 auto !important; box-shadow: none !important; height: 296.8mm !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
+      #temp-print-div .pq-page { transform: none !important; margin: 0 auto !important; box-shadow: none !important; height: 296.8mm !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
       #temp-print-div .pq-page:last-child { page-break-after: auto; break-after: auto; }
     }
   `;
@@ -6991,12 +6991,25 @@ const printDoc = (containerId, title) => {
   const originalTitle = document.title;
   if (title) document.title = title;
 
-  window.print();
+  // على الموبايل window.print() ما "يجمّد" الكود متل الكمبيوتر — لو نظّفنا
+  // المحتوى المؤقت فوراً بعد الاستدعاء، بيصير نظام الطباعة ياخد صورة من
+  // شاشة فاضية (صفحة بيضاء). afterprint بيضمن التنظيف بعد انتهاء الطباعة
+  // فعلياً على كل المتصفحات، مع مهلة احتياطية لو المتصفح ما أطلق الحدث.
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    window.removeEventListener('afterprint', cleanup);
+    clearTimeout(fallbackTimer);
+    document.title = originalTitle;
+    document.head.removeChild(printStyle);
+    body.removeChild(printDiv);
+    allChildren.forEach((child, i) => { child.style.cssText = originalStyles[i]; });
+  };
+  window.addEventListener('afterprint', cleanup);
+  const fallbackTimer = setTimeout(cleanup, 3000);
 
-  document.title = originalTitle;
-  document.head.removeChild(printStyle);
-  body.removeChild(printDiv);
-  allChildren.forEach((child, i) => { child.style.cssText = originalStyles[i]; });
+  window.print();
 };
 
 /* ===================== CUSTOMERS ===================== */
