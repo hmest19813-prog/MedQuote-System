@@ -6962,9 +6962,15 @@ function UsersPage({ currentUser }) {
    - @page margin:0 → يشيل رأس/تذييل المتصفح (التاريخ، العنوان، الرابط، رقم الصفحة)
    - thead = هامش علوي متكرر، tfoot = الفوتر (يتكرّر أسفل كل صفحة ويحجز مساحته)
    - نقيس المحتوى بعرض A4 الحقيقي ونملأ الخلية بحيث يستقر الفوتر أسفل الصفحة الأخيرة */
+let __pendingPrintCleanup = null;
 const printDoc = (containerId, title) => {
   const el = document.getElementById(containerId);
   if (!el) return;
+
+  // لو فيه طباعة سابقة لسا ما اكتمل تنظيفها (بيصير بالموبايل لو المستخدم
+  // رجع يطبع بسرعة قبل ما ينتهي تنظيف المحاولة السابقة)، خلّصها فوراً حتى
+  // ما تتضارب مع هاي المحاولة الجديدة.
+  if (__pendingPrintCleanup) __pendingPrintCleanup();
 
   const body = document.body;
   const allChildren = Array.from(body.children);
@@ -6995,19 +7001,19 @@ const printDoc = (containerId, title) => {
   // المحتوى المؤقت فوراً بعد الاستدعاء، بيصير نظام الطباعة ياخد صورة من
   // شاشة فاضية (صفحة بيضاء). afterprint بيضمن التنظيف بعد انتهاء الطباعة
   // فعلياً على كل المتصفحات، مع مهلة احتياطية لو المتصفح ما أطلق الحدث.
-  let cleaned = false;
   const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
+    if (__pendingPrintCleanup !== cleanup) return;
+    __pendingPrintCleanup = null;
     window.removeEventListener('afterprint', cleanup);
     clearTimeout(fallbackTimer);
     document.title = originalTitle;
-    document.head.removeChild(printStyle);
-    body.removeChild(printDiv);
+    if (printStyle.parentNode) document.head.removeChild(printStyle);
+    if (printDiv.parentNode) body.removeChild(printDiv);
     allChildren.forEach((child, i) => { child.style.cssText = originalStyles[i]; });
   };
+  __pendingPrintCleanup = cleanup;
   window.addEventListener('afterprint', cleanup);
-  const fallbackTimer = setTimeout(cleanup, 3000);
+  const fallbackTimer = setTimeout(cleanup, 8000);
 
   window.print();
 };
