@@ -1,6 +1,10 @@
 # تبعيات محلية
 node_modules/
 
+# ملفات تطبيق أندرويد (APK/keystore) — مو كود، ومفتاح التوقيع سرّي
+android-app/
+*.apk
+
 # إعدادات Claude Code المحلية
 .claude/
 
