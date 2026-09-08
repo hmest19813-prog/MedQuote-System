@@ -262,13 +262,6 @@ th:last-child, td:last-child { border-left: none; }
 .letter-sig .sig-title { font-weight: 700; text-decoration: underline; }
 .letter-sig .sig-name { margin-top: 8px; font-weight: 600; }
 .badge-cat { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-.badge-cat-circular { background: #fef9c3; color: #854d0e; }
-.badge-cat-decision { background: #fce7f3; color: #be185d; }
-.badge-cat-agreement { background: #ede9fe; color: #6d28d9; }
-.badge-cat-tenders { background: #d1fae5; color: #065f46; }
-.badge-cat-clearance { background: #e0f2fe; color: #0369a1; }
-.badge-cat-templates { background: #f3f4f6; color: #374151; }
-.badge-cat-other { background: #fff7ed; color: #c2410c; }
 .badge-confirmed { background: var(--info-light); color: var(--info); }
 .badge-processing { background: #ede9fe; color: #7c3aed; }
 .badge-delivered { background: var(--success-light); color: var(--success); }
@@ -11582,16 +11575,71 @@ function ChangelogForm({ entry, user, onClose, onSaved }) {
   );
 }
 
-/* ===================== OFFICIAL LETTERS — الكتب الرسمية ===================== */
-const LETTER_CATS = [
-  { id:'circular', label:'تعميم' },
-  { id:'decision', label:'قرار' },
-  { id:'agreement', label:'اتفاقية' },
-  { id:'tenders', label:'عطاءات' },
-  { id:'clearance', label:'مخالصة' },
-  { id:'templates', label:'نماذج جاهزة' },
-  { id:'other', label:'أخرى' },
+/* ===================== OFFICIAL LETTERS — الكتب الرسمية =====================
+   التصنيفات (letter_categories) صارت مخزّنة بقاعدة البيانات — راجع
+   sql_archive/letter_categories_migration.sql. الإضافة مقصورة على الأدمن (RLS).
+   المعرّفات السبعة الأساسية والفرعية اللي تحتها مزروعة بـ id ثابت بالـ seed
+   حتى تصنيفات الكتب القديمة (المخزّنة كنص مسطّح) تربط عليها صح. */
+const LETTER_CAT_OTHER_ID = '00000000-0000-0000-0000-000000000007';
+
+// تصنيفات قديمة كانت مخزّنة كقيمة مسطّحة — تُعاد لمعرّف التصنيف الجديد المكافئ لها للعرض والفلترة
+const LETTER_CAT_LEGACY_MAP = {
+  circular: '00000000-0000-0000-0000-000000000012',      // تعاميم
+  decision: '00000000-0000-0000-0000-000000000011',      // قرارات
+  agreement: '00000000-0000-0000-0000-000000000042',     // اتفاقيات
+  tenders: '00000000-0000-0000-0000-000000000031',       // عطاء
+  clearance: LETTER_CAT_OTHER_ID,
+  correspondence: LETTER_CAT_OTHER_ID,
+  communication: LETTER_CAT_OTHER_ID,
+};
+
+const letterCatNormalize = (id) => LETTER_CAT_LEGACY_MAP[id] || id;
+
+// شبكة أمان: لو جدول letter_categories لسا ما انزرع (قبل تشغيل ملف الترحيل)، نعرض عربي بدل الكود الخام
+const LETTER_CAT_LEGACY_LABELS = {
+  circular:'تعميم', decision:'قرار', agreement:'اتفاقية', tenders:'عطاءات',
+  clearance:'مخالصة', correspondence:'تراسل', communication:'تخاطب',
+  templates:'نماذج جاهزة', other:'أخرى',
+};
+const letterCatFallbackLabel = (id) => LETTER_CAT_LEGACY_LABELS[id] || id || '—';
+
+// يحوّل الصفوف المسطّحة من letter_categories (id/label/parent_id/sort_order) لشجرة رئيسي←فروع
+const buildLetterCatTree = (rows) => {
+  const list = rows || [];
+  const mains = list.filter(r => !r.parent_id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  return mains.map(m => ({
+    id: m.id,
+    label: m.label,
+    subs: list.filter(r => r.parent_id === m.id).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(s=>({id:s.id,label:s.label})),
+  }));
+};
+
+const letterCatMeta = (catTree, id) => {
+  const norm = letterCatNormalize(id);
+  for (const main of catTree) {
+    if (main.id === norm) return { main, sub: null };
+    const sub = (main.subs||[]).find(s => s.id === norm);
+    if (sub) return { main, sub };
+  }
+  return null;
+};
+
+const letterCatMainId = (catTree, id) => letterCatMeta(catTree, id)?.main.id || LETTER_CAT_OTHER_ID;
+
+const letterCatSubs = (catTree, id) => letterCatMeta(catTree, id)?.main.subs || [];
+
+// لون شارة ثابت مبني على تجزئة المعرّف — يشتغل مع أي تصنيف يضيفه الأدمن بدون تعديل CSS
+const LETTER_CAT_PALETTE = [
+  {bg:'#fce7f3',fg:'#be185d'}, {bg:'#d1fae5',fg:'#065f46'}, {bg:'#fef9c3',fg:'#854d0e'},
+  {bg:'#ede9fe',fg:'#6d28d9'}, {bg:'#e0f2fe',fg:'#0369a1'}, {bg:'#f3f4f6',fg:'#374151'},
+  {bg:'#fff7ed',fg:'#c2410c'},
 ];
+const letterCatColor = (id) => {
+  let h = 0;
+  const s = String(id||'');
+  for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return LETTER_CAT_PALETTE[h % LETTER_CAT_PALETTE.length];
+};
 
 const LETTER_ATT_OPTS = [
   'لمن يهمه الأمر','المدير العام','قسم المشتريات','مدير المشتريات',
@@ -11603,7 +11651,8 @@ function LettersPage({ user }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
-  const [catFilter, setCatFilter] = useState('all');
+  const [mainTab, setMainTab] = useState('all');
+  const [subTab, setSubTab]   = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState(null);
   const [previewing, setPreviewing] = useState(null);
@@ -11635,26 +11684,36 @@ function LettersPage({ user }) {
     return () => window.removeEventListener('resize', c);
   }, []);
 
+  const [categories, setCategories] = useState([]);
+
   const load = async () => {
-    const [{ data: l }, { data: c }] = await Promise.all([
+    const [{ data: l }, { data: c }, { data: cats }] = await Promise.all([
       sb.from('official_letters').select('*').order('number', { ascending: false }),
       sb.from('letter_contacts').select('*').order('name'),
+      sb.from('letter_categories').select('*').order('sort_order'),
     ]);
     setLetters(l || []);
     setContacts(c || []);
+    setCategories(cats || []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  const catTree = buildLetterCatTree(categories);
 
   const canManageLetters = hasPerm(user, 'letters_manage');
 
   const activeLetters  = letters.filter(l => !l.deleted_at);
   const deletedLetters = letters.filter(l => l.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
 
+  const activeMainCat = catTree.find(c => c.id === mainTab);
+  const activeSubs = activeMainCat?.subs || [];
+
   const filtered = activeLetters.filter(l => {
     const ms = !search || l.recipient?.toLowerCase().includes(search.toLowerCase()) || l.subject?.toLowerCase().includes(search.toLowerCase()) || String(l.number).includes(search);
-    const mc = catFilter === 'all' || l.category === catFilter;
-    return ms && mc;
+    const mm = mainTab === 'all' || letterCatMainId(catTree, l.category) === mainTab;
+    const sm = subTab === 'all' || letterCatNormalize(l.category) === subTab;
+    return ms && mm && sm;
   });
 
   const deleteLetter = async (reason) => {
@@ -11713,7 +11772,7 @@ function LettersPage({ user }) {
 
       const result = await mammoth.convertToHtml({ arrayBuffer });
       const guessedSubject = file.name.replace(/\.(docx|docm|dotx)$/i, '').trim();
-      setEditing({ subject: guessedSubject, body: result.value, category: 'correspondence', isImportDraft: true });
+      setEditing({ subject: guessedSubject, body: result.value, category: LETTER_CAT_OTHER_ID, isImportDraft: true });
       setShowForm(true);
       if (result.messages?.length) {
         toast('تم الاستيراد، راجع التنسيق (قد يحتاج تعديل بسيط)', 'info');
@@ -11726,9 +11785,6 @@ function LettersPage({ user }) {
       setImportBusy(false);
     }
   };
-
-  const CAT_LEGACY = {correspondence:'تراسل',communication:'تخاطب'};
-  const catLabel = (id) => LETTER_CATS.find(c => c.id === id)?.label || CAT_LEGACY[id] || id || '—';
 
   if (loading) return <LoadingScreen msg="جاري تحميل الكتب..."/>;
 
@@ -11762,12 +11818,16 @@ function LettersPage({ user }) {
       {tab==='active' && (<>
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}>
         <input className="form-control" style={{maxWidth:300}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="بحث بالرقم أو السادة أو الموضوع..."/>
-        {canManageLetters && (
-          <select className="form-control" style={{width:'auto'}} value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+        {canManageLetters && (<>
+          <select className="form-control" style={{width:'auto'}} value={mainTab} onChange={e=>{setMainTab(e.target.value);setSubTab('all');}}>
             <option value="all">كل التصنيفات</option>
-            {LETTER_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+            {catTree.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
-        )}
+          <select className="form-control" style={{width:'auto'}} value={subTab} onChange={e=>setSubTab(e.target.value)} disabled={activeSubs.length===0}>
+            <option value="all">كل التبويبات</option>
+            {activeSubs.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </>)}
         <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} كتاب</span>
       </div>
 
@@ -11778,6 +11838,7 @@ function LettersPage({ user }) {
               <tr>
                 <th>الرقم</th><th>السادة</th><th>الموضوع</th><th>التاريخ</th>
                 {canManageLetters && <th>التصنيف</th>}
+                {canManageLetters && <th>التبويب</th>}
                 <th>إجراءات</th>
               </tr>
             </thead>
@@ -11788,7 +11849,14 @@ function LettersPage({ user }) {
                   <td>{l.recipient}</td>
                   <td>{l.is_private && <span title="كتاب خاص" style={{marginLeft:6}}>🔒</span>}{l.subject}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{l.date}</td>
-                  {canManageLetters && <td style={{textAlign:'center'}}><span className={`badge-cat badge-cat-${l.category||'correspondence'}`}>{catLabel(l.category)}</span></td>}
+                  {canManageLetters && (() => {
+                    const meta = letterCatMeta(catTree, l.category);
+                    const color = letterCatColor(meta?.main.id || l.category);
+                    return (<>
+                      <td style={{textAlign:'center'}}><span className="badge-cat" style={{background:color.bg,color:color.fg}}>{meta?.main.label || letterCatFallbackLabel(l.category)}</span></td>
+                      <td className="text-sm text-muted" style={{textAlign:'center'}}>{meta?.sub?.label || '—'}</td>
+                    </>);
+                  })()}
                   <td>
                     <div className="flex gap-2">
                       <button className="btn btn-ghost btn-sm" onClick={()=>openLetter(l,'preview')} title="معاينة وطباعة">👁</button>
@@ -11798,7 +11866,7 @@ function LettersPage({ user }) {
                   </td>
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={canManageLetters?6:5}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canManageLetters?7:5}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -11846,7 +11914,7 @@ function LettersPage({ user }) {
       )}
 
       {deleteTarget && <LetterDeleteReasonModal letter={deleteTarget} onConfirm={deleteLetter} onClose={()=>setDeleteTarget(null)}/>}
-      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
+      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} categories={categories} onCategoriesChanged={load} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
       {previewing && <LetterPrint letter={previewing} onClose={()=>setPreviewing(null)}/>}
       {unlockReq && (
         <LetterUnlockModal
@@ -12034,10 +12102,10 @@ function RichTextEditor({ value, onChange, placeholder }) {
   );
 }
 
-function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
+function LetterForm({ user, letter, contacts, letters, categories, onCategoriesChanged, onSave, onClose }) {
   const [form, setForm] = useState({
     recipient:'', attention:'', date: today(), subject:'',
-    category:'correspondence', body:'',
+    category: LETTER_CAT_OTHER_ID, body:'',
     signer_name:'الدكتور محمد عقاب الجوابرة', signer_title:'الادارة',
     use_letterhead: true, is_private: false,
     ...(letter || {})
@@ -12046,6 +12114,32 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
   const [pwd, setPwd] = useState('');
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const canManageLetters = hasPerm(user, 'letters_manage');
+  const isAdmin = user?.role === 'admin';
+
+  const catTree = buildLetterCatTree(categories);
+  const currentMainId = letterCatMainId(catTree, form.category);
+  const currentMain = catTree.find(c=>c.id===currentMainId);
+  const currentSubs = currentMain?.subs || [];
+
+  const addMainCategory = async () => {
+    const label = prompt('اسم التصنيف الجديد:');
+    if (!label?.trim()) return;
+    const { data, error } = await sb.from('letter_categories').insert({ label: label.trim(), sort_order: catTree.length+1 }).select().single();
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    await onCategoriesChanged?.();
+    setF('category', data.id);
+    toast('تمت إضافة التصنيف ✓','success');
+  };
+
+  const addSubCategory = async () => {
+    const label = prompt('اسم التبويب الجديد:');
+    if (!label?.trim()) return;
+    const { data, error } = await sb.from('letter_categories').insert({ label: label.trim(), parent_id: currentMainId, sort_order: currentSubs.length+1 }).select().single();
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    await onCategoriesChanged?.();
+    setF('category', data.id);
+    toast('تمت إضافة التبويب ✓','success');
+  };
 
   const recipientList = contacts.filter(c=>c.contact_type==='recipient');
   const attentionList = contacts.filter(c=>c.contact_type==='attention');
@@ -12141,10 +12235,34 @@ function LetterForm({ user, letter, contacts, letters, onSave, onClose }) {
             </div>
             {canManageLetters ? (
               <div className="form-group">
-                <label className="form-label">التصنيف</label>
-                <select className="form-control" value={form.category} onChange={e=>setF('category',e.target.value)}>
-                  {LETTER_CATS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <label className="form-label">التصنيف</label>
+                  {isAdmin && <button type="button" onClick={addMainCategory} title="إضافة تصنيف جديد"
+                    style={{fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>+ جديد</button>}
+                </div>
+                <select className="form-control" value={currentMainId} onChange={e=>{
+                  const newMain = catTree.find(c=>c.id===e.target.value);
+                  setF('category', newMain.subs?.length ? newMain.subs[0].id : newMain.id);
+                }}>
+                  {catTree.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
                 </select>
+
+                {(currentSubs.length>0 || isAdmin) && (
+                  <div style={{marginTop:10}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <label className="form-label">التبويب</label>
+                      {isAdmin && <button type="button" onClick={addSubCategory} title="إضافة تبويب جديد"
+                        style={{fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>+ جديد</button>}
+                    </div>
+                    {currentSubs.length>0 ? (
+                      <select className="form-control" value={letterCatNormalize(form.category)} onChange={e=>setF('category',e.target.value)}>
+                        {currentSubs.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+                      </select>
+                    ) : (
+                      <div style={{fontSize:12,color:'var(--gray-400)',padding:'6px 2px'}}>لا توجد تبويبات فرعية بعد</div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : <div/>}
           </div>
