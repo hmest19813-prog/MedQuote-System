@@ -11924,7 +11924,11 @@ function LettersPage({ user }) {
       )}
 
       {deleteTarget && <LetterDeleteReasonModal letter={deleteTarget} onConfirm={deleteLetter} onClose={()=>setDeleteTarget(null)}/>}
-      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} categories={categories} onCategoriesChanged={load} onSave={()=>{setShowForm(false);load();}} onClose={()=>setShowForm(false)}/>}
+      {showForm && <LetterForm user={user} letter={editing} contacts={contacts} letters={letters} categories={categories} onCategoriesChanged={load} onSave={(saved)=>{
+        setShowForm(false);
+        if (saved) setLetters(prev => prev.some(x=>x.id===saved.id) ? prev.map(x=>x.id===saved.id?saved:x) : [saved, ...prev]);
+        else load();
+      }} onClose={()=>setShowForm(false)}/>}
       {previewing && <LetterPrint letter={previewing} onClose={()=>setPreviewing(null)}/>}
       {unlockReq && (
         <LetterUnlockModal
@@ -12218,19 +12222,24 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
       if (!payload.is_private) payload.access_code_hash = null;
       else if (pwd.trim()) payload.access_code_hash = await sha256Hex(pwd.trim());
 
+      let savedRow;
       if (letter?.id) {
         delete payload.number; delete payload.created_by;
-        const { error } = await sb.from('official_letters').update(payload).eq('id', letter.id);
+        const { data, error } = await sb.from('official_letters').update(payload).eq('id', letter.id).select().single();
         if (error) throw error;
+        savedRow = data;
       } else {
         const { data: maxRow } = await sb.from('official_letters').select('number').order('number',{ascending:false}).limit(1);
         payload.number = (maxRow?.[0]?.number || 0) + 1;
         payload.created_by = user?.id || null;
-        const { error } = await sb.from('official_letters').insert(payload);
+        const { data, error } = await sb.from('official_letters').insert(payload).select().single();
         if (error) throw error;
+        savedRow = data;
       }
       toast(letter?.id ? 'تم التعديل' : 'تم إنشاء الكتاب','success');
-      onSave();
+      // نمرر الصف المحفوظ مباشرة بدل الاعتماد على إعادة تحميل كامل القائمة —
+      // إعادة التحميل فوراً بعد الحفظ كانت أحياناً ترجع نتيجة فاضية (سباق مع تحديث الجلسة) فتختفي كل الكتب لحد ما تعمل refresh
+      onSave(savedRow);
     } catch(err) {
       toast('خطأ: '+err.message,'error');
     } finally { setLoading(false); }
