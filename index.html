@@ -12411,8 +12411,8 @@ function LetterPrint({ letter, onClose }) {
       </tbody>
     </table>
   );
-  const letterHead = withHeader ? <PqDocHeader/> : (withHeadGap ? <div style={{height:'46mm'}}/> : null);
-  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : (withHeadGap ? <div style={{height:'46mm'}}/> : null);
+  const letterHead = withHeader ? <PqDocHeader/> : (withHeadGap ? <div style={{height:'34.5mm'}}/> : null);
+  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : (withHeadGap ? <div style={{height:'34.5mm'}}/> : null);
   const letterSig = (
     <div className="letter-sig">
       {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
@@ -12458,8 +12458,8 @@ function LetterPrint({ letter, onClose }) {
       const footH = H(mEl.querySelector('.pqm-lfooter'));
 
       // مساحة المحتوى المتاحة بكل صفحة: فوتر حقيقي مقاس لو فيه ترويسة،
-      // أو هامش ثابت 28مم لو الطباعة على ورق مطبوع مسبقاً (بدون فوتر النظام)
-      const reserveMm = withHeader ? (PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap) : 28;
+      // أو هامش ثابت 39.5مم لو الطباعة على ورق مطبوع مسبقاً (بدون فوتر النظام)
+      const reserveMm = withHeader ? (PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap) : 39.5;
       const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
 
       // 30px = margin-top الثابت لـ .letter-body (فجوة قبل أول كتلة بكل صفحة)
