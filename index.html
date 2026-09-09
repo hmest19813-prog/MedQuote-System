@@ -3782,6 +3782,16 @@ function ActionMenu({ actions }) {
     }
     setOpen(o => !o);
   };
+  // بعد ما تنرسم القائمة فعلياً نتأكد إنها ما طالعة تحت حافة الشاشة (آخر صف بجدول طويل مثلاً) —
+  // لو ما في مساحة كافية تحت الزر، نفتحها لفوق بدل ما تنقص جزء منها.
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current || !menuRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const menuH = menuRef.current.offsetHeight;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const top = spaceBelow >= menuH + 8 ? r.bottom + 4 : Math.max(8, r.top - menuH - 4);
+    setPos(p => p.top === top ? p : { ...p, top });
+  }, [open]);
   const visible = actions.filter(a => !a.hidden);
   return (
     <div style={{display:'inline-block'}}>
