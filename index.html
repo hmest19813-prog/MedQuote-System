@@ -11658,7 +11658,10 @@ function LettersPage({ user }) {
   const [previewing, setPreviewing] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
-  const [unlocked, setUnlocked] = useState(() => new Set());
+  const [unlocked, setUnlocked] = useState(() => {
+    try { return new Set(JSON.parse(sessionStorage.getItem('letters_unlocked') || '[]')); }
+    catch { return new Set(); }
+  });
   const [unlockReq, setUnlockReq] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -11687,14 +11690,21 @@ function LettersPage({ user }) {
   const [categories, setCategories] = useState([]);
 
   const load = async () => {
-    const [{ data: l }, { data: c }, { data: cats }] = await Promise.all([
+    const [lr, cr, ctr] = await Promise.all([
       sb.from('official_letters').select('*').order('number', { ascending: false }),
       sb.from('letter_contacts').select('*').order('name'),
       sb.from('letter_categories').select('*').order('sort_order'),
     ]);
-    setLetters(l || []);
-    setContacts(c || []);
-    setCategories(cats || []);
+    const err = lr.error || cr.error || ctr.error;
+    if (err) {
+      // خطأ مؤقت بالشبكة/الجلسة — نحافظ على القائمة الحالية بدل ما نفرغها ونطلب تحديث الصفحة
+      toast('تعذر تحديث قائمة الكتب: ' + err.message, 'error');
+      setLoading(false);
+      return;
+    }
+    setLetters(lr.data || []);
+    setContacts(cr.data || []);
+    setCategories(ctr.data || []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -11921,7 +11931,11 @@ function LettersPage({ user }) {
           onClose={()=>setUnlockReq(null)}
           onUnlock={()=>{
             const { letter: l, action } = unlockReq;
-            setUnlocked(prev=>new Set(prev).add(l.id));
+            setUnlocked(prev=>{
+              const next = new Set(prev).add(l.id);
+              try { sessionStorage.setItem('letters_unlocked', JSON.stringify([...next])); } catch {}
+              return next;
+            });
             setUnlockReq(null);
             if (action === 'preview') setPreviewing(l);
             else { setEditing(l); setShowForm(true); }
@@ -12411,8 +12425,8 @@ function LetterPrint({ letter, onClose }) {
       </tbody>
     </table>
   );
-  const letterHead = withHeader ? <PqDocHeader/> : (withHeadGap ? <div style={{height:'34.5mm'}}/> : null);
-  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : (withHeadGap ? <div style={{height:'34.5mm'}}/> : null);
+  const letterHead = withHeader ? <PqDocHeader/> : (withHeadGap ? <div style={{height:'29.5mm'}}/> : null);
+  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : (withHeadGap ? <div style={{height:'29.5mm'}}/> : null);
   const letterSig = (
     <div className="letter-sig">
       {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
@@ -12458,8 +12472,8 @@ function LetterPrint({ letter, onClose }) {
       const footH = H(mEl.querySelector('.pqm-lfooter'));
 
       // مساحة المحتوى المتاحة بكل صفحة: فوتر حقيقي مقاس لو فيه ترويسة،
-      // أو هامش ثابت 39.5مم لو الطباعة على ورق مطبوع مسبقاً (بدون فوتر النظام)
-      const reserveMm = withHeader ? (PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap) : 39.5;
+      // أو هامش ثابت 44.5مم لو الطباعة على ورق مطبوع مسبقاً (بدون فوتر النظام)
+      const reserveMm = withHeader ? (PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap) : 44.5;
       const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
 
       // 30px = margin-top الثابت لـ .letter-body (فجوة قبل أول كتلة بكل صفحة)
