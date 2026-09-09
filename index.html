@@ -12107,7 +12107,7 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
     recipient:'', attention:'', date: today(), subject:'',
     category: LETTER_CAT_OTHER_ID, body:'',
     signer_name:'الدكتور محمد عقاب الجوابرة', signer_title:'الادارة',
-    use_letterhead: true, is_private: false,
+    use_letterhead: true, letterhead_gap: true, show_info_table: true, is_private: false,
     ...(letter || {})
   });
   const [loading, setLoading] = useState(false);
@@ -12139,6 +12139,42 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
     await onCategoriesChanged?.();
     setF('category', data.id);
     toast('تمت إضافة التبويب ✓','success');
+  };
+
+  const renameCategory = async (id, currentLabel) => {
+    const label = prompt('الاسم الجديد:', currentLabel || '');
+    if (!label?.trim() || label.trim() === currentLabel) return;
+    const { error } = await sb.from('letter_categories').update({ label: label.trim() }).eq('id', id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    await onCategoriesChanged?.();
+    toast('تم التعديل ✓','success');
+  };
+
+  const deleteMainCategory = async () => {
+    if (currentMainId === LETTER_CAT_OTHER_ID) { toast('هذا التصنيف الافتراضي ("أخرى") ما بينحذف','error'); return; }
+    if (catTree.length <= 1) { toast('لازم يبقى تصنيف رئيسي واحد على الأقل','error'); return; }
+    const idsToCheck = [currentMainId, ...currentSubs.map(s=>s.id)];
+    const { data: used } = await sb.from('official_letters').select('id').in('category', idsToCheck).limit(1);
+    if (used?.length) { toast('لا يمكن حذف هذا التصنيف — فيه كتب مرتبطة فيه، انقلها لتصنيف تاني أولاً','error'); return; }
+    if (!confirm(`حذف تصنيف "${currentMain?.label}" وكل تبويباته الفرعية؟`)) return;
+    const { error } = await sb.from('letter_categories').delete().eq('id', currentMainId);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    const remaining = catTree.filter(c=>c.id!==currentMainId);
+    setF('category', remaining[0]?.subs?.[0]?.id || remaining[0]?.id || LETTER_CAT_OTHER_ID);
+    await onCategoriesChanged?.();
+    toast('تم حذف التصنيف ✓','success');
+  };
+
+  const deleteSubCategory = async (sub) => {
+    if (!sub) return;
+    const { data: used } = await sb.from('official_letters').select('id').eq('category', sub.id).limit(1);
+    if (used?.length) { toast('لا يمكن حذف هذا التبويب — فيه كتب مرتبطة فيه، انقلها لتبويب تاني أولاً','error'); return; }
+    if (!confirm(`حذف تبويب "${sub.label}"؟`)) return;
+    const { error } = await sb.from('letter_categories').delete().eq('id', sub.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    if (letterCatNormalize(form.category) === sub.id) setF('category', currentMainId);
+    await onCategoriesChanged?.();
+    toast('تم حذف التبويب ✓','success');
   };
 
   const recipientList = contacts.filter(c=>c.contact_type==='recipient');
@@ -12237,8 +12273,16 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
               <div className="form-group">
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <label className="form-label">التصنيف</label>
-                  {isAdmin && <button type="button" onClick={addMainCategory} title="إضافة تصنيف جديد"
-                    style={{fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>+ جديد</button>}
+                  {isAdmin && (
+                    <div style={{display:'flex',gap:5}}>
+                      <button type="button" onClick={()=>renameCategory(currentMainId, currentMain?.label)} title="تعديل اسم التصنيف"
+                        style={{fontSize:11,fontWeight:700,padding:'1px 7px',borderRadius:10,border:'1px solid var(--gray-300)',background:'#fff',color:'var(--gray-600)',cursor:'pointer'}}>✏️</button>
+                      <button type="button" onClick={deleteMainCategory} title="حذف التصنيف"
+                        style={{fontSize:11,fontWeight:700,padding:'1px 7px',borderRadius:10,border:'1px solid var(--gray-300)',background:'#fff',color:'var(--gray-600)',cursor:'pointer'}}>🗑️</button>
+                      <button type="button" onClick={addMainCategory} title="إضافة تصنيف جديد"
+                        style={{fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>+ جديد</button>
+                    </div>
+                  )}
                 </div>
                 <select className="form-control" value={currentMainId} onChange={e=>{
                   const newMain = catTree.find(c=>c.id===e.target.value);
@@ -12251,8 +12295,21 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
                   <div style={{marginTop:10}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                       <label className="form-label">التبويب</label>
-                      {isAdmin && <button type="button" onClick={addSubCategory} title="إضافة تبويب جديد"
-                        style={{fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>+ جديد</button>}
+                      {isAdmin && (() => {
+                        const currentSub = currentSubs.find(s=>s.id===letterCatNormalize(form.category));
+                        return (
+                          <div style={{display:'flex',gap:5}}>
+                            {currentSub && (<>
+                              <button type="button" onClick={()=>renameCategory(currentSub.id, currentSub.label)} title="تعديل اسم التبويب"
+                                style={{fontSize:11,fontWeight:700,padding:'1px 7px',borderRadius:10,border:'1px solid var(--gray-300)',background:'#fff',color:'var(--gray-600)',cursor:'pointer'}}>✏️</button>
+                              <button type="button" onClick={()=>deleteSubCategory(currentSub)} title="حذف التبويب"
+                                style={{fontSize:11,fontWeight:700,padding:'1px 7px',borderRadius:10,border:'1px solid var(--gray-300)',background:'#fff',color:'var(--gray-600)',cursor:'pointer'}}>🗑️</button>
+                            </>)}
+                            <button type="button" onClick={addSubCategory} title="إضافة تبويب جديد"
+                              style={{fontSize:11,fontWeight:700,padding:'1px 8px',borderRadius:10,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>+ جديد</button>
+                          </div>
+                        );
+                      })()}
                     </div>
                     {currentSubs.length>0 ? (
                       <select className="form-control" value={letterCatNormalize(form.category)} onChange={e=>setF('category',e.target.value)}>
@@ -12286,6 +12343,16 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
                 <input type="checkbox" checked={form.use_letterhead!==false} onChange={e=>setF('use_letterhead',e.target.checked)} style={{width:16,height:16}}/>
                 طباعة بالترويسة
               </label>
+              {form.use_letterhead===false && (
+                <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
+                  <input type="checkbox" checked={form.letterhead_gap!==false} onChange={e=>setF('letterhead_gap',e.target.checked)} style={{width:16,height:16}}/>
+                  ترك فراغ مكان الترويسة
+                </label>
+              )}
+              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
+                <input type="checkbox" checked={form.show_info_table!==false} onChange={e=>setF('show_info_table',e.target.checked)} style={{width:16,height:16}}/>
+                إظهار جدول بيانات الكتاب
+              </label>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
                 <input type="checkbox" checked={!!form.is_private} onChange={e=>setF('is_private',e.target.checked)} style={{width:16,height:16}}/>
                 🔒 كتاب خاص (أنا والأدمن فقط)
@@ -12317,6 +12384,8 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
 
 function LetterPrint({ letter, onClose }) {
   const withHeader = letter.use_letterhead !== false;
+  const withHeadGap = withHeader || letter.letterhead_gap !== false;
+  const withInfoTable = letter.show_info_table !== false;
   const [showSig, setShowSig] = React.useState(false);
   const [stampMm, setStampMm] = React.useState({ bottom: 20, right: 120 });
   const [stampW,  setStampW]  = React.useState(500);
@@ -12342,8 +12411,8 @@ function LetterPrint({ letter, onClose }) {
       </tbody>
     </table>
   );
-  const letterHead = withHeader ? <PqDocHeader/> : <div style={{height:'46mm'}}/>;
-  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : <div style={{height:'46mm'}}/>;
+  const letterHead = withHeader ? <PqDocHeader/> : (withHeadGap ? <div style={{height:'46mm'}}/> : null);
+  const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : (withHeadGap ? <div style={{height:'46mm'}}/> : null);
   const letterSig = (
     <div className="letter-sig">
       {letter.signer_title && <div className="sig-title">{letter.signer_title}</div>}
@@ -12527,7 +12596,7 @@ function LetterPrint({ letter, onClose }) {
           <td style="text-align:left;"><span style="font-size:28px;font-weight:bold;color:#2B8FC4;letter-spacing:2px;">HAYAT</span><br/><span style="font-size:9px;color:#6B7A8B;">Scientific Medical &amp; Chemical Corp.</span></td>
         </tr>
       </table>
-      <hr style="border:2px solid #2B8FC4;"/>` : '<div style="height:52mm;"></div>';
+      <hr style="border:2px solid #2B8FC4;"/>` : (withHeadGap ? '<div style="height:52mm;"></div>' : '');
 
     const footerHtml = withHeader ? `
       <table width="100%" style="background:#2B8FC4;color:white;padding:10px;border-radius:6px;font-size:10px;margin-top:30px;">
@@ -12548,13 +12617,13 @@ function LetterPrint({ letter, onClose }) {
 </style></head>
 <body>
   ${headerHtml}
-  <table class="info-table" style="margin:20px 0 0 auto;">
+  ${withInfoTable ? `<table class="info-table" style="margin:20px 0 0 auto;">
     <tr><td class="info-label">السادة</td><td style="min-width:200px;">${letter.recipient}</td></tr>
     <tr><td class="info-label">عناية</td><td>${letter.attention||'—'}</td></tr>
     <tr><td class="info-label">التاريخ</td><td>${fmtD(letter.date)}</td></tr>
     <tr><td class="info-label">الموضوع</td><td><b>${letter.subject}</b></td></tr>
     <tr><td class="info-label">كتابنا رقم</td><td><b>${letter.number}</b></td></tr>
-  </table>
+  </table>` : ''}
   <div style="margin-top:28px;line-height:2.2;font-size:15px;text-align:justify;">${letter.body}</div>
   <div style="margin-top:50px;">
     ${letter.signer_title ? '<div style="font-weight:bold;text-decoration:underline;">'+letter.signer_title+'</div>' : ''}
@@ -12596,7 +12665,7 @@ function LetterPrint({ letter, onClose }) {
           {/* حاوية قياس مخفية — بعرض منطقة المحتوى الفعلية داخل الصفحة */}
           <div className="pq-measure" ref={measureRef} aria-hidden="true">
             <div className="pq-measure-inner" dir="rtl">
-              <div className="pqm-lhead">{letterHead}{infoTable}</div>
+              <div className="pqm-lhead">{letterHead}{withInfoTable && infoTable}</div>
               <div className="pqm-lcont">{letterContHead}</div>
               <div className="letter-body pqm-lbody" dir="rtl" dangerouslySetInnerHTML={{__html: bodyBlocks.join('')}}/>
               <div className="pqm-lsig">{letterSig}</div>
@@ -12609,7 +12678,7 @@ function LetterPrint({ letter, onClose }) {
             <div className="pq-page" key={pi}>
               <div className="pq-page-inner" dir="rtl">
                 {pg.first ? letterHead : letterContHead}
-                {pg.first && infoTable}
+                {pg.first && withInfoTable && infoTable}
                 {pg.blocks.length > 0 && (
                   <div className="letter-body" dir="rtl" dangerouslySetInnerHTML={{__html: pg.blocks.map(i => bodyBlocks[i]).join('')}}/>
                 )}
