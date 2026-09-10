@@ -14958,7 +14958,7 @@ function App() {
       <BottomNav user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onMoreClick={() => setMobileMenuOpen(true)}/>
       {mobileMenuOpen && <MobileSheet user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onClose={() => setMobileMenuOpen(false)} onLogout={handleLogout}/>}
       <ChatPanel user={user}/>
-      <AIAssistantPanel user={user}/>
+      {user.role==='admin' && <AIAssistantPanel user={user}/>}
       <Toasts/>
     </div>
   );
