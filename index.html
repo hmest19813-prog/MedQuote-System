@@ -1500,6 +1500,7 @@ const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊' },
   { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋' },
   { id: 'orders',    label: 'الطلبات',        icon: '📦', perm: 'orders_access' },
+  { id: 'daily_orders', label: 'الطلبات اليومية', icon: '🚚', perm: 'daily_orders_access' },
   { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰' },
   { id: 'procurement', label: 'إدارة المشتريات',   icon: '🏭', perm: 'suppliers_access' },
   { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
@@ -6534,6 +6535,13 @@ const PERM_GROUPS = [
     { key: 'orders_edit',   label: 'تعديل الطلبات' },
     { key: 'orders_delete', label: 'حذف الطلبات' },
   ]},
+  { label: 'الطلبات اليومية', icon: '🚚', perms: [
+    { key: 'daily_orders_access', label: 'الوصول لصفحة الطلبات اليومية' },
+    { key: 'daily_orders_create', label: 'إنشاء طلبية يومية' },
+    { key: 'daily_orders_edit',   label: 'تعديل/تحديث حالة الطلبيات اليومية' },
+    { key: 'daily_orders_delete', label: 'حذف الطلبيات اليومية' },
+    { key: 'daily_orders_prepare', label: 'واجهة التجهيز المبسّطة (موظف تجهيز الطلبيات لشركة النقل)' },
+  ]},
   { label: 'الفواتير والدفعات', icon: '💰', perms: [
     { key: 'payments_delete', label: 'حذف الدفعات من الفواتير' },
   ]},
@@ -6577,6 +6585,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   quotes_validity_override: false, quotes_view_issuer: false,
   deleted_quotes_access: false,
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
+  daily_orders_access: true, daily_orders_create: true, daily_orders_edit: true, daily_orders_delete: false, daily_orders_prepare: false,
   customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
   catalog_access: true, catalog_edit: false,    catalog_delete: false,
   letters_access: true, letters_manage: false,
@@ -8545,6 +8554,702 @@ function ProspectsTab({ user, profiles, onCountChange }) {
         profiles={profiles} user={user}
         onSave={handleConvertSave}
         onClose={()=>setConverting(null)}/>}
+    </div>
+  );
+}
+
+/* ===================== الطلبات اليومية (طلبات المندوبين) ===================== */
+const DO_STATUS = {
+  new:          { label: 'جديدة',       badge: 'badge-pending' },
+  preparing:    { label: 'قيد التجهيز',  badge: 'badge-processing' },
+  with_carrier: { label: 'مع الناقل',    badge: 'badge-confirmed' },
+  delivered:    { label: 'تم التسليم',   badge: 'badge-delivered' },
+  returned:     { label: 'مرتجع',        badge: 'badge-cancelled' },
+};
+const DO_CHANNEL = {
+  shipping_company: { label: 'شركة النقل', icon: '🚚' },
+  abu_tarek:        { label: 'أبو طارق',   icon: '🏃' },
+};
+
+function DailyOrdersPage({ user }) {
+  const [orders, setOrders]     = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [repFilter, setRepFilter] = useState('all');
+  const [search, setSearch]     = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing]   = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [printingOrder, setPrintingOrder] = useState(null);
+  const [printItems, setPrintItems]       = useState([]);
+
+  const openPrint = async (o) => {
+    const { data, error } = await sb.from('daily_order_items').select('*').eq('daily_order_id', o.id).order('sort_order');
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    if (!data || !data.length) { toast('لا توجد أصناف بهذه الطلبية', 'error'); return; }
+    setPrintItems(data);
+    setPrintingOrder(o);
+  };
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: o }, { data: p }] = await Promise.all([
+      sb.from('daily_orders').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }),
+      sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name'),
+    ]);
+    setOrders(o || []); setProfiles(p || []); setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const repName = (id) => profiles.find(p => p.id === id)?.full_name || '—';
+
+  const changeStatus = async (o, status) => {
+    const payload = { status };
+    if (status === 'preparing' && !o.prepared_by) {
+      payload.prepared_by = user?.id || null;
+      payload.prepared_at = new Date().toISOString();
+    }
+    const { error } = await sb.from('daily_orders').update(payload).eq('id', o.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `غيّر حالة الطلبية اليومية ${o.number} إلى "${DO_STATUS[status]?.label || status}"`, 'daily_order', o.id, o.number);
+    toast('تم تحديث الحالة', 'success'); load();
+  };
+
+  const deleteOrder = async () => {
+    const o = deleteTarget; setDeleteTarget(null);
+    if (!o) return;
+    await sb.from('daily_order_items').delete().eq('daily_order_id', o.id);
+    const { error } = await sb.from('daily_orders').delete().eq('id', o.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `حذف الطلبية اليومية ${o.number}`, 'daily_order', o.id, o.number);
+    toast('تم الحذف', 'success'); load();
+  };
+
+  const todayStr = today();
+  const todayOrders = orders.filter(o => o.order_date === todayStr);
+  const stats = {
+    todayCount:  todayOrders.length,
+    todayValue:  todayOrders.reduce((s, o) => s + parseFloat(o.total_amount || 0), 0),
+    preparing:   orders.filter(o => o.status === 'preparing').length,
+    withCarrier: orders.filter(o => o.status === 'with_carrier').length,
+  };
+
+  const filtered = orders.filter(o => {
+    if (statusFilter !== 'all' && o.status !== statusFilter) return false;
+    if (repFilter !== 'all' && o.sales_rep_id !== repFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!(
+        o.customer_name?.toLowerCase().includes(q) ||
+        (o.customer_phone || '').includes(search) ||
+        (o.region || '').toLowerCase().includes(q) ||
+        (o.number || '').toLowerCase().includes(q)
+      )) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🚚</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>الطلبات اليومية</div>
+            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{orders.length} طلبية</div>
+          </div>
+        </div>
+        <div style={{flex:1}}/>
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، المنطقة، الرقم..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260}}/>
+        {hasPerm(user,'daily_orders_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ طلبية جديدة</button>}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+        {[
+          {label:'طلبات اليوم', value: stats.todayCount, icon:'📅'},
+          {label:'قيمة اليوم', value: `${numFmt(stats.todayValue)} د.أ`, icon:'💰'},
+          {label:'قيد التجهيز', value: stats.preparing, icon:'📦'},
+          {label:'مع الناقل', value: stats.withCarrier, icon:'🚚'},
+        ].map((c,i)=>(
+          <div key={i} style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:'14px 16px',display:'flex',alignItems:'center',gap:10}}>
+            <div style={{fontSize:22}}>{c.icon}</div>
+            <div>
+              <div style={{fontSize:18,fontWeight:900,color:'#1a2e3d'}}>{c.value}</div>
+              <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{c.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+        <button className={`btn ${statusFilter==='all'?'btn-primary':'btn-ghost'}`} style={{padding:'5px 14px',fontSize:12}} onClick={()=>setStatusFilter('all')}>الكل ({orders.length})</button>
+        {Object.entries(DO_STATUS).map(([k,v])=>(
+          <button key={k} className={`btn ${statusFilter===k?'btn-primary':'btn-ghost'}`} style={{padding:'5px 14px',fontSize:12}} onClick={()=>setStatusFilter(k)}>
+            {v.label} ({orders.filter(o=>o.status===k).length})
+          </button>
+        ))}
+        <div style={{flex:1}}/>
+        <select className="form-control" style={{width:'auto'}} value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
+          <option value="all">كل المندوبين</option>
+          {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+        </select>
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>الرقم</th><th>التاريخ</th><th>الزبون</th><th>المنطقة</th><th>المندوب</th>
+                <th>القناة</th><th>الدفع</th><th>القيمة</th><th>الحالة</th><th></th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(o => (
+                  <tr key={o.id}>
+                    <td className="font-bold" style={{color:'var(--primary)',whiteSpace:'nowrap'}}>{o.number}</td>
+                    <td className="text-sm text-muted" style={{whiteSpace:'nowrap'}}>{o.order_date}</td>
+                    <td>
+                      <div style={{fontWeight:700}}>{o.customer_name}</div>
+                      <div className="text-sm text-muted">{o.customer_phone || '—'}</div>
+                    </td>
+                    <td className="text-sm">{o.region || '—'}</td>
+                    <td className="text-sm">{repName(o.sales_rep_id)}</td>
+                    <td className="text-sm" style={{whiteSpace:'nowrap'}}>
+                      {DO_CHANNEL[o.channel]?.icon} {DO_CHANNEL[o.channel]?.label}
+                      {o.is_express && <span className="badge" style={{background:'#fef3c7',color:'#92400e',marginRight:4}}>⚡ سريع</span>}
+                    </td>
+                    <td className="text-sm">{o.payment_method === 'prepaid' ? '✅ مسبقًا' : '💵 عند الاستلام'}</td>
+                    <td className="font-bold" style={{whiteSpace:'nowrap'}}>{numFmt(o.total_amount)} د.أ</td>
+                    <td>
+                      {hasPerm(user,'daily_orders_edit')
+                        ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>
+                            {Object.entries(DO_STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                          </select>
+                        : <span className={`badge ${DO_STATUS[o.status]?.badge}`}>{DO_STATUS[o.status]?.label}</span>}
+                    </td>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={()=>openPrint(o)}>🖨️</button>
+                        {hasPerm(user,'daily_orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(o); setShowForm(true); }}>✏️</button>}
+                        {hasPerm(user,'daily_orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(o)}>🗑️</button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length===0 && <tr><td colSpan="10"><div className="empty-state"><p>لا توجد طلبات مطابقة</p></div></td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {showForm && <DailyOrderForm order={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
+      {printingOrder && <DailyOrderPrint order={printingOrder} items={printItems} onClose={()=>setPrintingOrder(null)}/>}
+
+      {deleteTarget && (
+        <div className="modal-overlay">
+          <div className="modal" style={{maxWidth:420}}>
+            <div className="modal-header"><span className="modal-title">حذف الطلبية</span><button className="modal-close" onClick={()=>setDeleteTarget(null)}>✕</button></div>
+            <div style={{padding:20}}>هل أنت متأكد من حذف الطلبية <b>{deleteTarget.number}</b>؟ لا يمكن التراجع.</div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={()=>setDeleteTarget(null)}>إلغاء</button>
+              <button className="btn btn-danger" onClick={deleteOrder}>حذف</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
+  const isEdit = !!order;
+  const [form, setForm] = useState({
+    order_date:      order?.order_date || today(),
+    customer_name:   order?.customer_name || '',
+    customer_phone:  order?.customer_phone || '',
+    sales_rep_id:    order?.sales_rep_id || user?.id || '',
+    channel:         order?.channel || 'shipping_company',
+    is_express:      order?.is_express || false,
+    express_fee:     order?.express_fee || '',
+    payment_method:  order?.payment_method || 'cod',
+    notes:           order?.notes || '',
+  });
+  const [items, setItems] = useState([{ item_name:'', quantity:1, unit_price:0 }]);
+  const [loading, setLoading] = useState(isEdit);
+  const [saving, setSaving] = useState(false);
+  const [ammanDistricts, setAmmanDistricts] = useState(CUST_AMMAN);
+
+  const [regionGov, setRegionGov] = useState(() => {
+    if (!order?.region) return '';
+    const gov = order.region.split(' - ')[0];
+    return CUST_GOVS.includes(gov) ? gov : '';
+  });
+  const [regionDistrict, setRegionDistrict] = useState(() => {
+    if (!order?.region) return '';
+    const parts = order.region.split(' - ');
+    return parts.length > 1 ? parts.slice(1).join(' - ') : '';
+  });
+
+  const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    sb.from('customer_districts').select('name').eq('governorate','عمان').order('sort_order').order('name')
+      .then(({data}) => { if (data?.length) setAmmanDistricts(data.map(d=>d.name)); });
+    if (!isEdit) return;
+    (async () => {
+      const { data } = await sb.from('daily_order_items').select('*').eq('daily_order_id', order.id).order('sort_order');
+      setItems((data && data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_price:i.unit_price })) : [{ item_name:'', quantity:1, unit_price:0 }]);
+      setLoading(false);
+    })();
+  }, []);
+
+  const setItem = (idx,k,v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
+  const addItem = () => setItems(list => [...list, { item_name:'', quantity:1, unit_price:0 }]);
+  const delItem = (idx) => setItems(list => list.length>1 ? list.filter((_,i)=>i!==idx) : list);
+
+  const subtotal   = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+  const expressFee = form.is_express ? (parseFloat(form.express_fee) || 0) : 0;
+  const total      = subtotal + expressFee;
+
+  const toggleBtn = (active) => ({
+    flex:1, padding:'9px 12px', borderRadius:8, border: active ? '1.5px solid var(--primary)' : '1.5px solid var(--gray-200)',
+    background: active ? 'var(--info-light)' : '#fff', color: active ? 'var(--primary)' : 'var(--gray-500)',
+    fontWeight:700, fontSize:13, cursor:'pointer',
+  });
+
+  const handleSubmit = async () => {
+    if (!form.customer_name.trim()) { toast('يجب إدخال اسم الزبون', 'error'); return; }
+    const clean = items.filter(i => i.item_name.trim());
+    if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
+    setSaving(true);
+    try {
+      const region = regionGov === 'عمان' && regionDistrict.trim()
+        ? `${regionGov} - ${regionDistrict.trim()}`
+        : (regionGov || null);
+      const payload = {
+        order_date:      form.order_date,
+        customer_name:   form.customer_name.trim(),
+        customer_phone:  form.customer_phone.trim() || null,
+        region,
+        sales_rep_id:    form.sales_rep_id || null,
+        channel:         form.channel,
+        is_express:      form.is_express,
+        express_fee:     expressFee.toFixed(3),
+        payment_method:  form.payment_method,
+        subtotal:        subtotal.toFixed(3),
+        total_amount:    total.toFixed(3),
+        notes:           form.notes.trim() || null,
+      };
+      let orderId;
+      if (isEdit) {
+        const { error } = await sb.from('daily_orders').update(payload).eq('id', order.id);
+        if (error) throw error;
+        orderId = order.id;
+        const { error: dErr } = await sb.from('daily_order_items').delete().eq('daily_order_id', orderId);
+        if (dErr) throw dErr;
+      } else {
+        const { data: newOrder, error } = await sb.from('daily_orders').insert({ ...payload, created_by: user?.id || null }).select().single();
+        if (error) throw error;
+        orderId = newOrder.id;
+      }
+      const rows = clean.map((it,idx) => ({
+        daily_order_id: orderId,
+        sort_order:     idx,
+        item_name:      it.item_name.trim(),
+        quantity:       parseFloat(it.quantity) || 0,
+        unit_price:     parseFloat(it.unit_price) || 0,
+        total_price:    (parseFloat(it.quantity)||0) * (parseFloat(it.unit_price)||0),
+      }));
+      const { error: iErr } = await sb.from('daily_order_items').insert(rows);
+      if (iErr) throw iErr;
+      createLog(user, isEdit ? `عدّل الطلبية اليومية ${order.number}` : 'أنشأ طلبية يومية جديدة', 'daily_order', orderId, isEdit ? order.number : null);
+      toast(isEdit ? 'تم التحديث' : 'تم إنشاء الطلبية', 'success');
+      onSave();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:720,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">{isEdit ? `تعديل الطلبية ${order.number}` : 'طلبية يومية جديدة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        <div style={{padding:20}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={form.order_date} onChange={e=>setF('order_date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المندوب</label>
+              <div className="form-control" style={{background:'var(--gray-100)',color:'var(--gray-600)',cursor:'default'}}>
+                {profiles.find(p=>p.id===form.sales_rep_id)?.full_name || user?.full_name || '—'}
+              </div>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">اسم الزبون *</label>
+              <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">هاتف الزبون</label>
+              <input className="form-control" value={form.customer_phone} onChange={e=>setF('customer_phone',e.target.value)} placeholder="07XXXXXXXX"/>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المحافظة</label>
+              <select className="form-control" value={regionGov} onChange={e=>{ setRegionGov(e.target.value); setRegionDistrict(''); }}>
+                <option value="">— اختر المحافظة —</option>
+                {CUST_GOVS.map(g=><option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            {regionGov === 'عمان' && (
+              <div className="form-group">
+                <label className="form-label">المنطقة</label>
+                <input className="form-control" list="do-amman-list" value={regionDistrict} onChange={e=>setRegionDistrict(e.target.value)} placeholder="اختر أو اكتب منطقة عمان"/>
+                <datalist id="do-amman-list">{ammanDistricts.map(d=><option key={d} value={d}/>)}</datalist>
+              </div>
+            )}
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">القناة</label>
+              <div style={{display:'flex',gap:8}}>
+                {Object.entries(DO_CHANNEL).map(([k,v])=>(
+                  <button key={k} type="button" style={toggleBtn(form.channel===k)} onClick={()=>setF('channel',k)}>{v.icon} {v.label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الدفع</label>
+              <div style={{display:'flex',gap:8}}>
+                <button type="button" style={toggleBtn(form.payment_method==='cod')} onClick={()=>setF('payment_method','cod')}>💵 عند الاستلام</button>
+                <button type="button" style={toggleBtn(form.payment_method==='prepaid')} onClick={()=>setF('payment_method','prepaid')}>✅ مسبقًا</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontWeight:700,fontSize:13}}>
+              <input type="checkbox" checked={form.is_express} onChange={e=>setF('is_express',e.target.checked)}/>
+              ⚡ توصيل سريع / فوري (رسم إضافي)
+            </label>
+            {form.is_express && (
+              <input type="number" step="0.001" className="form-control" style={{marginTop:6,maxWidth:180}}
+                value={form.express_fee} onChange={e=>setF('express_fee',e.target.value)} placeholder="قيمة الرسم الإضافي"/>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">الأصناف</label>
+            <table style={{width:'100%',fontSize:13}}>
+              <thead><tr>
+                <th style={{textAlign:'right'}}>الصنف</th><th style={{width:80}}>الكمية</th><th style={{width:110}}>سعر الوحدة</th><th style={{width:100}}>الإجمالي</th><th style={{width:36}}></th>
+              </tr></thead>
+              <tbody>
+                {items.map((it,idx)=>(
+                  <tr key={idx}>
+                    <td><input className="form-control" value={it.item_name} onChange={e=>setItem(idx,'item_name',e.target.value)} placeholder="اسم الصنف"/></td>
+                    <td><input type="number" step="1" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/></td>
+                    <td><input type="number" step="0.001" className="form-control" value={it.unit_price} onChange={e=>setItem(idx,'unit_price',e.target.value)}/></td>
+                    <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0))}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delItem(idx)}>🗑</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addItem}>➕ إضافة صنف</button>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+
+          <div style={{display:'flex',justifyContent:'flex-end',gap:20,padding:'10px 4px',fontSize:13,fontWeight:700,color:'var(--gray-600)'}}>
+            <span>المجموع: {numFmt(subtotal)} د.أ</span>
+            {form.is_express && <span>+ سريع: {numFmt(expressFee)} د.أ</span>}
+            <span style={{color:'var(--primary)',fontSize:15}}>الإجمالي: {numFmt(total)} د.أ</span>
+          </div>
+        </div>
+        )}
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving||loading}>{saving?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DailyOrderPrint({ order, items, onClose }) {
+  const printId = 'daily-order-print';
+  const [pages, setPages] = React.useState(null);
+  const measureRef = React.useRef(null);
+  const pagesSigRef = React.useRef('');
+
+  const doPrint = () => printDoc(printId, `طلبية - ${order.number}`);
+
+  const subtotal   = parseFloat(order.subtotal || 0);
+  const expressFee = parseFloat(order.express_fee || 0);
+  const total      = parseFloat(order.total_amount || 0);
+
+  const clientBox = (
+    <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+      <div className="print-client-grid">
+        <div className="field-row"><label>الزبون:</label> <strong>{order.customer_name}</strong></div>
+        <div className="field-row"><label>رقم الطلبية:</label> <strong style={{color:'var(--primary)'}}>{order.number}</strong></div>
+        <div className="field-row"><label>الهاتف:</label> {order.customer_phone || '—'}</div>
+        <div className="field-row"><label>التاريخ:</label> {order.order_date}</div>
+        <div className="field-row"><label>المنطقة:</label> {order.region || '—'}</div>
+        <div className="field-row"><label>القناة:</label> {DO_CHANNEL[order.channel]?.label || '—'}{order.is_express ? ' — ⚡ توصيل سريع' : ''}</div>
+        <div className="field-row"><label>الدفع:</label> {order.payment_method === 'prepaid' ? 'مسبقًا' : 'عند الاستلام'}</div>
+      </div>
+    </div>
+  );
+
+  const firstHeader = (
+    <>
+      <PqDocHeader/>
+      <div className="print-doc-title" style={{fontSize:16, letterSpacing:2}}>طلبية</div>
+      {clientBox}
+    </>
+  );
+
+  const tableColgroup = (
+    <colgroup>
+      <col style={{width:'6%'}}/><col/><col style={{width:'12%'}}/><col style={{width:'16%'}}/><col style={{width:'16%'}}/>
+    </colgroup>
+  );
+  const tableThead = (
+    <thead><tr><th>م</th><th>اسم الصنف</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
+  );
+  const renderRow = (it, i) => (
+    <tr key={i}>
+      <td style={{textAlign:'center'}}>{i+1}</td>
+      <td className="item-name">{it.item_name}</td>
+      <td style={{textAlign:'center', fontWeight:700}}>{numFmt(it.quantity,0)}</td>
+      <td style={{textAlign:'center'}}>{numFmt(it.unit_price)}</td>
+      <td style={{textAlign:'center', fontWeight:700}}>{numFmt(it.total_price)}</td>
+    </tr>
+  );
+
+  const tailBlock = (
+    <div>
+      <div style={{display:'flex', justifyContent:'flex-end', gap:24, padding:'10px 6px', fontSize:13}}>
+        <span>المجموع: <strong>{numFmt(subtotal)} د.أ</strong></span>
+        {order.is_express && <span>توصيل سريع: <strong>{numFmt(expressFee)} د.أ</strong></span>}
+        <span style={{fontSize:15, color:'var(--primary)'}}>الإجمالي: <strong>{numFmt(total)} د.أ</strong></span>
+      </div>
+      <div style={{display:'flex', justifyContent:'space-between', marginTop:36, padding:'0 10px', fontSize:12, color:'#555'}}>
+        <div style={{textAlign:'center', minWidth:140}}>
+          <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:28}}>توقيع المندوب</div>
+        </div>
+        <div style={{textAlign:'center', minWidth:140}}>
+          <div style={{borderTop:'1px solid #999', paddingTop:6, marginTop:28}}>توقيع المستلم</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  React.useLayoutEffect(() => {
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const rowsTable = mEl.querySelector('.pqm-rows table');
+      const headH  = H(mEl.querySelector('.pqm-head'));
+      const theadH = H(rowsTable && rowsTable.querySelector('thead'));
+      const rowHs  = Array.from(rowsTable ? rowsTable.querySelectorAll('tbody tr') : []).map(el => el.getBoundingClientRect().height);
+      const tailH  = H(mEl.querySelector('.pqm-tail'));
+      const footH  = H(mEl.querySelector('.pqm-footer'));
+      const tableMB = rowsTable ? (parseFloat(getComputedStyle(rowsTable).marginBottom) || 0) : 0;
+
+      const reserveMm = PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      const out = [];
+      let cur = [], used = headH + theadH, first = true;
+      rowHs.forEach((rh, i) => {
+        if (used + rh > contentPx && cur.length > 0) {
+          out.push({ rows: cur, first, tail: false });
+          cur = []; used = theadH; first = false;
+        }
+        cur.push(i); used += rh;
+      });
+      if (used + (cur.length ? tableMB : 0) + tailH <= contentPx) {
+        out.push({ rows: cur, first, tail: true });
+      } else {
+        out.push({ rows: cur, first, tail: false });
+        out.push({ rows: [], first: false, tail: true });
+      }
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  });
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth: 860}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">🖨️ طباعة الطلبية — {order.number}</span>
+          <div className="flex gap-2">
+            <button className="btn btn-primary btn-sm" onClick={doPrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="modal-body pq-preview-body" id={printId}>
+          <div className="pq-measure" ref={measureRef} aria-hidden="true">
+            <div className="pq-measure-inner" dir="rtl">
+              <div className="pqm-head">{firstHeader}</div>
+              <div className="pqm-rows">
+                <table className="print-items" style={{marginTop:12}}>
+                  {tableColgroup}{tableThead}
+                  <tbody>{items.map((it,i) => renderRow(it,i))}</tbody>
+                </table>
+              </div>
+              <div className="pqm-tail">{tailBlock}</div>
+              <div className="pqm-footer"><PqFooterBar/></div>
+            </div>
+          </div>
+
+          {(pages || [{rows: items.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
+            <div className="pq-page" key={pi}>
+              <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+                {pg.first && firstHeader}
+                {pg.rows.length > 0 && (
+                  <table className="print-items" style={{marginTop: pg.first ? 12 : 0}}>
+                    {tableColgroup}{tableThead}
+                    <tbody>{pg.rows.map(i => renderRow(items[i], i))}</tbody>
+                  </table>
+                )}
+                {pg.tail && tailBlock}
+              </div>
+              <PqFooterBar/>
+              {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* واجهة مبسّطة لموظف التجهيز — يشتغل فقط على طلبيات "شركة النقل" (طلبيات أبو طارق يجهزها هو بنفسه) */
+function DailyOrdersPrepView({ user }) {
+  const [queue, setQueue]         = useState([]);
+  const [doneToday, setDoneToday] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [busyId, setBusyId]       = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await sb.from('daily_orders')
+      .select('*, daily_order_items(*)')
+      .eq('channel', 'shipping_company')
+      .order('order_date', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) { toast('خطأ: ' + error.message, 'error'); setLoading(false); return; }
+    const all = data || [];
+    setQueue(all.filter(o => o.status === 'new' || o.status === 'preparing'));
+    const todayStr = today();
+    setDoneToday(all.filter(o => o.prepared_by === user.id && (o.prepared_at || '').slice(0,10) === todayStr));
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const markPrepared = async (o) => {
+    setBusyId(o.id);
+    const { error } = await sb.from('daily_orders').update({
+      status:      'with_carrier',
+      prepared_by: user.id,
+      prepared_at: new Date().toISOString(),
+    }).eq('id', o.id);
+    setBusyId(null);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `جهّز الطلبية ${o.number} وسلّمها لشركة النقل`, 'daily_order', o.id, o.number);
+    toast('تم تسجيل التجهيز والتسليم ✓', 'success');
+    load();
+  };
+
+  const OrderCard = ({ o, done }) => {
+    const items = (o.daily_order_items || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    return (
+      <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:16,boxShadow:'0 2px 8px rgba(43,143,196,.06)',opacity:done?0.7:1}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+          <div>
+            <div style={{fontWeight:900,fontSize:15,color:'var(--primary)'}}>{o.number}</div>
+            <div style={{fontSize:12,color:'var(--gray-500)'}}>{o.order_date}</div>
+          </div>
+          {o.is_express && <span className="badge" style={{background:'#fef3c7',color:'#92400e'}}>⚡ سريع</span>}
+        </div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{o.customer_name}</div>
+        <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:10}}>{o.customer_phone || '—'} {o.region ? `· ${o.region}` : ''}</div>
+        <div style={{background:'#f7fafc',borderRadius:8,padding:'8px 10px',marginBottom:10}}>
+          {items.map((it,idx)=>(
+            <div key={idx} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'2px 0'}}>
+              <span>{it.item_name}</span>
+              <span style={{fontWeight:700}}>× {numFmt(it.quantity,0)}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:12,color:'var(--gray-500)',marginBottom:done?0:12}}>
+          <span>{o.payment_method === 'prepaid' ? '✅ مدفوع مسبقًا' : '💵 دفع عند الاستلام'}</span>
+          <span style={{fontWeight:700,color:'var(--gray-700)'}}>{numFmt(o.total_amount)} د.أ</span>
+        </div>
+        {!done && (
+          <button className="btn btn-primary" style={{width:'100%'}} disabled={busyId===o.id} onClick={()=>markPrepared(o)}>
+            {busyId===o.id ? '...' : '✅ تم التجهيز والتسليم للناقل'}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+        <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📦</div>
+        <div>
+          <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>تجهيز الطلبات — شركة النقل</div>
+          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{queue.length} بانتظار التجهيز</div>
+        </div>
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        <>
+          {queue.length === 0 ? (
+            <div className="empty-state" style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+              <div style={{fontSize:48,marginBottom:12}}>✅</div>
+              <p>ما في طلبات بانتظار التجهيز حاليًا</p>
+            </div>
+          ) : (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14,marginBottom:24}}>
+              {queue.map(o => <OrderCard key={o.id} o={o}/>)}
+            </div>
+          )}
+
+          {doneToday.length > 0 && (<>
+            <div style={{fontSize:13,fontWeight:800,color:'var(--gray-600)',marginBottom:10}}>✓ جهّزتها اليوم ({doneToday.length})</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14}}>
+              {doneToday.map(o => <OrderCard key={o.id} o={o} done/>)}
+            </div>
+          </>)}
+        </>
+      )}
     </div>
   );
 }
@@ -14948,6 +15653,11 @@ function App() {
           {page==='quotes' && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
           {page==='accounting' && <FormsPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='orders' && hasPerm(user,'orders_access') && <OrdersPage user={user} orders={orders} onReload={reload}/>}
+          {page==='daily_orders' && hasPerm(user,'daily_orders_access') && (
+            user.role !== 'admin' && hasPerm(user,'daily_orders_prepare')
+              ? <DailyOrdersPrepView user={user}/>
+              : <DailyOrdersPage user={user}/>
+          )}
           {page==='procurement' && hasPerm(user,'suppliers_access') && <ProcurementPage user={user}/>}
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
