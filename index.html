@@ -2139,6 +2139,8 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
         {docType==='order' && doc.prepared_by       && <div className="field-row"><label>جهة التجهيز:</label> <strong>{doc.prepared_by}</strong></div>}
         {docType==='order' && doc.delivered_by      && <div className="field-row"><label>جهة التسليم:</label> <strong>{doc.delivered_by}</strong></div>}
         {docType==='order' && doc.expected_delivery && <div className="field-row"><label>موعد التسليم:</label> <strong style={{color:'var(--primary)'}}>{doc.expected_delivery}</strong></div>}
+        {docType==='order' && doc.customer_ref      && <div className="field-row"><label>مرجع الزبون:</label> <strong>{doc.customer_ref}</strong></div>}
+        {docType==='order' && doc.po_number         && <div className="field-row"><label>رقم الشراء (PO):</label> <strong>{doc.po_number}</strong></div>}
       </div>
     </div>
   );
@@ -6075,6 +6077,8 @@ function OrdersPage({ user, orders, onReload }) {
         delivered_by:      o.delivered_by || null,
         expected_delivery: o.expected_delivery || null,
         issued_by_name:    profiles[o.created_by] || null,
+        customer_ref:      o.customer_ref || null,
+        po_number:         o.po_number || null,
       });
       setOrderItems(items);
       setPrintingOrder(o);
