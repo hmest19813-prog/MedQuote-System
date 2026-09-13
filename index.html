@@ -1497,11 +1497,10 @@ function AuthPage({ onLogin }) {
 
 /* ===================== SIDEBAR ===================== */
 const NAV = [
-  { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊' },
-  { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋' },
-  { id: 'orders',    label: 'الطلبات',        icon: '📦', perm: 'orders_access' },
-  { id: 'daily_orders', label: 'الطلبات اليومية', icon: '🚚', perm: 'daily_orders_access' },
-  { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰' },
+  { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊', perm: 'dashboard_access' },
+  { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋', perm: 'quotes_access' },
+  { id: 'orders',    label: 'الطلبات',        icon: '📦', visible: (u) => hasPerm(u,'orders_access') || hasPerm(u,'daily_orders_access') },
+  { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰', perm: 'accounting_access' },
   { id: 'procurement', label: 'إدارة المشتريات',   icon: '🏭', perm: 'suppliers_access' },
   { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
   { id: 'hr',        label: 'إدارة الموارد البشرية', icon: '👥', perm: 'hr_access' },
@@ -1559,9 +1558,9 @@ function Sidebar({ user, page, setPage, onLogout }) {
 /* ===================== MOBILE BOTTOM NAV ===================== */
 function BottomNav({ user, page, setPage, onMoreClick }) {
   const primary = [
-    { id: 'dashboard', label: 'الرئيسية', icon: '📊' },
-    { id: 'quotes',    label: 'عروض',     icon: '📋' },
-    { id: 'accounting', label: 'محاسبة',  icon: '💰' },
+    { id: 'dashboard', label: 'الرئيسية', icon: '📊', perm: 'dashboard_access' },
+    { id: 'quotes',    label: 'عروض',     icon: '📋', perm: 'quotes_access' },
+    { id: 'accounting', label: 'محاسبة',  icon: '💰', perm: 'accounting_access' },
     { id: 'customers', label: 'عملاء',    icon: '🏢', perm: 'customers_access' },
   ].filter(i => !i.perm || hasPerm(user, i.perm));
 
@@ -6518,7 +6517,11 @@ const ROLE_LABELS = { admin:'مدير النظام', employee:'موظف', user:'
 const ROLE_BADGE  = { admin:'badge-approved', employee:'badge-sent', user:'badge-sent' };
 
 const PERM_GROUPS = [
+  { label: 'عام', icon: '📊', perms: [
+    { key: 'dashboard_access', label: 'الوصول للوحة التحكم الرئيسية' },
+  ]},
   { label: 'عروض الأسعار', icon: '📄', perms: [
+    { key: 'quotes_access',          label: 'الوصول لصفحة عروض الأسعار' },
     { key: 'quotes_create',          label: 'إنشاء عرض سعر جديد' },
     { key: 'quotes_clone',           label: 'نسخ عرض سعر لعميل آخر' },
     { key: 'quotes_clone_other_company', label: 'نسخ عرض سعر باسم شركة أخرى (بسعر أعلى)' },
@@ -6543,7 +6546,8 @@ const PERM_GROUPS = [
     { key: 'daily_orders_prepare', label: 'واجهة التجهيز المبسّطة (موظف تجهيز الطلبيات لشركة النقل)' },
   ]},
   { label: 'الفواتير والدفعات', icon: '💰', perms: [
-    { key: 'payments_delete', label: 'حذف الدفعات من الفواتير' },
+    { key: 'accounting_access', label: 'الوصول لصفحة إدارة المحاسبة' },
+    { key: 'payments_delete',   label: 'حذف الدفعات من الفواتير' },
   ]},
   { label: 'العملاء', icon: '🏢', perms: [
     { key: 'customers_access', label: 'الوصول لقائمة العملاء' },
@@ -6581,6 +6585,8 @@ const PERM_GROUPS = [
 ];
 
 const DEFAULT_EMPLOYEE_PERMS = {
+  dashboard_access: true,
+  quotes_access: true,
   quotes_create: true,  quotes_clone: true,     quotes_clone_other_company: false, quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
   quotes_validity_override: false, quotes_view_issuer: false,
   deleted_quotes_access: false,
@@ -6590,6 +6596,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   catalog_access: true, catalog_edit: false,    catalog_delete: false,
   letters_access: true, letters_manage: false,
   archive_access: true, activity_access: false,
+  accounting_access: true,
   payments_delete: false,
   hr_access: false,
   suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
@@ -7113,9 +7120,10 @@ function UsersPage({ currentUser }) {
    - thead = هامش علوي متكرر، tfoot = الفوتر (يتكرّر أسفل كل صفحة ويحجز مساحته)
    - نقيس المحتوى بعرض A4 الحقيقي ونملأ الخلية بحيث يستقر الفوتر أسفل الصفحة الأخيرة */
 let __pendingPrintCleanup = null;
-const printDoc = (containerId, title) => {
+const printDoc = (containerId, title, orientation='portrait') => {
   const el = document.getElementById(containerId);
   if (!el) return;
+  const isLandscape = orientation === 'landscape';
 
   // لو فيه طباعة سابقة لسا ما اكتمل تنظيفها (بيصير بالموبايل لو المستخدم
   // رجع يطبع بسرعة قبل ما ينتهي تنظيف المحاولة السابقة)، خلّصها فوراً حتى
@@ -7135,10 +7143,10 @@ const printDoc = (containerId, title) => {
   const printStyle = document.createElement('style');
   printStyle.textContent = `
     @media print {
-      @page { margin: 0; size: A4 portrait; }
+      @page { margin: 0; size: A4 ${isLandscape ? 'landscape' : 'portrait'}; }
       #temp-print-div { position: static !important; left: auto !important; width: 100% !important; }
       #temp-print-div .pq-measure { display: none !important; }
-      #temp-print-div .pq-page { transform: none !important; margin: 0 auto !important; box-shadow: none !important; height: 296.8mm !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
+      #temp-print-div .pq-page { transform: none !important; margin: 0 auto !important; box-shadow: none !important; width: ${isLandscape ? '296.8mm' : '210mm'} !important; height: ${isLandscape ? '209.8mm' : '296.8mm'} !important; page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
       #temp-print-div .pq-page:last-child { page-break-after: auto; break-after: auto; }
     }
   `;
@@ -8565,11 +8573,29 @@ const DO_STATUS = {
   with_carrier: { label: 'مع الناقل',    badge: 'badge-confirmed' },
   delivered:    { label: 'تم التسليم',   badge: 'badge-delivered' },
   returned:     { label: 'مرتجع',        badge: 'badge-cancelled' },
+  cancelled:    { label: 'ملغية',        badge: 'badge-cancelled' },
 };
 const DO_CHANNEL = {
   shipping_company: { label: 'شركة النقل', icon: '🚚' },
-  abu_tarek:        { label: 'أبو طارق',   icon: '🏃' },
+  abu_tarek:        { label: 'أبو طارق',   icon: '🛵' },
 };
+// قائمة مبدئية لأصناف الطلبات اليومية (اقتراحات تكميل تلقائي فقط — بدون ربط بالكتالوج)
+const DAILY_ORDER_STRIP_NAMES = [
+  'شرائح فحص السكر بالدم أكيو تشيك انستانت',
+  'شرائح فحص السكر بالدم أكيو تشيك بيرفورما',
+  'شرائح فحص السكر بالدم دي سمارت',
+  'شرائح فحص السكر بالدم كونتور بلس',
+  'شرائح فحص السكر بالدم كونتور تي اس',
+  'شرائح فحص السكر بالدم جلوكولاب',
+];
+const DAILY_ORDER_ITEM_NAMES = [
+  ...DAILY_ORDER_STRIP_NAMES,
+  'جهاز أكيو تشيك انستانت', 'جهاز أكيو تشيك بيرفورما', 'جهاز دي سمارت',
+  'جهاز كونتور بلس', 'جهاز كونتور تي اس', 'جهاز جلوكولاب',
+  'إبر قلم الانسولين', 'إبر واخزات', 'سرنجات الانسولين 1 مل',
+];
+const DAILY_ORDER_OFFERS = ['عرض علبتين', 'عرض 5 علب'];
+const DAILY_ORDER_ACCOUNTS = ['كليك hmest', 'كليك 0798801000'];
 
 function DailyOrdersPage({ user }) {
   const [orders, setOrders]     = useState([]);
@@ -8583,6 +8609,9 @@ function DailyOrdersPage({ user }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [printingOrder, setPrintingOrder] = useState(null);
   const [printItems, setPrintItems]       = useState([]);
+  const [showManifest, setShowManifest]   = useState(false);
+  const [manifestOrders, setManifestOrders] = useState([]);
+  const [manifestLoading, setManifestLoading] = useState(false);
 
   const openPrint = async (o) => {
     const { data, error } = await sb.from('daily_order_items').select('*').eq('daily_order_id', o.id).order('sort_order');
@@ -8590,6 +8619,21 @@ function DailyOrdersPage({ user }) {
     if (!data || !data.length) { toast('لا توجد أصناف بهذه الطلبية', 'error'); return; }
     setPrintItems(data);
     setPrintingOrder(o);
+  };
+
+  const openManifest = async () => {
+    setManifestLoading(true);
+    const { data, error } = await sb.from('daily_orders')
+      .select('*, daily_order_items(*)')
+      .eq('channel', 'shipping_company')
+      .in('status', ['new','preparing'])
+      .order('order_date', { ascending: true })
+      .order('created_at', { ascending: true });
+    setManifestLoading(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    if (!data || !data.length) { toast('لا توجد طلبيات بانتظار التجهيز لشركة النقل حاليًا', 'error'); return; }
+    setManifestOrders(data);
+    setShowManifest(true);
   };
 
   const load = async () => {
@@ -8662,8 +8706,10 @@ function DailyOrdersPage({ user }) {
         </div>
         <div style={{flex:1}}/>
         <input className="search-input" placeholder="بحث: الاسم، الهاتف، المنطقة، الرقم..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260}}/>
+        <button className="btn btn-ghost" disabled={manifestLoading} onClick={openManifest} style={{whiteSpace:'nowrap'}}>{manifestLoading?'...':'🖨️ طباعة كشف اليوم'}</button>
         {hasPerm(user,'daily_orders_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ طلبية جديدة</button>}
       </div>
+      {showManifest && <DailyOrdersManifestPrint orders={manifestOrders} onClose={()=>setShowManifest(false)}/>}
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
         {[
@@ -8719,7 +8765,10 @@ function DailyOrdersPage({ user }) {
                       {DO_CHANNEL[o.channel]?.icon} {DO_CHANNEL[o.channel]?.label}
                       {o.is_express && <span className="badge" style={{background:'#fef3c7',color:'#92400e',marginRight:4}}>⚡ سريع</span>}
                     </td>
-                    <td className="text-sm">{o.payment_method === 'prepaid' ? '✅ مسبقًا' : '💵 عند الاستلام'}</td>
+                    <td className="text-sm">
+                      {o.payment_method === 'prepaid' ? '✅ مسبقًا' : '💵 عند الاستلام'}
+                      {o.payment_method === 'prepaid' && o.paid_account && <div style={{fontSize:11,color:'var(--gray-500)'}}>{o.paid_account}</div>}
+                    </td>
                     <td className="font-bold" style={{whiteSpace:'nowrap'}}>{numFmt(o.total_amount)} د.أ</td>
                     <td>
                       {hasPerm(user,'daily_orders_edit')
@@ -8774,12 +8823,14 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
     is_express:      order?.is_express || false,
     express_fee:     order?.express_fee || '',
     payment_method:  order?.payment_method || 'cod',
+    paid_account:    order?.paid_account || '',
     notes:           order?.notes || '',
+    prep_note:       order?.prep_note || '',
   });
-  const [items, setItems] = useState([{ item_name:'', quantity:1, unit_price:0 }]);
+  const [items, setItems] = useState([{ item_name:'', offer:'', quantity:1, unit_price:0 }]);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
-  const [ammanDistricts, setAmmanDistricts] = useState(CUST_AMMAN);
+  const [districtsMap, setDistrictsMap] = useState(CUST_DISTRICTS);
 
   const [regionGov, setRegionGov] = useState(() => {
     if (!order?.region) return '';
@@ -8795,18 +8846,27 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    sb.from('customer_districts').select('name').eq('governorate','عمان').order('sort_order').order('name')
-      .then(({data}) => { if (data?.length) setAmmanDistricts(data.map(d=>d.name)); });
+    sb.from('customer_districts').select('governorate,name').order('sort_order').order('name')
+      .then(({data}) => {
+        if (data?.length) {
+          const map = {};
+          data.forEach(d=>{ if(!map[d.governorate]) map[d.governorate]=[]; map[d.governorate].push(d.name); });
+          setDistrictsMap(map);
+        }
+      });
     if (!isEdit) return;
     (async () => {
       const { data } = await sb.from('daily_order_items').select('*').eq('daily_order_id', order.id).order('sort_order');
-      setItems((data && data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_price:i.unit_price })) : [{ item_name:'', quantity:1, unit_price:0 }]);
+      setItems((data && data.length) ? data.map(i=>{
+        const offer = DAILY_ORDER_OFFERS.find(o => i.item_name.endsWith(' - '+o));
+        return { item_name: offer ? i.item_name.slice(0, -(' - '+offer).length) : i.item_name, offer: offer||'', quantity:i.quantity, unit_price:i.unit_price };
+      }) : [{ item_name:'', offer:'', quantity:1, unit_price:0 }]);
       setLoading(false);
     })();
   }, []);
 
   const setItem = (idx,k,v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
-  const addItem = () => setItems(list => [...list, { item_name:'', quantity:1, unit_price:0 }]);
+  const addItem = () => setItems(list => [...list, { item_name:'', offer:'', quantity:1, unit_price:0 }]);
   const delItem = (idx) => setItems(list => list.length>1 ? list.filter((_,i)=>i!==idx) : list);
 
   const subtotal   = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
@@ -8825,7 +8885,7 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
     if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
     setSaving(true);
     try {
-      const region = regionGov === 'عمان' && regionDistrict.trim()
+      const region = regionGov && regionDistrict.trim()
         ? `${regionGov} - ${regionDistrict.trim()}`
         : (regionGov || null);
       const payload = {
@@ -8838,9 +8898,11 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
         is_express:      form.is_express,
         express_fee:     expressFee.toFixed(3),
         payment_method:  form.payment_method,
+        paid_account:    form.payment_method === 'prepaid' ? (form.paid_account.trim() || null) : null,
         subtotal:        subtotal.toFixed(3),
         total_amount:    total.toFixed(3),
         notes:           form.notes.trim() || null,
+        prep_note:       form.prep_note.trim() || null,
       };
       let orderId;
       if (isEdit) {
@@ -8857,7 +8919,7 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
       const rows = clean.map((it,idx) => ({
         daily_order_id: orderId,
         sort_order:     idx,
-        item_name:      it.item_name.trim(),
+        item_name:      it.item_name.trim() + (it.offer ? ' - '+it.offer : ''),
         quantity:       parseFloat(it.quantity) || 0,
         unit_price:     parseFloat(it.unit_price) || 0,
         total_price:    (parseFloat(it.quantity)||0) * (parseFloat(it.unit_price)||0),
@@ -8912,11 +8974,11 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
                 {CUST_GOVS.map(g=><option key={g} value={g}>{g}</option>)}
               </select>
             </div>
-            {regionGov === 'عمان' && (
+            {regionGov && (
               <div className="form-group">
                 <label className="form-label">المنطقة</label>
-                <input className="form-control" list="do-amman-list" value={regionDistrict} onChange={e=>setRegionDistrict(e.target.value)} placeholder="اختر أو اكتب منطقة عمان"/>
-                <datalist id="do-amman-list">{ammanDistricts.map(d=><option key={d} value={d}/>)}</datalist>
+                <input className="form-control" list="do-region-list" value={regionDistrict} onChange={e=>setRegionDistrict(e.target.value)} placeholder={`اختر أو اكتب منطقة ${regionGov}`}/>
+                <datalist id="do-region-list">{(districtsMap[regionGov]||[]).map(d=><option key={d} value={d}/>)}</datalist>
               </div>
             )}
           </div>
@@ -8936,6 +8998,12 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
                 <button type="button" style={toggleBtn(form.payment_method==='cod')} onClick={()=>setF('payment_method','cod')}>💵 عند الاستلام</button>
                 <button type="button" style={toggleBtn(form.payment_method==='prepaid')} onClick={()=>setF('payment_method','prepaid')}>✅ مسبقًا</button>
               </div>
+              {form.payment_method === 'prepaid' && (
+                <div style={{marginTop:8}}>
+                  <input className="form-control" list="do-account-list" value={form.paid_account} onChange={e=>setF('paid_account',e.target.value)} placeholder="اختر أو اكتب الحساب المستلم عليه الدفع"/>
+                  <datalist id="do-account-list">{DAILY_ORDER_ACCOUNTS.map(a=><option key={a} value={a}/>)}</datalist>
+                </div>
+              )}
             </div>
           </div>
 
@@ -8952,14 +9020,29 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
 
           <div className="form-group">
             <label className="form-label">الأصناف</label>
-            <table style={{width:'100%',fontSize:13}}>
+            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+              <colgroup>
+                <col/><col style={{width:150}}/><col style={{width:80}}/><col style={{width:110}}/><col style={{width:100}}/><col style={{width:36}}/>
+              </colgroup>
               <thead><tr>
-                <th style={{textAlign:'right'}}>الصنف</th><th style={{width:80}}>الكمية</th><th style={{width:110}}>سعر الوحدة</th><th style={{width:100}}>الإجمالي</th><th style={{width:36}}></th>
+                <th style={{textAlign:'right'}}>الصنف</th><th>العرض</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th><th></th>
               </tr></thead>
               <tbody>
                 {items.map((it,idx)=>(
                   <tr key={idx}>
-                    <td><input className="form-control" value={it.item_name} onChange={e=>setItem(idx,'item_name',e.target.value)} placeholder="اسم الصنف"/></td>
+                    <td>
+                      <input className="form-control" list="do-item-names" value={it.item_name} onChange={e=>setItem(idx,'item_name',e.target.value)} placeholder="اسم الصنف"/>
+                      <datalist id="do-item-names">{DAILY_ORDER_ITEM_NAMES.map(n=><option key={n} value={n}/>)}</datalist>
+                    </td>
+                    <td>
+                      <select className="form-control" value={it.offer} onChange={e=>{
+                        const offer = e.target.value;
+                        setItems(list => list.map((row,i) => i===idx ? { ...row, offer, quantity: offer==='عرض علبتين'?2 : offer==='عرض 5 علب'?5 : row.quantity } : row));
+                      }}>
+                        <option value="">بدون عرض</option>
+                        {DAILY_ORDER_OFFERS.map(o=><option key={o} value={o}>{o}</option>)}
+                      </select>
+                    </td>
                     <td><input type="number" step="1" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/></td>
                     <td><input type="number" step="0.001" className="form-control" value={it.unit_price} onChange={e=>setItem(idx,'unit_price',e.target.value)}/></td>
                     <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0))}</td>
@@ -8974,6 +9057,11 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
           <div className="form-group">
             <label className="form-label">ملاحظات</label>
             <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">📝 ملاحظة لموظف التجهيز (اختياري)</label>
+            <textarea className="form-control" rows={2} value={form.prep_note} onChange={e=>setF('prep_note',e.target.value)} placeholder="مثال: تأكد من العنوان قبل التسليم" style={{resize:'vertical'}}/>
           </div>
 
           <div style={{display:'flex',justifyContent:'flex-end',gap:20,padding:'10px 4px',fontSize:13,fontWeight:700,color:'var(--gray-600)'}}>
@@ -9013,8 +9101,13 @@ function DailyOrderPrint({ order, items, onClose }) {
         <div className="field-row"><label>التاريخ:</label> {order.order_date}</div>
         <div className="field-row"><label>المنطقة:</label> {order.region || '—'}</div>
         <div className="field-row"><label>القناة:</label> {DO_CHANNEL[order.channel]?.label || '—'}{order.is_express ? ' — ⚡ توصيل سريع' : ''}</div>
-        <div className="field-row"><label>الدفع:</label> {order.payment_method === 'prepaid' ? 'مسبقًا' : 'عند الاستلام'}</div>
+        <div className="field-row"><label>الدفع:</label> {order.payment_method === 'prepaid' ? `مسبقًا${order.paid_account ? ' - '+order.paid_account : ''}` : 'عند الاستلام'}</div>
       </div>
+      {order.prep_note && (
+        <div style={{marginTop:8, padding:'6px 10px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:6, fontSize:12, color:'#92400e', fontWeight:600}}>
+          📝 ملاحظة للتجهيز: {order.prep_note}
+        </div>
+      )}
     </div>
   );
 
@@ -9148,12 +9241,161 @@ function DailyOrderPrint({ order, items, onClose }) {
   );
 }
 
+/* كشف تجهيز مختصر يجمع كل طلبيات شركة النقل بانتظار التجهيز بجدول واحد */
+function DailyOrdersManifestPrint({ orders, onClose }) {
+  const printId = 'daily-orders-manifest-print';
+  const [pages, setPages] = React.useState(null);
+  const measureRef = React.useRef(null);
+  const pagesSigRef = React.useRef('');
+  // ورقة أفقية (landscape) — أعمدة الكشف أكتر بكثير من عمود صنف عادي، فبنعكس الأبعاد محلياً
+  // (يظلل PQ_PAGE العامة داخل هالمكوّن فقط) بدل تعديل منطق القياس المشترك.
+  const PQ_PAGE = { h: 210, top: 6, footBottom: 5, footGap: 4 };
+  const PAGE_W_MM = 297, PAGE_H_MM = 210;
+
+  const doPrint = () => printDoc(printId, `كشف تجهيز طلبات اليوم`, 'landscape');
+
+  const codTotal     = orders.filter(o=>o.payment_method!=='prepaid').reduce((s,o)=>s+parseFloat(o.total_amount||0),0);
+  const prepaidTotal = orders.filter(o=>o.payment_method==='prepaid').reduce((s,o)=>s+parseFloat(o.total_amount||0),0);
+  const grandTotal   = codTotal + prepaidTotal;
+
+  const itemsSummary = (o) => (o.daily_order_items || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+    .map(it => `${it.item_name} ×${numFmt(it.quantity,0)}`).join('، ');
+
+  const firstHeader = (
+    <>
+      <PqDocHeader/>
+      <div className="print-doc-title" style={{fontSize:16, letterSpacing:2}}>كشف تجهيز طلبات اليوم — شركة النقل</div>
+      <div style={{textAlign:'center', fontSize:12, color:'#555', marginBottom:6}}>{today()} · عدد الطلبيات: {orders.length}</div>
+    </>
+  );
+
+  const tableColgroup = (
+    <colgroup>
+      <col style={{width:'3%'}}/><col style={{width:'10%'}}/><col style={{width:'15%'}}/><col style={{width:'12%'}}/><col style={{width:'12%'}}/><col/><col style={{width:'13%'}}/><col style={{width:'9%'}}/>
+    </colgroup>
+  );
+  const tableThead = (
+    <thead><tr><th>م</th><th>رقم الطلبية</th><th>الزبون</th><th>الهاتف</th><th>المنطقة</th><th>الأصناف</th><th>الدفع</th><th>الإجمالي</th></tr></thead>
+  );
+  const oneLine = {textAlign:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'};
+  const renderRow = (o, i) => (
+    <tr key={o.id}>
+      <td style={oneLine}>{i+1}</td>
+      <td style={{...oneLine, fontWeight:700}}>{o.number}</td>
+      <td style={oneLine} title={o.customer_name}>{o.customer_name}{o.is_express ? ' ⚡' : ''}</td>
+      <td style={oneLine} title={o.customer_phone||''}>{o.customer_phone || '—'}</td>
+      <td style={oneLine} title={o.region||''}>{o.region || '—'}</td>
+      <td style={{textAlign:'right', whiteSpace:'normal', wordBreak:'break-word', lineHeight:1.4, fontSize:11}}>
+        {itemsSummary(o)}
+        {o.prep_note && <div style={{color:'#92400e',fontWeight:700,marginTop:2}}>📝 {o.prep_note}</div>}
+      </td>
+      <td style={{...oneLine, fontSize:11}} title={o.paid_account||''}>{o.payment_method === 'prepaid' ? `مسبقًا${o.paid_account ? ' - '+o.paid_account : ''}` : 'عند الاستلام'}</td>
+      <td style={{...oneLine, fontWeight:700}}>{numFmt(o.total_amount)}</td>
+    </tr>
+  );
+
+  const tailBlock = (
+    <div style={{display:'flex', justifyContent:'flex-end', gap:24, padding:'10px 6px', fontSize:13}}>
+      <span>عند الاستلام: <strong>{numFmt(codTotal)} د.أ</strong></span>
+      <span>مسبقًا: <strong>{numFmt(prepaidTotal)} د.أ</strong></span>
+      <span style={{fontSize:15, color:'var(--primary)'}}>الإجمالي: <strong>{numFmt(grandTotal)} د.أ</strong></span>
+    </div>
+  );
+
+  React.useLayoutEffect(() => {
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const rowsTable = mEl.querySelector('.pqm-rows table');
+      const headH  = H(mEl.querySelector('.pqm-head'));
+      const theadH = H(rowsTable && rowsTable.querySelector('thead'));
+      const rowHs  = Array.from(rowsTable ? rowsTable.querySelectorAll('tbody tr') : []).map(el => el.getBoundingClientRect().height);
+      const tailH  = H(mEl.querySelector('.pqm-tail'));
+      const footH  = H(mEl.querySelector('.pqm-footer'));
+      const tableMB = rowsTable ? (parseFloat(getComputedStyle(rowsTable).marginBottom) || 0) : 0;
+
+      const reserveMm = PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      const out = [];
+      let cur = [], used = headH + theadH, first = true;
+      rowHs.forEach((rh, i) => {
+        if (used + rh > contentPx && cur.length > 0) {
+          out.push({ rows: cur, first, tail: false });
+          cur = []; used = theadH; first = false;
+        }
+        cur.push(i); used += rh;
+      });
+      if (used + (cur.length ? tableMB : 0) + tailH <= contentPx) {
+        out.push({ rows: cur, first, tail: true });
+      } else {
+        out.push({ rows: cur, first, tail: false });
+        out.push({ rows: [], first: false, tail: true });
+      }
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  });
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth: 1180}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">🖨️ طباعة كشف تجهيز طلبات اليوم</span>
+          <div className="flex gap-2">
+            <button className="btn btn-primary btn-sm" onClick={doPrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="modal-body pq-preview-body" id={printId}>
+          <div className="pq-measure" ref={measureRef} aria-hidden="true">
+            <div className="pq-measure-inner" dir="rtl" style={{width:`calc(${PAGE_W_MM}mm - 20mm)`}}>
+              <div className="pqm-head">{firstHeader}</div>
+              <div className="pqm-rows">
+                <table className="print-items" style={{marginTop:12}}>
+                  {tableColgroup}{tableThead}
+                  <tbody>{orders.map((o,i) => renderRow(o,i))}</tbody>
+                </table>
+              </div>
+              <div className="pqm-tail">{tailBlock}</div>
+              <div className="pqm-footer"><PqFooterBar/></div>
+            </div>
+          </div>
+
+          {(pages || [{rows: orders.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
+            <div className="pq-page" key={pi} style={{width:`${PAGE_W_MM}mm`, height:`${PAGE_H_MM}mm`}}>
+              <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+                {pg.first && firstHeader}
+                {pg.rows.length > 0 && (
+                  <table className="print-items" style={{marginTop: pg.first ? 12 : 0}}>
+                    {tableColgroup}{tableThead}
+                    <tbody>{pg.rows.map(i => renderRow(orders[i], i))}</tbody>
+                  </table>
+                )}
+                {pg.tail && tailBlock}
+              </div>
+              <PqFooterBar/>
+              {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* واجهة مبسّطة لموظف التجهيز — يشتغل فقط على طلبيات "شركة النقل" (طلبيات أبو طارق يجهزها هو بنفسه) */
 function DailyOrdersPrepView({ user }) {
   const [queue, setQueue]         = useState([]);
   const [doneToday, setDoneToday] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [busyId, setBusyId]       = useState(null);
+  const [bulkBusy, setBulkBusy]   = useState(false);
+  const [showManifest, setShowManifest] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -9185,6 +9427,22 @@ function DailyOrdersPrepView({ user }) {
     load();
   };
 
+  const markAllPrepared = async () => {
+    if (!queue.length) return;
+    if (!window.confirm(`تأكيد تجهيز وتسليم ${queue.length} طلبية لشركة النقل؟`)) return;
+    setBulkBusy(true);
+    const { error } = await sb.from('daily_orders').update({
+      status:      'with_carrier',
+      prepared_by: user.id,
+      prepared_at: new Date().toISOString(),
+    }).in('id', queue.map(o => o.id));
+    setBulkBusy(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `جهّز ${queue.length} طلبية دفعة واحدة وسلّمها لشركة النقل`, 'daily_order');
+    toast('تم تسجيل تجهيز كل الطلبيات ✓', 'success');
+    load();
+  };
+
   const OrderCard = ({ o, done }) => {
     const items = (o.daily_order_items || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
     return (
@@ -9198,6 +9456,11 @@ function DailyOrdersPrepView({ user }) {
         </div>
         <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{o.customer_name}</div>
         <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:10}}>{o.customer_phone || '—'} {o.region ? `· ${o.region}` : ''}</div>
+        {o.prep_note && (
+          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'6px 10px',marginBottom:10,fontSize:12,color:'#92400e',fontWeight:600}}>
+            📝 {o.prep_note}
+          </div>
+        )}
         <div style={{background:'#f7fafc',borderRadius:8,padding:'8px 10px',marginBottom:10}}>
           {items.map((it,idx)=>(
             <div key={idx} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'2px 0'}}>
@@ -9221,13 +9484,22 @@ function DailyOrdersPrepView({ user }) {
 
   return (
     <div>
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
-        <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📦</div>
-        <div>
-          <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>تجهيز الطلبات — شركة النقل</div>
-          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{queue.length} بانتظار التجهيز</div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:16,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)',flexWrap:'wrap'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📦</div>
+          <div>
+            <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>تجهيز الطلبات — شركة النقل</div>
+            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{queue.length} بانتظار التجهيز</div>
+          </div>
         </div>
+        {queue.length > 0 && (
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-ghost btn-sm" onClick={()=>setShowManifest(true)}>🖨️ طباعة كشف اليوم</button>
+            <button className="btn btn-primary btn-sm" disabled={bulkBusy} onClick={markAllPrepared}>{bulkBusy?'...':'✅ تم تجهيز الكل'}</button>
+          </div>
+        )}
       </div>
+      {showManifest && <DailyOrdersManifestPrint orders={queue} onClose={()=>setShowManifest(false)}/>}
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
         <>
@@ -15435,6 +15707,33 @@ function FormsPage({ user, quotes, onReload }) {
   );
 }
 
+/* يجمع "الطلبات" و"الطلبات اليومية" تحت عنصر سايدبار واحد — تبويبان لو الموظف يملك الصلاحيتين،
+   وإلا يعرض القسم الوحيد اللي يملك صلاحيته مباشرة بدون تبويبات. */
+function OrdersSection({ user, orders, onReload }) {
+  const canOrders = hasPerm(user, 'orders_access');
+  const canDaily  = hasPerm(user, 'daily_orders_access');
+  const [tab, setTab] = useState(canOrders ? 'orders' : 'daily');
+
+  const dailyView = (user.role !== 'admin' && hasPerm(user,'daily_orders_prepare'))
+    ? <DailyOrdersPrepView user={user}/>
+    : <DailyOrdersPage user={user}/>;
+
+  if (canOrders && canDaily) {
+    return (
+      <div>
+        <div style={{display:'flex',gap:8,marginBottom:16}}>
+          <button className={`btn ${tab==='orders'?'btn-primary':'btn-ghost'}`} onClick={()=>setTab('orders')}>📦 الطلبات</button>
+          <button className={`btn ${tab==='daily'?'btn-primary':'btn-ghost'}`} onClick={()=>setTab('daily')}>🚚 الطلبات اليومية</button>
+        </div>
+        {tab==='orders' ? <OrdersPage user={user} orders={orders} onReload={onReload}/> : dailyView}
+      </div>
+    );
+  }
+  if (canOrders) return <OrdersPage user={user} orders={orders} onReload={onReload}/>;
+  if (canDaily) return dailyView;
+  return null;
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -15447,6 +15746,14 @@ function App() {
   // ref يحفظ المستخدم الحالي — يمنع إعادة تعيين الـ role عند تجديد الـ token
   const userRef = React.useRef(null);
   const setUserSafe = (u) => { userRef.current = u; setUser(u); };
+
+  // موظف بدون صلاحية "لوحة التحكم" (مثلاً موظف مقتصر على الطلبات اليومية فقط) —
+  // ما تخلّيه واقف عالافتراضي "dashboard" اللي ما يقدر يشوفه، وجّهه لأول صفحة إله صلاحية عليها
+  useEffect(() => {
+    if (!user || page !== 'dashboard' || hasPerm(user, 'dashboard_access')) return;
+    const firstOk = NAV.find(item => item.visible ? item.visible(user) : (!item.perm || hasPerm(user, item.perm)));
+    if (firstOk) setPage(firstOk.id);
+  }, [user]);
 
   useEffect(() => {
     const safetyTimer = setTimeout(() => { setLoading(false); }, 5000);
@@ -15649,15 +15956,10 @@ function App() {
           </div>
         </div>
         <div className="content">
-          {page==='dashboard' && <Dashboard quotes={quotes} orders={orders} logs={logs} user={user}/>}
-          {page==='quotes' && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
-          {page==='accounting' && <FormsPage user={user} quotes={quotes} onReload={reload}/>}
-          {page==='orders' && hasPerm(user,'orders_access') && <OrdersPage user={user} orders={orders} onReload={reload}/>}
-          {page==='daily_orders' && hasPerm(user,'daily_orders_access') && (
-            user.role !== 'admin' && hasPerm(user,'daily_orders_prepare')
-              ? <DailyOrdersPrepView user={user}/>
-              : <DailyOrdersPage user={user}/>
-          )}
+          {page==='dashboard' && hasPerm(user,'dashboard_access') && <Dashboard quotes={quotes} orders={orders} logs={logs} user={user}/>}
+          {page==='quotes' && hasPerm(user,'quotes_access') && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
+          {page==='accounting' && hasPerm(user,'accounting_access') && <FormsPage user={user} quotes={quotes} onReload={reload}/>}
+          {page==='orders' && <OrdersSection user={user} orders={orders} onReload={reload}/>}
           {page==='procurement' && hasPerm(user,'suppliers_access') && <ProcurementPage user={user}/>}
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
