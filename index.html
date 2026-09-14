@@ -8644,6 +8644,10 @@ function DailyOrdersPage({ user }) {
     return () => window.removeEventListener('resize', h);
   }, []);
 
+  /* موظف التسجيل العادي (مندوب) يشوف طلباته هو بس؛ موظف التجهيز والأدمن يشوفوا طلبات الجميع
+     — لأن التجهيز عملية مركزية لازم تغطي كل المندوبين */
+  const scopeToSelf = user.role !== 'admin' && !hasPerm(user, 'daily_orders_prepare');
+
   const openPrint = async (o) => {
     const { data, error } = await sb.from('daily_order_items').select('*').eq('daily_order_id', o.id).order('sort_order');
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
@@ -8669,8 +8673,10 @@ function DailyOrdersPage({ user }) {
 
   const load = async () => {
     setLoading(true);
+    let oQuery = sb.from('daily_orders').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false });
+    if (scopeToSelf) oQuery = oQuery.eq('sales_rep_id', user.id);
     const [{ data: o }, { data: p }] = await Promise.all([
-      sb.from('daily_orders').select('*').order('order_date', { ascending: false }).order('created_at', { ascending: false }),
+      oQuery,
       sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name'),
     ]);
     setOrders(o || []); setProfiles(p || []); setLoading(false);
@@ -8737,7 +8743,7 @@ function DailyOrdersPage({ user }) {
         </div>
         {!isMobile && <div style={{flex:1}}/>}
         <input className="search-input" placeholder="بحث: الاسم، الهاتف، المنطقة، الرقم..." value={search} onChange={e=>setSearch(e.target.value)} style={isMobile ? {width:'100%'} : {minWidth:260}}/>
-        <button className="btn btn-ghost" disabled={manifestLoading} onClick={openManifest} style={{whiteSpace:'nowrap',flex:isMobile?'1 1 auto':undefined}}>{manifestLoading?'...':'🖨️ طباعة كشف اليوم'}</button>
+        {!scopeToSelf && <button className="btn btn-ghost" disabled={manifestLoading} onClick={openManifest} style={{whiteSpace:'nowrap',flex:isMobile?'1 1 auto':undefined}}>{manifestLoading?'...':'🖨️ طباعة كشف اليوم'}</button>}
         {hasPerm(user,'daily_orders_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap',flex:isMobile?'1 1 auto':undefined}}>➕ طلبية جديدة</button>}
       </div>
       {showManifest && <DailyOrdersManifestPrint orders={manifestOrders} onClose={()=>setShowManifest(false)}/>}
@@ -8767,10 +8773,12 @@ function DailyOrdersPage({ user }) {
           </button>
         ))}
         {!isMobile && <div style={{flex:1}}/>}
-        <select className="form-control" style={isMobile ? {width:'100%'} : {width:'auto'}} value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
-          <option value="all">كل المندوبين</option>
-          {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
-        </select>
+        {!scopeToSelf && (
+          <select className="form-control" style={isMobile ? {width:'100%'} : {width:'auto'}} value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
+            <option value="all">كل المندوبين</option>
+            {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select>
+        )}
       </div>
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
@@ -16122,14 +16130,33 @@ function FormsPage({ user, quotes, onReload }) {
 
 /* يجمع "الطلبات" و"الطلبات اليومية" تحت عنصر سايدبار واحد — تبويبان لو الموظف يملك الصلاحيتين،
    وإلا يعرض القسم الوحيد اللي يملك صلاحيته مباشرة بدون تبويبات. */
+/* موظف ممكن يكون عنده صلاحية "واجهة التجهيز المبسّطة" و"تسجيل الطلبات اليومية" مع بعض —
+   بنعرض تبويب فرعي يتيح له يتنقل بين الواجهتين، بدل ما وحدة تلغي الثانية */
+function DailyOrdersHub({ user }) {
+  const hasPrepare = user.role !== 'admin' && hasPerm(user, 'daily_orders_prepare');
+  const hasFull     = hasPerm(user, 'daily_orders_access');
+  const showBoth     = hasPrepare && hasFull;
+  const [subTab, setSubTab] = useState(hasPrepare ? 'prep' : 'full');
+
+  if (!showBoth) return hasPrepare ? <DailyOrdersPrepView user={user}/> : <DailyOrdersPage user={user}/>;
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        <button className={`btn ${subTab==='prep'?'btn-primary':'btn-ghost'}`} onClick={()=>setSubTab('prep')}>📦 تجهيز الطلبات</button>
+        <button className={`btn ${subTab==='full'?'btn-primary':'btn-ghost'}`} onClick={()=>setSubTab('full')}>🚚 طلباتي</button>
+      </div>
+      {subTab==='prep' ? <DailyOrdersPrepView user={user}/> : <DailyOrdersPage user={user}/>}
+    </div>
+  );
+}
+
 function OrdersSection({ user, orders, onReload }) {
   const canOrders = hasPerm(user, 'orders_access');
   const canDaily  = hasPerm(user, 'daily_orders_access');
   const [tab, setTab] = useState(canOrders ? 'orders' : 'daily');
 
-  const dailyView = (user.role !== 'admin' && hasPerm(user,'daily_orders_prepare'))
-    ? <DailyOrdersPrepView user={user}/>
-    : <DailyOrdersPage user={user}/>;
+  const dailyView = <DailyOrdersHub user={user}/>;
 
   if (canOrders && canDaily) {
     return (
