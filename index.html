@@ -251,6 +251,8 @@ th:last-child, td:last-child { border-left: none; }
 .letter-info-table { width: auto; margin: 24px 0 0 auto; border-collapse: collapse; font-size: 14px; direction: rtl; border: 1.5px solid #999; }
 .letter-info-table td { padding: 9px 22px; border: 1.5px solid #999; text-align: right; }
 .letter-info-table .letter-label { background: #f4f6f8; font-weight: 800; min-width: 100px; text-align: right; color: var(--gray-700); }
+.letter-info-plain { width: auto; margin: 24px 0 0 auto; font-size: 14px; direction: rtl; text-align: right; line-height: 2; }
+.letter-info-plain .letter-label { font-weight: 800; color: var(--gray-700); }
 .letter-body { margin-top: 30px; line-height: 2.2; font-size: 15px; text-align: justify; direction: rtl; }
 .letter-preprinted-spacer-top { height: 52mm; }
 .letter-preprinted-spacer-bottom { height: 28mm; }
@@ -365,6 +367,13 @@ th:last-child, td:last-child { border-left: none; }
 .print-totals table { width: 300px; font-size: 12px; border: 1px solid var(--acc-tint2, #B8DCF0); border-radius: 8px; overflow: hidden; direction: ltr; }
 .print-totals td:first-child { text-align: left; padding-left: 14px; }
 .print-totals td:last-child { text-align: right; padding-right: 14px; font-weight: 700; }
+/* كشف المهام الدورية — جدول أفقي عريض (يوم/أسبوع كعمود) لكل قسم تكرار */
+.hrtask-section-title { font-size: 13px; font-weight: 800; color: var(--primary); margin: 14px 0 5px; }
+.hrtask-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 4px; border: 1px solid #999; }
+.hrtask-table th, .hrtask-table td { border: 1px solid #999; text-align: center; padding: 4px 2px; font-size: 10px; }
+.hrtask-table th { background: #f4f6f8; font-weight: 700; }
+.hrtask-table td.hrtask-label { text-align: right; padding-right: 8px; font-size: 11px; font-weight: 600; white-space: normal; word-break: break-word; }
+.hrtask-table td.hrtask-box { height: 20px; }
 .print-totals td { padding: 6px 12px; border-bottom: 1px solid var(--acc-tint2, #C5E2F5); }
 .print-totals tr:last-child td { font-size: 15px; font-weight: 900; color: var(--acc, var(--primary)); background: var(--acc-tint, #F0F8FD); border-bottom: none; }
 .print-notes { font-size: 11px; color: #666; border-top: 1px solid #B8DCF0; padding-top: 10px; margin-top: 4px; }
@@ -13484,7 +13493,7 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
               )}
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
                 <input type="checkbox" checked={form.show_info_table!==false} onChange={e=>setF('show_info_table',e.target.checked)} style={{width:16,height:16}}/>
-                إظهار جدول بيانات الكتاب
+                عرض بيانات الكتاب كجدول (وإلا كنص عادي)
               </label>
               <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,fontWeight:600,color:'var(--gray-700)'}}>
                 <input type="checkbox" checked={!!form.is_private} onChange={e=>setF('is_private',e.target.checked)} style={{width:16,height:16}}/>
@@ -13543,6 +13552,17 @@ function LetterPrint({ letter, onClose }) {
         <tr><td className="letter-label">كتابنا رقم</td><td><strong>{letter.number}</strong></td></tr>
       </tbody>
     </table>
+  );
+  /* نفس البيانات بدون شكل جدول — تُستخدم لما المستخدم يطفّي "جدول بيانات الكتاب"،
+     لأن الموضوع وباقي البيانات محتوى أساسي بالكتاب مش مجرد زخرفة جدول */
+  const infoPlain = (
+    <div className="letter-info-plain" dir="rtl">
+      <div><span className="letter-label">السادة: </span>{letter.recipient}</div>
+      <div><span className="letter-label">عناية: </span>{letter.attention || '—'}</div>
+      <div><span className="letter-label">التاريخ: </span>{fmtD(letter.date)}</div>
+      <div><span className="letter-label">الموضوع: </span><strong>{letter.subject}</strong></div>
+      <div><span className="letter-label">كتابنا رقم: </span><strong>{letter.number}</strong></div>
+    </div>
   );
   const letterHead = withHeader ? <PqDocHeader/> : (withHeadGap ? <div style={{height:'24.5mm'}}/> : null);
   const letterContHead = withHeader ? <PqContHeader docTitle="كتاب رسمي" number={letter.number}/> : (withHeadGap ? <div style={{height:'24.5mm'}}/> : null);
@@ -13747,6 +13767,8 @@ function LetterPrint({ letter, onClose }) {
   table { border-collapse:collapse; }
   .info-table td { padding:8px 20px; border:1.5px solid #999; }
   .info-label { background:#f4f6f8; font-weight:bold; min-width:100px; }
+  .info-plain { margin:20px 0 0 auto; text-align:right; line-height:2; }
+  .info-plain div { margin:0; }
 </style></head>
 <body>
   ${headerHtml}
@@ -13756,7 +13778,13 @@ function LetterPrint({ letter, onClose }) {
     <tr><td class="info-label">التاريخ</td><td>${fmtD(letter.date)}</td></tr>
     <tr><td class="info-label">الموضوع</td><td><b>${letter.subject}</b></td></tr>
     <tr><td class="info-label">كتابنا رقم</td><td><b>${letter.number}</b></td></tr>
-  </table>` : ''}
+  </table>` : `<div class="info-plain">
+    <div><b>السادة: </b>${letter.recipient}</div>
+    <div><b>عناية: </b>${letter.attention||'—'}</div>
+    <div><b>التاريخ: </b>${fmtD(letter.date)}</div>
+    <div><b>الموضوع: </b>${letter.subject}</div>
+    <div><b>كتابنا رقم: </b>${letter.number}</div>
+  </div>`}
   <div style="margin-top:28px;line-height:2.2;font-size:15px;text-align:justify;">${letter.body}</div>
   <div style="margin-top:50px;">
     ${letter.signer_title ? '<div style="font-weight:bold;text-decoration:underline;">'+letter.signer_title+'</div>' : ''}
@@ -13798,7 +13826,7 @@ function LetterPrint({ letter, onClose }) {
           {/* حاوية قياس مخفية — بعرض منطقة المحتوى الفعلية داخل الصفحة */}
           <div className="pq-measure" ref={measureRef} aria-hidden="true">
             <div className="pq-measure-inner" dir="rtl">
-              <div className="pqm-lhead">{letterHead}{withInfoTable && infoTable}</div>
+              <div className="pqm-lhead">{letterHead}{withInfoTable ? infoTable : infoPlain}</div>
               <div className="pqm-lcont">{letterContHead}</div>
               <div className="letter-body pqm-lbody" dir="rtl" dangerouslySetInnerHTML={{__html: bodyBlocks.join('')}}/>
               <div className="pqm-lsig">{letterSig}</div>
@@ -13811,7 +13839,7 @@ function LetterPrint({ letter, onClose }) {
             <div className="pq-page" key={pi}>
               <div className="pq-page-inner" dir="rtl">
                 {pg.first ? letterHead : letterContHead}
-                {pg.first && withInfoTable && infoTable}
+                {pg.first && (withInfoTable ? infoTable : infoPlain)}
                 {pg.blocks.length > 0 && (
                   <div className="letter-body" dir="rtl" dangerouslySetInnerHTML={{__html: pg.blocks.map(i => bodyBlocks[i]).join('')}}/>
                 )}
@@ -14509,6 +14537,7 @@ function HRPage({ user }) {
   const tabs = [
     { id: 'employees', label: 'الموظفين',       icon: '👤' },
     { id: 'attendance', label: 'الحضور والغياب', icon: '📅' },
+    { id: 'periodic_tasks', label: 'المهام الدورية', icon: '🗓️' },
     { id: 'letters',   label: 'الكتب',           icon: '📝' },
     { id: 'salaries',  label: 'الرواتب',         icon: '💰' },
   ];
@@ -14526,6 +14555,7 @@ function HRPage({ user }) {
       </div>
       {tab==='employees' && <HREmployees/>}
       {tab==='attendance' && <HRAttendance/>}
+      {tab==='periodic_tasks' && <HRPeriodicTasks/>}
       {tab==='letters'   && <HRLetters user={user}/>}
       {tab==='salaries'  && <HRSalaries/>}
     </div>
@@ -14722,6 +14752,272 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>إلغاء</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- المهام الدورية ---------- */
+/* قوالب طباعة فاضية فقط — بدون تتبع رقمي للإنجاز، تُملأ بالقلم بعد الطباعة */
+const HR_TASK_FREQS = [
+  { key:'daily',    label:'يومية' },
+  { key:'weekly',   label:'أسبوعية' },
+  { key:'biweekly', label:'كل أسبوعين' },
+  { key:'monthly',  label:'شهرية' },
+];
+
+function HRPeriodicTasks() {
+  const [employees, setEmployees] = useState([]);
+  const [empId, setEmpId]         = useState('');
+  const [tasks, setTasks]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [newTitle, setNewTitle]   = useState({});
+  const [showPrint, setShowPrint] = useState(false);
+  const now = new Date();
+  const [printMonth, setPrintMonth] = useState(now.getMonth()+1);
+  const [printYear, setPrintYear]   = useState(now.getFullYear());
+
+  useEffect(() => {
+    sb.from('hr_employees').select('id,full_name,job_title').eq('status','active').order('full_name')
+      .then(({data}) => { setEmployees(data||[]); if (data?.length) setEmpId(prev => prev || data[0].id); });
+  }, []);
+
+  const loadTasks = async (id) => {
+    setLoading(true);
+    const { data } = await sb.from('hr_task_templates').select('*').eq('employee_id', id).order('sort_order');
+    setTasks(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { if (empId) loadTasks(empId); }, [empId]);
+
+  const addTask = async (freq) => {
+    const title = (newTitle[freq]||'').trim();
+    if (!title || !empId) return;
+    const maxOrder = Math.max(0, ...tasks.filter(t=>t.frequency===freq).map(t=>t.sort_order||0));
+    const { data, error } = await sb.from('hr_task_templates').insert({
+      employee_id: empId, title, frequency: freq, sort_order: maxOrder+1,
+    }).select().single();
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    setTasks(t => [...t, data]);
+    setNewTitle(n => ({...n, [freq]:''}));
+  };
+
+  const updateTask = async (id, patch) => {
+    setTasks(t => t.map(x => x.id===id ? {...x, ...patch} : x));
+    await sb.from('hr_task_templates').update(patch).eq('id', id);
+  };
+
+  const deleteTask = async (id) => {
+    if (!confirm('حذف هذه المهمة؟')) return;
+    setTasks(t => t.filter(x=>x.id!==id));
+    await sb.from('hr_task_templates').delete().eq('id', id);
+  };
+
+  const moveTask = async (id, dir) => {
+    const freq = tasks.find(t=>t.id===id)?.frequency;
+    const list = tasks.filter(t=>t.frequency===freq).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    const idx = list.findIndex(t=>t.id===id);
+    const swapWith = list[idx+dir];
+    if (!swapWith) return;
+    const a = list[idx], b = swapWith;
+    setTasks(t => t.map(x => x.id===a.id ? {...x, sort_order:b.sort_order} : x.id===b.id ? {...x, sort_order:a.sort_order} : x));
+    await sb.from('hr_task_templates').update({sort_order:b.sort_order}).eq('id', a.id);
+    await sb.from('hr_task_templates').update({sort_order:a.sort_order}).eq('id', b.id);
+  };
+
+  const currentEmp = employees.find(e=>e.id===empId);
+
+  return (
+    <div>
+      <div style={{display:'flex', gap:12, alignItems:'center', marginBottom:20, flexWrap:'wrap'}}>
+        <select className="form-control" style={{maxWidth:260}} value={empId} onChange={e=>setEmpId(e.target.value)}>
+          {employees.map(e => <option key={e.id} value={e.id}>{e.full_name}{e.job_title?` — ${e.job_title}`:''}</option>)}
+        </select>
+        {employees.length===0 && <span style={{color:'var(--gray-400)',fontSize:13}}>لا يوجد موظفون نشطون — أضف موظف من تبويب "الموظفين" أولاً</span>}
+        {empId && <button className="btn btn-primary btn-sm" onClick={()=>setShowPrint(true)}>🖨️ طباعة كشف {currentEmp?.full_name||''}</button>}
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : empId && (
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:20}}>
+          {HR_TASK_FREQS.map(f => {
+            const list = tasks.filter(t=>t.frequency===f.key).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+            return (
+              <div key={f.key} className="card" style={{padding:14}}>
+                <div style={{fontWeight:700, marginBottom:10, color:'var(--primary)'}}>{f.label}</div>
+                {list.length===0 && <div style={{fontSize:12, color:'var(--gray-400)', marginBottom:8}}>لا توجد مهام</div>}
+                {list.map((t,i) => (
+                  <div key={t.id} style={{display:'flex', alignItems:'center', gap:6, marginBottom:6, opacity: t.is_active===false?0.5:1}}>
+                    <div style={{display:'flex', flexDirection:'column'}}>
+                      <button type="button" onClick={()=>moveTask(t.id,-1)} disabled={i===0} title="نقل لأعلى" style={{border:'none',background:'none',cursor:'pointer',fontSize:10,padding:0,lineHeight:1,opacity:i===0?.3:1}}>▲</button>
+                      <button type="button" onClick={()=>moveTask(t.id,1)} disabled={i===list.length-1} title="نقل لأسفل" style={{border:'none',background:'none',cursor:'pointer',fontSize:10,padding:0,lineHeight:1,opacity:i===list.length-1?.3:1}}>▼</button>
+                    </div>
+                    <input className="form-control" style={{flex:1, fontSize:13, padding:'5px 8px'}} value={t.title}
+                      onChange={e=>setTasks(ts=>ts.map(x=>x.id===t.id?{...x,title:e.target.value}:x))}
+                      onBlur={e=>updateTask(t.id,{title:e.target.value})}/>
+                    <button type="button" title={t.is_active===false?'تفعيل':'إيقاف مؤقت'} onClick={()=>updateTask(t.id,{is_active: t.is_active===false})}
+                      style={{border:'none',background:'none',cursor:'pointer',fontSize:14}}>{t.is_active===false?'⏸️':'✅'}</button>
+                    <button type="button" title="حذف" onClick={()=>deleteTask(t.id)} style={{border:'none',background:'none',cursor:'pointer',color:'var(--danger)',fontSize:14}}>🗑</button>
+                  </div>
+                ))}
+                <div style={{display:'flex', gap:6, marginTop:8}}>
+                  <input className="form-control" placeholder="+ مهمة جديدة" style={{flex:1, fontSize:13, padding:'5px 8px'}}
+                    value={newTitle[f.key]||''} onChange={e=>setNewTitle(n=>({...n,[f.key]:e.target.value}))}
+                    onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addTask(f.key);}}}/>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>addTask(f.key)}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showPrint && currentEmp && (
+        <HRTaskSheetPrint employee={currentEmp} tasks={tasks.filter(t=>t.is_active!==false)}
+          month={printMonth} year={printYear}
+          onMonthChange={setPrintMonth} onYearChange={setPrintYear}
+          onClose={()=>setShowPrint(false)}/>
+      )}
+    </div>
+  );
+}
+
+const HR_ARABIC_MONTHS = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+
+/* كشف طباعة فاضٍ لمهام موظف واحد لشهر معيّن — 4 جداول (يومية/أسبوعية/كل أسبوعين/شهرية)
+   كل عمود يوم/أسبوع خانة فاضية تُعبّى بالقلم بعد الطباعة. أفقي (landscape) لأن جدول
+   المهام اليومية بيوصل لغاية 31 عمود. نفس نظام الصفحات الحقيقية (كتل تتوزع حسب
+   الارتفاع الفعلي المقاس) المستخدم بكشف تجهيز طلبات اليوم وبالكتب الرسمية. */
+function HRTaskSheetPrint({ employee, tasks, month, year, onMonthChange, onYearChange, onClose }) {
+  const printId = 'hr-task-sheet-print';
+  const [pages, setPages] = React.useState(null);
+  const measureRef = React.useRef(null);
+  const pagesSigRef = React.useRef('');
+  const PQ_PAGE = { h: 210, top: 6, footBottom: 5, footGap: 4 };
+  const PAGE_W_MM = 297, PAGE_H_MM = 210;
+
+  const doPrint = () => printDoc(printId, `كشف المهام الدورية - ${employee.full_name}`, 'landscape');
+
+  const dim = new Date(year, month, 0).getDate();
+  const weeksCount = Math.ceil(dim / 7);
+  const sectionCols = {
+    daily:    Array.from({length:dim}, (_,i)=>String(i+1)),
+    weekly:   Array.from({length:weeksCount}, (_,i)=>`أسبوع ${i+1}`),
+    biweekly: [`1-15`, `16-${dim}`],
+    monthly:  ['✓'],
+  };
+
+  const blocks = HR_TASK_FREQS.map(f => {
+    const list = tasks.filter(t=>t.frequency===f.key).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    if (!list.length) return null;
+    const cols = sectionCols[f.key];
+    return (
+      <div key={f.key}>
+        <div className="hrtask-section-title">{f.label}</div>
+        <table className="hrtask-table">
+          <colgroup><col style={{width:150}}/>{cols.map((_,i)=><col key={i}/>)}</colgroup>
+          <thead><tr><th style={{textAlign:'right',paddingRight:8}}>المهمة</th>{cols.map((c,i)=><th key={i}>{c}</th>)}</tr></thead>
+          <tbody>{list.map(t => (
+            <tr key={t.id}><td className="hrtask-label">{t.title}</td>{cols.map((_,i)=><td key={i} className="hrtask-box"/>)}</tr>
+          ))}</tbody>
+        </table>
+      </div>
+    );
+  }).filter(Boolean);
+
+  const headBlock = (
+    <>
+      <PqDocHeader/>
+      <div className="print-doc-title" style={{fontSize:16, letterSpacing:2}}>كشف المهام الدورية</div>
+      <div style={{textAlign:'center', fontSize:13, marginBottom:10}}>
+        <strong>{employee.full_name}</strong>{employee.job_title ? ` — ${employee.job_title}` : ''}
+        {' · '}{HR_ARABIC_MONTHS[month-1]} {year}
+      </div>
+    </>
+  );
+  const contHeadBlock = (
+    <div style={{textAlign:'center', fontSize:12, color:'#555', marginBottom:8}}>
+      كشف المهام الدورية — {employee.full_name} (تتمة)
+    </div>
+  );
+
+  React.useLayoutEffect(() => {
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const headH = H(mEl.querySelector('.pqm-head'));
+      const contH = H(mEl.querySelector('.pqm-conthead'));
+      const bodyEl = mEl.querySelector('.pqm-body');
+      const blockHs = Array.from(bodyEl ? bodyEl.children : []).map(el => {
+        const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
+        return H(el) + mb;
+      });
+      const footH = H(mEl.querySelector('.pqm-footer'));
+
+      const reserveMm = PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      const out = [];
+      let cur = [], used = headH, first = true;
+      blockHs.forEach((bh, i) => {
+        if (used + bh > contentPx && cur.length > 0) {
+          out.push({ blocks: cur, first });
+          cur = []; used = contH; first = false;
+        }
+        cur.push(i); used += bh;
+      });
+      out.push({ blocks: cur, first });
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  });
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:1180}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">🖨️ طباعة كشف المهام الدورية — {employee.full_name}</span>
+          <div className="flex gap-2" style={{alignItems:'center'}}>
+            <select className="form-control" style={{width:110}} value={month} onChange={e=>onMonthChange(parseInt(e.target.value))}>
+              {HR_ARABIC_MONTHS.map((m,i)=><option key={i} value={i+1}>{m}</option>)}
+            </select>
+            <input type="number" className="form-control" style={{width:80}} value={year} onChange={e=>onYearChange(parseInt(e.target.value)||year)}/>
+            <button className="btn btn-primary btn-sm" onClick={doPrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="modal-body pq-preview-body" id={printId}>
+          {blocks.length === 0 ? (
+            <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>لا توجد مهام مفعّلة لهذا الموظف</div>
+          ) : (
+            <>
+              <div className="pq-measure" ref={measureRef} aria-hidden="true">
+                <div className="pq-measure-inner" dir="rtl" style={{width:`calc(${PAGE_W_MM}mm - 20mm)`}}>
+                  <div className="pqm-head">{headBlock}</div>
+                  <div className="pqm-conthead">{contHeadBlock}</div>
+                  <div className="pqm-body">{blocks}</div>
+                  <div className="pqm-footer"><PqFooterBar/></div>
+                </div>
+              </div>
+
+              {(pages || [{blocks: blocks.map((_,i)=>i), first:true}]).map((pg, pi, arr) => (
+                <div className="pq-page" key={pi} style={{width:`${PAGE_W_MM}mm`, height:`${PAGE_H_MM}mm`}}>
+                  <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+                    {pg.first ? headBlock : contHeadBlock}
+                    {pg.blocks.map(i => blocks[i])}
+                  </div>
+                  <PqFooterBar/>
+                  {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>
