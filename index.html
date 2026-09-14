@@ -1513,7 +1513,7 @@ function AuthPage({ onLogin }) {
 const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊', perm: 'dashboard_access' },
   { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋', perm: 'quotes_access' },
-  { id: 'orders',    label: 'إدارة الطلبات',        icon: '📦', visible: (u) => hasPerm(u,'orders_access') || hasPerm(u,'daily_orders_access') },
+  { id: 'orders',    label: 'إدارة الطلبات',        icon: '📦', visible: (u) => hasPerm(u,'orders_access') || hasPerm(u,'daily_orders_access') || hasPerm(u,'daily_orders_prepare') },
   { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰', perm: 'accounting_access' },
   { id: 'procurement', label: 'إدارة المشتريات',   icon: '🏭', perm: 'suppliers_access' },
   { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
@@ -16153,7 +16153,7 @@ function DailyOrdersHub({ user }) {
 
 function OrdersSection({ user, orders, onReload }) {
   const canOrders = hasPerm(user, 'orders_access');
-  const canDaily  = hasPerm(user, 'daily_orders_access');
+  const canDaily  = hasPerm(user, 'daily_orders_access') || hasPerm(user, 'daily_orders_prepare');
   const [tab, setTab] = useState(canOrders ? 'orders' : 'daily');
 
   const dailyView = <DailyOrdersHub user={user}/>;
