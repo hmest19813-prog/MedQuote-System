@@ -7152,20 +7152,7 @@ function UsersPage({ currentUser }) {
    - thead = هامش علوي متكرر، tfoot = الفوتر (يتكرّر أسفل كل صفحة ويحجز مساحته)
    - نقيس المحتوى بعرض A4 الحقيقي ونملأ الخلية بحيث يستقر الفوتر أسفل الصفحة الأخيرة */
 let __pendingPrintCleanup = null;
-/* التطبيق المثبت على أندرويد (الأيقونة على الشاشة الرئيسية) يفتح بوضع standalone
-   عبر WebView، وwindow.print() ما بيطلع فيه أي شي — الصفحة تختفي (نخبّيها
-   استعداداً للطباعة) ووبعدين تضل فاضية لأنه ما في حوار طباعة أصلاً يشغّل
-   afterprint. نكتشف هالوضع ونوجّه المستخدم لفتح الرابط من متصفح Chrome بدل ما
-   نسيبه قدام صفحة بيضاء. */
-const isStandaloneApp = () => {
-  try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
-  catch(e) { return false; }
-};
 const printDoc = (containerId, title, orientation='portrait') => {
-  if (isStandaloneApp()) {
-    toast('الطباعة مش مدعومة داخل التطبيق المثبت — افتح ' + location.host + ' من متصفح Chrome عشان تطبع', 'error');
-    return;
-  }
   const el = document.getElementById(containerId);
   if (!el) return;
   const isLandscape = orientation === 'landscape';
