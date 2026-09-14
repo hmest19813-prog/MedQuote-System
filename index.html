@@ -1029,6 +1029,12 @@ th:last-child, td:last-child { border-left: none; }
     margin: 0;
     margin-bottom: calc(297mm * -0.54 + 16px);
   }
+  /* الصفحات الأفقية (landscape) ارتفاعها الحقيقي 210مم مش 297مم — نفس صيغة الهامش
+     السالب أعلاه بس مبنية على ارتفاع بورتريه، فكانت تسحب صفحات الأفقي لفوق أكتر
+     من اللازم وتخفيها/تراكبها فوق بعض بمعاينة الطباعة عالموبايل */
+  .pq-page.pq-page-landscape {
+    margin-bottom: calc(210mm * -0.54 + 16px);
+  }
 }
 
 /* ===================== BOTTOM NAV ===================== */
@@ -2520,6 +2526,7 @@ function ComboInput({ value, onChange, suggestions, placeholder, className }) {
           boxShadow:'0 4px 16px rgba(0,0,0,.12)', zIndex:300, maxHeight:220, overflowY:'auto'}}>
           {displayed.map(s => (
             <div key={s} onMouseDown={() => { onChange(s); setOpen(false); setShowAll(false); }}
+              onTouchStart={e=>{e.preventDefault(); onChange(s); setOpen(false); setShowAll(false);}}
               style={{padding:'8px 12px', fontSize:13, cursor:'pointer', direction:'rtl'}}
               onMouseEnter={e=>e.currentTarget.style.background='#EFF8FF'}
               onMouseLeave={e=>e.currentTarget.style.background=''}>{s}</div>
@@ -3072,7 +3079,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 {showCustSuggest && (
                   <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:2}}>
                     {custSuggest.map((c,i)=>(
-                      <div key={c._history ? `h-${c.name}` : c.id} onMouseDown={()=>pickCustomer(c)}
+                      <div key={c._history ? `h-${c.name}` : c.id} onMouseDown={()=>pickCustomer(c)} onTouchStart={e=>{e.preventDefault();pickCustomer(c);}}
                         style={{padding:'8px 14px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between',alignItems:'center'}}
                         onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'}
                         onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
@@ -3090,7 +3097,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,padding:'7px 12px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:7,fontSize:12}}>
                   <span>🆕</span>
                   <span style={{flex:1,color:'#92400e',fontWeight:500}}>عميل جديد — هل تريد حفظه في قائمة العملاء؟</span>
-                  <button type="button" onMouseDown={saveCustomerFromQuote}
+                  <button type="button" onMouseDown={saveCustomerFromQuote} onTouchStart={e=>{e.preventDefault();saveCustomerFromQuote(e);}}
                     style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontSize:12,cursor:'pointer',fontWeight:600,whiteSpace:'nowrap'}}>
                     💾 حفظ العميل
                   </button>
@@ -3144,7 +3151,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 {showRequesterSuggest && (
                   <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:2,maxHeight:220,overflowY:'auto'}}>
                     {requesterSuggest.map(r=>(
-                      <div key={r.name} onMouseDown={()=>pickRequester(r)}
+                      <div key={r.name} onMouseDown={()=>pickRequester(r)} onTouchStart={e=>{e.preventDefault();pickRequester(r);}}
                         style={{padding:'8px 12px',cursor:'pointer',fontSize:12,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between',alignItems:'center'}}
                         onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'}
                         onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
@@ -3451,6 +3458,7 @@ function DeleteReasonModal({ quote, onConfirm, onClose, initialReason='', editMo
                 {suggestions.map((s,i)=>(
                   <div key={i}
                     onMouseDown={()=>{ setReason(s); setShowSug(false); }}
+                    onTouchStart={e=>{e.preventDefault(); setReason(s); setShowSug(false);}}
                     style={{padding:'9px 14px',cursor:'pointer',fontSize:13,borderBottom:i<suggestions.length-1?'1px solid #f3f4f6':'none',transition:'background .1s'}}
                     onMouseEnter={e=>e.currentTarget.style.background='#f9fafb'}
                     onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
@@ -3604,7 +3612,7 @@ function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
             {showSug && (
               <div style={{position:'absolute',top:'100%',marginTop:4,right:0,left:0,background:'var(--white)',border:'1px solid var(--gray-200)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.1)',zIndex:999,maxHeight:180,overflowY:'auto'}}>
                 {suggestions.map((r,i)=>(
-                  <div key={i} onMouseDown={()=>pickSuggestion(r)}
+                  <div key={i} onMouseDown={()=>pickSuggestion(r)} onTouchStart={e=>{e.preventDefault();pickSuggestion(r);}}
                     style={{padding:'8px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid var(--gray-100)'}}
                     onMouseEnter={e=>e.currentTarget.style.background='var(--gray-50)'}
                     onMouseLeave={e=>e.currentTarget.style.background=''}>{r}</div>
@@ -7889,7 +7897,7 @@ function ItemNameCell({ value, catalogItems, historyItems=[], onSelect, onNameCh
           maxHeight:240, overflowY:'auto'
         }}>
           {suggestions.map((c,idx)=>(
-            <div key={c._isHistory ? 'h_'+c.name : c.id} onMouseDown={()=>pick(c)}
+            <div key={c._isHistory ? 'h_'+c.name : c.id} onMouseDown={()=>pick(c)} onTouchStart={e=>{e.preventDefault();pick(c);}}
               style={{padding:'8px 12px',cursor:'pointer',fontSize:12,
                 borderBottom:'1px solid #f0f4f8',display:'flex',
                 justifyContent:'space-between',alignItems:'center',
@@ -7914,7 +7922,7 @@ function ItemNameCell({ value, catalogItems, historyItems=[], onSelect, onNameCh
           background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:6,fontSize:11}}>
           <span>🆕</span>
           <span style={{flex:1,color:'#92400e',fontWeight:500}}>منتج جديد — هل تريد إضافته للكتالوج؟</span>
-          <button type="button" onMouseDown={onSaveToCatalog}
+          <button type="button" onMouseDown={onSaveToCatalog} onTouchStart={e=>{e.preventDefault();onSaveToCatalog(e);}}
             style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:5,
               padding:'3px 8px',fontSize:11,cursor:'pointer',fontWeight:600,whiteSpace:'nowrap'}}>
             💾 إضافة
@@ -9494,7 +9502,7 @@ function DailyOrdersManifestPrint({ orders, onClose }) {
           </div>
 
           {(pages || [{rows: orders.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
-            <div className="pq-page" key={pi} style={{width:`${PAGE_W_MM}mm`, height:`${PAGE_H_MM}mm`}}>
+            <div className="pq-page pq-page-landscape" key={pi} style={{width:`${PAGE_W_MM}mm`, height:`${PAGE_H_MM}mm`}}>
               <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
                 {pg.first && firstHeader}
                 {pg.rows.length > 0 && (
@@ -10364,6 +10372,7 @@ function POForm({ po, onSave, onClose }) {
                 <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',maxHeight:200,overflowY:'auto',marginTop:2}}>
                   {filteredSup.map(s=>(
                     <div key={s.id} onMouseDown={()=>{ setF('supplier_id',s.id); setF('supplier_name',s.name); setSupplierSearch(s.name); setShowSupSug(false); }}
+                      onTouchStart={e=>{e.preventDefault(); setF('supplier_id',s.id); setF('supplier_name',s.name); setSupplierSearch(s.name); setShowSupSug(false);}}
                       style={{padding:'8px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between'}}
                       onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'} onMouseLeave={e=>e.currentTarget.style.background=''}>
                       <span style={{fontWeight:600}}>{s.name}</span>
@@ -15160,7 +15169,7 @@ function HRTaskSheetPrint({ employee, tasks, month, year, onMonthChange, onYearC
               </div>
 
               {(pages || [{blocks: blocks.map((_,i)=>i), first:true}]).map((pg, pi, arr) => (
-                <div className="pq-page" key={pi} style={{width:`${PAGE_W_MM}mm`, height:`${PAGE_H_MM}mm`}}>
+                <div className="pq-page pq-page-landscape" key={pi} style={{width:`${PAGE_W_MM}mm`, height:`${PAGE_H_MM}mm`}}>
                   <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
                     {pg.first ? headBlock : contHeadBlock}
                     {pg.blocks.map(i => blocks[i])}
