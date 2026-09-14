@@ -8804,6 +8804,11 @@ function DailyOrdersPage({ user }) {
                     <span>· {o.payment_method === 'prepaid' ? '✅ مسبقًا' : '💵 عند الاستلام'}</span>
                     <span style={{fontWeight:800,color:'var(--primary)'}}>· {numFmt(o.total_amount)} د.أ</span>
                   </div>
+                  {o.prep_issue_note && (
+                    <div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,padding:'6px 10px',marginBottom:8,fontSize:12,color:'#dc2626',fontWeight:700}}>
+                      ⚠️ في مشكلة بالتجهيز: {o.prep_issue_note}
+                    </div>
+                  )}
                   {hasPerm(user,'daily_orders_edit') && (
                     <div className="qcard-status-row">
                       <span style={{fontSize:12,fontWeight:600,color:'var(--gray-600)',whiteSpace:'nowrap'}}>تغيير الحالة:</span>
@@ -8836,6 +8841,9 @@ function DailyOrdersPage({ user }) {
                     <td>
                       <div style={{fontWeight:700}}>{o.customer_name}</div>
                       <div className="text-sm text-muted">{o.customer_phone || '—'}</div>
+                      {o.prep_issue_note && (
+                        <div style={{fontSize:11,color:'#dc2626',fontWeight:700,marginTop:2}} title={o.prep_issue_note}>⚠️ مشكلة بالتجهيز</div>
+                      )}
                     </td>
                     <td className="text-sm">{o.region || '—'}</td>
                     <td className="text-sm">{repName(o.sales_rep_id)}</td>
@@ -9535,9 +9543,10 @@ function DailyOrdersPrepView({ user }) {
   const markPrepared = async (o) => {
     setBusyId(o.id);
     const { error } = await sb.from('daily_orders').update({
-      status:      'with_carrier',
-      prepared_by: user.id,
-      prepared_at: new Date().toISOString(),
+      status:          'with_carrier',
+      prepared_by:     user.id,
+      prepared_at:     new Date().toISOString(),
+      prep_issue_note: null,
     }).eq('id', o.id);
     setBusyId(null);
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
@@ -9546,56 +9555,81 @@ function DailyOrdersPrepView({ user }) {
     load();
   };
 
+  /* تعذّر تجهيز الطلبية لسبب معيّن (صنف مش متوفر، ما قدر يوصل الزبون...) —
+     تضل بنفس قائمة التجهيز لكن معلّمة بشريط أحمر لحد ما تُجهّز فعلياً */
+  const markIssue = async (o) => {
+    const reason = window.prompt('ليش تعذّر تجهيز هالطلبية؟', o.prep_issue_note || '');
+    if (reason === null) return;
+    if (!reason.trim()) { toast('لازم تكتب السبب', 'error'); return; }
+    setBusyId(o.id);
+    const { error } = await sb.from('daily_orders').update({ prep_issue_note: reason.trim() }).eq('id', o.id);
+    setBusyId(null);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `أبلغ عن مشكلة بتجهيز الطلبية ${o.number}: ${reason.trim()}`, 'daily_order', o.id, o.number);
+    toast('تم تسجيل المشكلة — بتظل بالقائمة لحد ما تنحل', 'success');
+    load();
+  };
+
   const markAllPrepared = async () => {
-    if (!queue.length) return;
-    if (!window.confirm(`تأكيد تجهيز وتسليم ${queue.length} طلبية لشركة النقل؟`)) return;
+    const ready = queue.filter(o => !o.prep_issue_note);
+    if (!ready.length) return;
+    if (!window.confirm(`تأكيد تجهيز وتسليم ${ready.length} طلبية لشركة النقل؟${queue.length>ready.length ? `\n(${queue.length-ready.length} طلبية معلّمة بمشكلة رح تستثنى)` : ''}`)) return;
     setBulkBusy(true);
     const { error } = await sb.from('daily_orders').update({
       status:      'with_carrier',
       prepared_by: user.id,
       prepared_at: new Date().toISOString(),
-    }).in('id', queue.map(o => o.id));
+    }).in('id', ready.map(o => o.id));
     setBulkBusy(false);
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
-    createLog(user, `جهّز ${queue.length} طلبية دفعة واحدة وسلّمها لشركة النقل`, 'daily_order');
+    createLog(user, `جهّز ${ready.length} طلبية دفعة واحدة وسلّمها لشركة النقل`, 'daily_order');
     toast('تم تسجيل تجهيز كل الطلبيات ✓', 'success');
     load();
   };
 
   const OrderCard = ({ o, done }) => {
     const items = (o.daily_order_items || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    const hasIssue = !!o.prep_issue_note;
     return (
-      <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:16,boxShadow:'0 2px 8px rgba(43,143,196,.06)',opacity:done?0.7:1}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+      <div style={{background:'#fff',borderRadius:12,border: hasIssue ? '1.5px solid #fca5a5' : '1.5px solid #e2edf5',padding:16,boxShadow:'0 2px 8px rgba(43,143,196,.06)',opacity:done?0.7:1,height:420,display:'flex',flexDirection:'column'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10,flexShrink:0}}>
           <div>
             <div style={{fontWeight:900,fontSize:15,color:'var(--primary)'}}>{o.number}</div>
             <div style={{fontSize:12,color:'var(--gray-500)'}}>{o.order_date}</div>
           </div>
           {o.is_express && <span className="badge" style={{background:'#fef3c7',color:'#92400e'}}>⚡ سريع</span>}
         </div>
-        <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{o.customer_name}</div>
-        <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:10}}>{o.customer_phone || '—'} {o.region ? `· ${o.region}` : ''}</div>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:2,flexShrink:0}}>{o.customer_name}</div>
+        <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:10,flexShrink:0}}>{o.customer_phone || '—'} {o.region ? `· ${o.region}` : ''}</div>
+        {hasIssue && (
+          <div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,padding:'6px 10px',marginBottom:10,fontSize:12,color:'#dc2626',fontWeight:700,flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
+            ⚠️ مشكلة بالتجهيز: {o.prep_issue_note}
+          </div>
+        )}
         {o.prep_note && (
-          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'6px 10px',marginBottom:10,fontSize:12,color:'#92400e',fontWeight:600}}>
+          <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'6px 10px',marginBottom:10,fontSize:12,color:'#92400e',fontWeight:600,flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>
             📝 {o.prep_note}
           </div>
         )}
-        <div style={{background:'#f7fafc',borderRadius:8,padding:'8px 10px',marginBottom:10}}>
+        <div style={{background:'#f7fafc',borderRadius:8,padding:'8px 10px',marginBottom:10,flex:1,minHeight:0,overflowY:'auto'}}>
           {items.map((it,idx)=>(
             <div key={idx} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'2px 0'}}>
               <span>{it.item_name}</span>
-              <span style={{fontWeight:700}}>× {numFmt(it.quantity,0)}</span>
+              <span style={{fontWeight:700,flexShrink:0,marginRight:6}}>× {numFmt(it.quantity,0)}</span>
             </div>
           ))}
         </div>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:12,color:'var(--gray-500)',marginBottom:done?0:12}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:12,color:'var(--gray-500)',marginBottom:done?0:12,flexShrink:0}}>
           <span>{o.payment_method === 'prepaid' ? '✅ مدفوع مسبقًا' : '💵 دفع عند الاستلام'}</span>
           <span style={{fontWeight:700,color:'var(--gray-700)'}}>{numFmt(o.total_amount)} د.أ</span>
         </div>
         {!done && (
-          <button className="btn btn-primary" style={{width:'100%'}} disabled={busyId===o.id} onClick={()=>markPrepared(o)}>
-            {busyId===o.id ? '...' : '✅ تم التجهيز والتسليم للناقل'}
-          </button>
+          <div style={{display:'flex',gap:8,flexShrink:0}}>
+            <button className="btn btn-primary" style={{flex:1}} disabled={busyId===o.id} onClick={()=>markPrepared(o)}>
+              {busyId===o.id ? '...' : (hasIssue ? '✅ تم الحل — جهّز الآن' : '✅ تم التجهيز والتسليم للناقل')}
+            </button>
+            <button className="btn btn-ghost btn-sm" style={{flexShrink:0,color:'#dc2626',borderColor:'#fecaca'}} disabled={busyId===o.id} onClick={()=>markIssue(o)}>⚠️ مشكلة</button>
+          </div>
         )}
       </div>
     );
@@ -9608,13 +9642,16 @@ function DailyOrdersPrepView({ user }) {
           <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>📦</div>
           <div>
             <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>تجهيز الطلبات — شركة النقل</div>
-            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{queue.length} بانتظار التجهيز</div>
+            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>
+              {queue.length} بانتظار التجهيز
+              {queue.some(o=>o.prep_issue_note) && <span style={{color:'#dc2626',fontWeight:700}}> · {queue.filter(o=>o.prep_issue_note).length} فيها مشكلة ⚠️</span>}
+            </div>
           </div>
         </div>
         {queue.length > 0 && (
           <div style={{display:'flex',gap:8}}>
             <button className="btn btn-ghost btn-sm" onClick={()=>setShowManifest(true)}>🖨️ طباعة كشف اليوم</button>
-            <button className="btn btn-primary btn-sm" disabled={bulkBusy} onClick={markAllPrepared}>{bulkBusy?'...':'✅ تم تجهيز الكل'}</button>
+            <button className="btn btn-primary btn-sm" disabled={bulkBusy} onClick={markAllPrepared}>{bulkBusy?'...':'✅ تجهيز وتسليم الكل'}</button>
           </div>
         )}
       </div>
