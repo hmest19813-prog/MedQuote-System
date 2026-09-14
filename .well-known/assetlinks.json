@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.hmest.app",
+    "sha256_cert_fingerprints": [
+      "38:C0:94:DF:FA:36:0D:D4:A1:DA:EE:45:AC:C1:AE:C0:ED:95:C5:50:0A:27:07:06:5E:E8:8E:98:D9:EA:CC:90"
+    ]
+  }
+}]

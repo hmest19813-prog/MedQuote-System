@@ -22,4 +22,5 @@ jobs:
             sw.js
             Hayat logo.png
             lib/**
+            .well-known/**
           dangerous-clean-slate: false
