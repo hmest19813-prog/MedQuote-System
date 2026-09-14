@@ -1513,7 +1513,7 @@ function AuthPage({ onLogin }) {
 const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊', perm: 'dashboard_access' },
   { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋', perm: 'quotes_access' },
-  { id: 'orders',    label: 'الطلبات',        icon: '📦', visible: (u) => hasPerm(u,'orders_access') || hasPerm(u,'daily_orders_access') },
+  { id: 'orders',    label: 'إدارة الطلبات',        icon: '📦', visible: (u) => hasPerm(u,'orders_access') || hasPerm(u,'daily_orders_access') },
   { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰', perm: 'accounting_access' },
   { id: 'procurement', label: 'إدارة المشتريات',   icon: '🏭', perm: 'suppliers_access' },
   { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
@@ -8637,6 +8637,13 @@ function DailyOrdersPage({ user }) {
   const [manifestOrders, setManifestOrders] = useState([]);
   const [manifestLoading, setManifestLoading] = useState(false);
 
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+
   const openPrint = async (o) => {
     const { data, error } = await sb.from('daily_order_items').select('*').eq('daily_order_id', o.id).order('sort_order');
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
@@ -8720,32 +8727,32 @@ function DailyOrdersPage({ user }) {
 
   return (
     <div>
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16,padding:'14px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',boxShadow:'0 2px 8px rgba(43,143,196,.06)',flexWrap:'wrap'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🚚</div>
+          <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🚚</div>
           <div>
             <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>الطلبات اليومية</div>
             <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{orders.length} طلبية</div>
           </div>
         </div>
-        <div style={{flex:1}}/>
-        <input className="search-input" placeholder="بحث: الاسم، الهاتف، المنطقة، الرقم..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260}}/>
-        <button className="btn btn-ghost" disabled={manifestLoading} onClick={openManifest} style={{whiteSpace:'nowrap'}}>{manifestLoading?'...':'🖨️ طباعة كشف اليوم'}</button>
-        {hasPerm(user,'daily_orders_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ طلبية جديدة</button>}
+        {!isMobile && <div style={{flex:1}}/>}
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، المنطقة، الرقم..." value={search} onChange={e=>setSearch(e.target.value)} style={isMobile ? {width:'100%'} : {minWidth:260}}/>
+        <button className="btn btn-ghost" disabled={manifestLoading} onClick={openManifest} style={{whiteSpace:'nowrap',flex:isMobile?'1 1 auto':undefined}}>{manifestLoading?'...':'🖨️ طباعة كشف اليوم'}</button>
+        {hasPerm(user,'daily_orders_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap',flex:isMobile?'1 1 auto':undefined}}>➕ طلبية جديدة</button>}
       </div>
       {showManifest && <DailyOrdersManifestPrint orders={manifestOrders} onClose={()=>setShowManifest(false)}/>}
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:16}}>
+      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
         {[
           {label:'طلبات اليوم', value: stats.todayCount, icon:'📅'},
           {label:'قيمة اليوم', value: `${numFmt(stats.todayValue)} د.أ`, icon:'💰'},
           {label:'قيد التجهيز', value: stats.preparing, icon:'📦'},
           {label:'مع الناقل', value: stats.withCarrier, icon:'🚚'},
         ].map((c,i)=>(
-          <div key={i} style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:'14px 16px',display:'flex',alignItems:'center',gap:10}}>
+          <div key={i} style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:'14px 16px',display:'flex',alignItems:'center',gap:10,minWidth:0}}>
             <div style={{fontSize:22}}>{c.icon}</div>
-            <div>
-              <div style={{fontSize:18,fontWeight:900,color:'#1a2e3d'}}>{c.value}</div>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:18,fontWeight:900,color:'#1a2e3d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{c.value}</div>
               <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{c.label}</div>
             </div>
           </div>
@@ -8759,8 +8766,8 @@ function DailyOrdersPage({ user }) {
             {v.label} ({orders.filter(o=>o.status===k).length})
           </button>
         ))}
-        <div style={{flex:1}}/>
-        <select className="form-control" style={{width:'auto'}} value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
+        {!isMobile && <div style={{flex:1}}/>}
+        <select className="form-control" style={isMobile ? {width:'100%'} : {width:'auto'}} value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
           <option value="all">كل المندوبين</option>
           {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
         </select>
@@ -8768,6 +8775,45 @@ function DailyOrdersPage({ user }) {
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
         <div className="card">
+          {isMobile ? (
+            <div style={{padding:12}}>
+              {filtered.map(o => (
+                <div key={o.id} className="qcard">
+                  <div className="qcard-top">
+                    <span className="qcard-num">{o.number}</span>
+                    <span className={`badge ${DO_STATUS[o.status]?.badge}`}>{DO_STATUS[o.status]?.label}</span>
+                  </div>
+                  <div className="qcard-customer">{o.customer_name}</div>
+                  <div className="qcard-meta">
+                    <span>📅 {o.order_date}</span>
+                    {o.customer_phone && <span>· 📞 {o.customer_phone}</span>}
+                    {o.region && <span>· 📍 {o.region}</span>}
+                    <span>· {repName(o.sales_rep_id)}</span>
+                  </div>
+                  <div className="qcard-meta">
+                    <span>{DO_CHANNEL[o.channel]?.icon} {DO_CHANNEL[o.channel]?.label}</span>
+                    {o.is_express && <span className="badge" style={{background:'#fef3c7',color:'#92400e'}}>⚡ سريع</span>}
+                    <span>· {o.payment_method === 'prepaid' ? '✅ مسبقًا' : '💵 عند الاستلام'}</span>
+                    <span style={{fontWeight:800,color:'var(--primary)'}}>· {numFmt(o.total_amount)} د.أ</span>
+                  </div>
+                  {hasPerm(user,'daily_orders_edit') && (
+                    <div className="qcard-status-row">
+                      <span style={{fontSize:12,fontWeight:600,color:'var(--gray-600)',whiteSpace:'nowrap'}}>تغيير الحالة:</span>
+                      <select value={o.status} onChange={e=>changeStatus(o,e.target.value)}>
+                        {Object.entries(DO_STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <div className="qcard-actions">
+                    <button className="btn btn-ghost btn-sm" onClick={()=>openPrint(o)}>🖨️ طباعة</button>
+                    {hasPerm(user,'daily_orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(o); setShowForm(true); }}>✏️ تعديل</button>}
+                    {hasPerm(user,'daily_orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(o)}>🗑️ حذف</button>}
+                  </div>
+                </div>
+              ))}
+              {filtered.length===0 && <div className="empty-state"><p>لا توجد طلبات مطابقة</p></div>}
+            </div>
+          ) : (
           <div className="table-wrap">
             <table>
               <thead><tr>
@@ -8814,6 +8860,7 @@ function DailyOrdersPage({ user }) {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
@@ -8838,6 +8885,12 @@ function DailyOrdersPage({ user }) {
 
 function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
   const isEdit = !!order;
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
   const [form, setForm] = useState({
     order_date:      order?.order_date || today(),
     customer_name:   order?.customer_name || '',
@@ -9044,6 +9097,40 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
 
           <div className="form-group">
             <label className="form-label">الأصناف</label>
+            <datalist id="do-item-names">{DAILY_ORDER_ITEM_NAMES.map(n=><option key={n} value={n}/>)}</datalist>
+            {isMobile ? (
+              <div>
+                {items.map((it,idx)=>{
+                  const lineTotal = (parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0);
+                  return (
+                    <div key={idx} className="qcard" style={{marginBottom:8}}>
+                      <div style={{display:'flex',gap:6,marginBottom:8}}>
+                        <input className="form-control" style={{flex:1}} list="do-item-names" value={it.item_name} onChange={e=>setItem(idx,'item_name',e.target.value)} placeholder="اسم الصنف"/>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={()=>delItem(idx)}>🗑</button>
+                      </div>
+                      <select className="form-control" style={{marginBottom:8}} value={it.offer} onChange={e=>{
+                        const offer = e.target.value;
+                        setItems(list => list.map((row,i) => i===idx ? { ...row, offer, quantity: offer==='عرض علبتين'?2 : offer==='عرض 5 علب'?5 : row.quantity } : row));
+                      }}>
+                        <option value="">بدون عرض</option>
+                        {DAILY_ORDER_OFFERS.map(o=><option key={o} value={o}>{o}</option>)}
+                      </select>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                        <div>
+                          <label style={{fontSize:11,color:'var(--gray-500)',fontWeight:600}}>الكمية</label>
+                          <input type="number" step="1" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/>
+                        </div>
+                        <div>
+                          <label style={{fontSize:11,color:'var(--gray-500)',fontWeight:600}}>سعر الوحدة</label>
+                          <input type="number" step="0.001" className="form-control" value={it.unit_price} onChange={e=>setItem(idx,'unit_price',e.target.value)}/>
+                        </div>
+                      </div>
+                      <div style={{textAlign:'left',marginTop:8,fontWeight:700,fontSize:13,color:'var(--primary)'}}>الإجمالي: {numFmt(lineTotal)} د.أ</div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
               <colgroup>
                 <col/><col style={{width:150}}/><col style={{width:80}}/><col style={{width:110}}/><col style={{width:100}}/><col style={{width:36}}/>
@@ -9056,7 +9143,6 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
                   <tr key={idx}>
                     <td>
                       <input className="form-control" list="do-item-names" value={it.item_name} onChange={e=>setItem(idx,'item_name',e.target.value)} placeholder="اسم الصنف"/>
-                      <datalist id="do-item-names">{DAILY_ORDER_ITEM_NAMES.map(n=><option key={n} value={n}/>)}</datalist>
                     </td>
                     <td>
                       <select className="form-control" value={it.offer} onChange={e=>{
@@ -9075,6 +9161,7 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
                 ))}
               </tbody>
             </table>
+            )}
             <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addItem}>➕ إضافة صنف</button>
           </div>
 
