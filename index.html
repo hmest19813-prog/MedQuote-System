@@ -5073,6 +5073,14 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
           if (data) q = data;
         }
         const defTax = parseFloat(q?.tax_pct ?? 16) || 0;
+        // في العرض المبسّط عمود ضريبة البند غير معروض ولا قابل للتعديل، وإجمالي
+        // العرض يُحسب دائماً بنسبة ضريبة المستند لكل البنود (انظر defaultTax في
+        // QuoteForm). فقد تبقى قيمة tax_pct قديمة/مهملة على مستوى البند غير مرئية
+        // للمستخدم (مثلاً بعد تغيير نسبة الضريبة على مستوى المستند). نطبّق نفس
+        // قاعدة "المبسّط" هنا كي لا تنتقل تلك النسبة المهملة للطلب الجديد.
+        const normQuoteItems = (arr) => (q && q.detailed_layout === false)
+          ? arr.map(it => ({ ...it, tax_pct: defTax }))
+          : arr;
 
         let list = [];
         if (isEdit) {
@@ -5081,12 +5089,12 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
           // طلبات أُنشئت قبل حفظ البنود: نرجع لبنود العرض المصدر
           if (!list.length && q?.id) {
             const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
-            list = pickQuoteItems(qits || [], defTax).map(it => normItem(it, defTax));
+            list = pickQuoteItems(normQuoteItems(qits || []), defTax).map(it => normItem(it, defTax));
           }
         } else {
           const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', quote.id).order('sort_order');
           // من مجموعات "المصدر البديل" نأخذ الخيار المعتمد فقط — هو ما بُني عليه إجمالي العرض
-          list = pickQuoteItems(qits || [], defTax).map(it => normItem(it, defTax));
+          list = pickQuoteItems(normQuoteItems(qits || []), defTax).map(it => normItem(it, defTax));
         }
         if (!alive) return;
         setSrcQuote(q);
@@ -6053,12 +6061,14 @@ function OrdersPage({ user, orders, onReload }) {
       }
       const { data: oits } = await sb.from('order_items').select('*').eq('order_id', o.id).order('sort_order');
       let items = oits || [];
+      const defTax   = parseFloat(q?.tax_pct ?? 16) || 0;
       if (!items.length && q?.id) {
         const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
-        items = pickQuoteItems(qits || [], parseFloat(q.tax_pct ?? 16) || 0);
+        // مبسّط: نفس ضريبة المستند لكل البنود (تجاهل tax_pct مهملة على مستوى البند)
+        const normQits = (q.detailed_layout === false) ? (qits||[]).map(it => ({ ...it, tax_pct: defTax })) : (qits||[]);
+        items = pickQuoteItems(normQits, defTax);
       }
       if (!items.length) { toast('لا توجد أصناف لعرضها في هذا الطلب', 'error'); return; }
-      const defTax   = parseFloat(q?.tax_pct ?? 16) || 0;
       const subtotal = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
       const disc_amt = q?.discount_type === 'amt' ? parseFloat(q?.discount_fixed || 0) : subtotal * parseFloat(q?.discount_pct || 0) / 100;
       const ratio    = subtotal > 0 ? (subtotal - disc_amt) / subtotal : 1;
