@@ -2002,6 +2002,9 @@ function PqItemsTable({ detailed, children }) {
   );
 }
 
+/* القيم الافتراضية لموضع/حجم الختم — تُستخدم كنقطة بداية لكل صفحة قبل أن يسحبها المستخدم */
+const DEFAULT_STAMP = { bottom: 20, right: 120, w: 500 };
+
 /* ===================== QUOTE / INVOICE PREVIEW ===================== */
 function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
@@ -2015,19 +2018,25 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     '--acc-tint': altCompany.tint, '--acc-tint2': altCompany.tint2,
   } : {};
   const [showSig, setShowSig] = useState(false);
-  const [stampMm, setStampMm] = useState({ bottom: 20, right: 120 });
+  /* موضع/حجم الختم مستقلّ لكل صفحة — مفتاح الكائن هو رقم الصفحة (pi) */
+  const [stampByPage, setStampByPage] = useState({});
+  const getStamp = (pi) => stampByPage[pi] || DEFAULT_STAMP;
 
   /* سحب الختم بالماوس: نحوّل إزاحة المؤشر من بكسل إلى ملم ونحدّث موضعه.
      المعاينة بمقياس 1:1 مع الورقة، فمكان الإفلات = مكان الطباعة بالضبط */
-  const onStampPointerDown = (e) => {
+  const onStampPointerDown = (e, pi) => {
     e.preventDefault();
     const startX = e.clientX, startY = e.clientY;
-    const startMm = { ...stampMm };
+    const start = getStamp(pi);
     const onMove = (ev) => {
-      setStampMm({
-        right:  Math.min(200, Math.max(0, Math.round(startMm.right  + (startX - ev.clientX) / PQ_MM))),
-        bottom: Math.min(280, Math.max(0, Math.round(startMm.bottom + (startY - ev.clientY) / PQ_MM))),
-      });
+      setStampByPage(prev => ({
+        ...prev,
+        [pi]: {
+          ...(prev[pi] || DEFAULT_STAMP),
+          right:  Math.min(200, Math.max(0, Math.round(start.right  + (startX - ev.clientX) / PQ_MM))),
+          bottom: Math.min(280, Math.max(0, Math.round(start.bottom + (startY - ev.clientY) / PQ_MM))),
+        },
+      }));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -2039,14 +2048,19 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
 
   /* تغيير حجم الختم من المقبض — العرض فقط يتغيّر والارتفاع يتبعه تلقائياً
      (النِسب محفوظة)، والمرساة تبقى زاوية أسفل-يمين فلا يتحرك من مكانه */
-  const [stampW, setStampW] = useState(500);
-  const onStampResizeDown = (e) => {
+  const onStampResizeDown = (e, pi) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
-    const startW = stampW;
+    const start = getStamp(pi);
     const onMove = (ev) => {
-      setStampW(Math.min(760, Math.max(80, Math.round(startW + (startX - ev.clientX)))));
+      setStampByPage(prev => ({
+        ...prev,
+        [pi]: {
+          ...(prev[pi] || DEFAULT_STAMP),
+          w: Math.min(760, Math.max(80, Math.round(start.w + (startX - ev.clientX)))),
+        },
+      }));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -2476,13 +2490,13 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
                 {pg.rows.length > 0 && <PqItemsTable detailed={detailed}>{pg.rows.map(i => renderRow(items[i], i))}</PqItemsTable>}
                 {pg.tail && tailBlock}
               </div>
-              {showSig && (
-                <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
-                     onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
-                  <div className="pq-stamp-resize" onPointerDown={onStampResizeDown} title="اسحب للتكبير/التصغير"></div>
-                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
+              {showSig && (() => { const st = getStamp(pi); return (
+                <div className="pq-stamp" style={{bottom: st.bottom+'mm', right: st.right+'mm'}}
+                     onPointerDown={e=>onStampPointerDown(e,pi)} title="اسحب لتغيير مكان الختم">
+                  <div className="pq-stamp-resize" onPointerDown={e=>onStampResizeDown(e,pi)} title="اسحب للتكبير/التصغير"></div>
+                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: st.w+'px'}}/>
                 </div>
-              )}
+              ); })()}
               <PqFooterBar company={altCompany}/>
               {arr.length > 1 && <div className="pq-pageno">{isEn ? `Page ${pi+1} of ${arr.length}` : `صفحة ${pi+1} من ${arr.length}`}</div>}
             </div>
@@ -4220,6 +4234,43 @@ function QuotesList({ user, quotes, onReload }) {
   const deletedQuotes  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const [archiveSearch, setArchiveSearch] = useState('');
   const [deletedSearch, setDeletedSearch] = useState('');
+  const [archiveDateFrom, setArchiveDateFrom] = useState('');
+  const [archiveDateTo, setArchiveDateTo] = useState('');
+  const [archiveStatus, setArchiveStatus] = useState('all');
+  const [archiveIssuer, setArchiveIssuer] = useState('');
+  const [showArchiveFilter, setShowArchiveFilter] = useState(false);
+  const [archivePeriod, setArchivePeriod] = useState('');
+  const archiveFilterRef = useRef(null);
+  useEffect(() => {
+    if (!showArchiveFilter) return;
+    const h = e => { if (archiveFilterRef.current && !archiveFilterRef.current.contains(e.target)) setShowArchiveFilter(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [showArchiveFilter]);
+  const applyArchivePeriod = (p) => {
+    setArchivePeriod(p);
+    const now = new Date();
+    const fmt = d => d.toISOString().slice(0,10);
+    if (p === 'yesterday') {
+      const y = new Date(now); y.setDate(y.getDate()-1);
+      setArchiveDateFrom(fmt(y)); setArchiveDateTo(fmt(y));
+    } else if (p === '7d') {
+      const s = new Date(now); s.setDate(s.getDate()-6);
+      setArchiveDateFrom(fmt(s)); setArchiveDateTo(fmt(now));
+    } else if (p === '14d') {
+      const s = new Date(now); s.setDate(s.getDate()-13);
+      setArchiveDateFrom(fmt(s)); setArchiveDateTo(fmt(now));
+    } else if (p === '30d') {
+      const s = new Date(now); s.setDate(s.getDate()-29);
+      setArchiveDateFrom(fmt(s)); setArchiveDateTo(fmt(now));
+    } else {
+      setArchiveDateFrom(''); setArchiveDateTo('');
+    }
+  };
+  const clearArchiveFilters = () => {
+    setArchiveDateFrom(''); setArchiveDateTo(''); setArchiveStatus('all'); setArchiveIssuer(''); setArchivePeriod('');
+  };
+  const archiveFilterCount = [archiveDateFrom||archiveDateTo, archiveStatus!=='all', archiveIssuer].filter(Boolean).length;
 
   const sortByNum = (a,b) => (b.number||'').localeCompare(a.number||'');
   const filtered = officialQuotes.filter(q => {
@@ -4242,9 +4293,13 @@ function QuotesList({ user, quotes, onReload }) {
   const filteredAltCo = altCoQuotes.filter(q => {
     return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
   }).sort(sortByNum);
-  const filteredArchive = archivedQuotes.filter(q =>
-    !archiveSearch || q.customer_name?.toLowerCase().includes(archiveSearch.toLowerCase()) || q.number?.includes(archiveSearch)
-  ).sort(sortByNum);
+  const filteredArchive = archivedQuotes.filter(q => {
+    const ms = !archiveSearch || q.customer_name?.toLowerCase().includes(archiveSearch.toLowerCase()) || q.number?.includes(archiveSearch);
+    const mf = archiveStatus === 'all' || q.status === archiveStatus;
+    const md = (!archiveDateFrom || (q.date||'') >= archiveDateFrom) && (!archiveDateTo || (q.date||'') <= archiveDateTo);
+    const mi = !archiveIssuer || q.created_by === archiveIssuer;
+    return ms && mf && md && mi;
+  }).sort(sortByNum);
   const filteredDeleted = deletedQuotes.filter(q =>
     !deletedSearch || q.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || q.number?.includes(deletedSearch)
   );
@@ -4312,6 +4367,69 @@ function QuotesList({ user, quotes, onReload }) {
           {/* مسح */}
           {activeFilterCount>0 && (
             <button onClick={()=>{clearAllFilters();setShowFilter(false);}}
+              style={{width:'100%',padding:'7px',borderRadius:8,border:'1px solid #fecaca',background:'#fff5f5',color:'var(--danger)',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+              ✕ مسح كل الفلاتر
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const ArchiveFilterBtn = () => (
+    <div ref={archiveFilterRef} style={{position:'relative'}}>
+      <button
+        onClick={()=>setShowArchiveFilter(o=>!o)}
+        style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',border:'1.5px solid',borderColor:archiveFilterCount?'var(--primary)':'#d1d5db',borderRadius:8,background:archiveFilterCount?'#eff6ff':'#fff',cursor:'pointer',fontWeight:700,fontSize:13,color:archiveFilterCount?'var(--primary)':'#374151',whiteSpace:'nowrap',boxShadow:'0 1px 3px rgba(0,0,0,.07)',transition:'all .15s'}}
+      >
+        🔽 فلتر {archiveFilterCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:99,fontSize:11,padding:'1px 7px',marginRight:2}}>{archiveFilterCount}</span>}
+      </button>
+      {showArchiveFilter && (
+        <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:300,background:'#fff',border:'1px solid #e5e7eb',borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.15)',padding:18,minWidth:300}}>
+          {/* فترة سريعة */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:8,textTransform:'uppercase',letterSpacing:.5}}>الفترة الزمنية</div>
+            <div style={{display:'flex',gap:6}}>
+              {PERIODS.map(({val,label})=>(
+                <button key={val} onClick={()=>applyArchivePeriod(archivePeriod===val?'':val)}
+                  style={{padding:'5px 12px',borderRadius:20,border:'1.5px solid',borderColor:archivePeriod===val?'var(--primary)':'#e5e7eb',background:archivePeriod===val?'var(--primary)':'#f9fafb',color:archivePeriod===val?'#fff':'#374151',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* من / إلى */}
+          <div style={{display:'flex',gap:10,marginBottom:14}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>من تاريخ</div>
+              <input type="date" className="form-control" value={archiveDateFrom} onChange={e=>{setArchiveDateFrom(e.target.value);setArchivePeriod('');}} style={{width:'100%',fontSize:13}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>إلى تاريخ</div>
+              <input type="date" className="form-control" value={archiveDateTo} onChange={e=>{setArchiveDateTo(e.target.value);setArchivePeriod('');}} style={{width:'100%',fontSize:13}}/>
+            </div>
+          </div>
+          {/* الحالة */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>الحالة</div>
+            <select className="form-control" value={archiveStatus} onChange={e=>setArchiveStatus(e.target.value)} style={{width:'100%',fontSize:13}}>
+              <option value="all">كل الحالات</option>
+              {Object.entries(SL).filter(([k])=>k!=='draft').map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          {/* المُصدِر */}
+          {canViewIssuer && (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:4}}>المُصدِر</div>
+              <select className="form-control" value={archiveIssuer} onChange={e=>setArchiveIssuer(e.target.value)} style={{width:'100%',fontSize:13}}>
+                <option value="">كل المُصدِرين</option>
+                {Object.entries(profiles).map(([id,name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+          )}
+          {/* مسح */}
+          {archiveFilterCount>0 && (
+            <button onClick={()=>{clearArchiveFilters();setShowArchiveFilter(false);}}
               style={{width:'100%',padding:'7px',borderRadius:8,border:'1px solid #fecaca',background:'#fff5f5',color:'var(--danger)',fontSize:13,fontWeight:700,cursor:'pointer'}}>
               ✕ مسح كل الفلاتر
             </button>
@@ -4916,6 +5034,8 @@ function QuotesList({ user, quotes, onReload }) {
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={archiveSearch} onChange={e=>setArchiveSearch(e.target.value)}/>
+          <ArchiveFilterBtn/>
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredArchive.length} عرض</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -14372,8 +14492,9 @@ function LetterPrint({ letter, onClose }) {
   const withHeadGap = withHeader || letter.letterhead_gap !== false;
   const withInfoTable = letter.show_info_table !== false;
   const [showSig, setShowSig] = React.useState(false);
-  const [stampMm, setStampMm] = React.useState({ bottom: 20, right: 120 });
-  const [stampW,  setStampW]  = React.useState(500);
+  /* موضع/حجم الختم مستقلّ لكل صفحة — مفتاح الكائن هو رقم الصفحة (pi) */
+  const [stampByPage, setStampByPage] = React.useState({});
+  const getStamp = (pi) => stampByPage[pi] || DEFAULT_STAMP;
 
   const handlePrint = () => {
     const t = `كتاب رسمي ${letter.number} - ${letter.recipient}`;
@@ -14471,15 +14592,19 @@ function LetterPrint({ letter, onClose }) {
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
   });
 
-  const onStampPointerDown = (e) => {
+  const onStampPointerDown = (e, pi) => {
     e.preventDefault();
     const startX = e.clientX, startY = e.clientY;
-    const startMm = { ...stampMm };
+    const start = getStamp(pi);
     const onMove = (ev) => {
-      setStampMm({
-        right:  Math.min(200, Math.max(0, Math.round(startMm.right  + (startX - ev.clientX) / PQ_MM))),
-        bottom: Math.min(280, Math.max(0, Math.round(startMm.bottom + (startY - ev.clientY) / PQ_MM))),
-      });
+      setStampByPage(prev => ({
+        ...prev,
+        [pi]: {
+          ...(prev[pi] || DEFAULT_STAMP),
+          right:  Math.min(200, Math.max(0, Math.round(start.right  + (startX - ev.clientX) / PQ_MM))),
+          bottom: Math.min(280, Math.max(0, Math.round(start.bottom + (startY - ev.clientY) / PQ_MM))),
+        },
+      }));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -14489,13 +14614,19 @@ function LetterPrint({ letter, onClose }) {
     window.addEventListener('pointerup', onUp);
   };
 
-  const onStampResizeDown = (e) => {
+  const onStampResizeDown = (e, pi) => {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
-    const startW = stampW;
+    const start = getStamp(pi);
     const onMove = (ev) => {
-      setStampW(Math.min(760, Math.max(80, Math.round(startW + (startX - ev.clientX)))));
+      setStampByPage(prev => ({
+        ...prev,
+        [pi]: {
+          ...(prev[pi] || DEFAULT_STAMP),
+          w: Math.min(760, Math.max(80, Math.round(start.w + (startX - ev.clientX)))),
+        },
+      }));
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -14669,13 +14800,13 @@ function LetterPrint({ letter, onClose }) {
                 )}
                 {pg.tail && letterSig}
               </div>
-              {pg.tail && showSig && (
-                <div className="pq-stamp" style={{bottom: stampMm.bottom+'mm', right: stampMm.right+'mm'}}
-                     onPointerDown={onStampPointerDown} title="اسحب لتغيير مكان الختم">
-                  <div className="pq-stamp-resize" onPointerDown={onStampResizeDown} title="اسحب للتكبير/التصغير"></div>
-                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: stampW+'px'}}/>
+              {pg.tail && showSig && (() => { const st = getStamp(pi); return (
+                <div className="pq-stamp" style={{bottom: st.bottom+'mm', right: st.right+'mm'}}
+                     onPointerDown={e=>onStampPointerDown(e,pi)} title="اسحب لتغيير مكان الختم">
+                  <div className="pq-stamp-resize" onPointerDown={e=>onStampResizeDown(e,pi)} title="اسحب للتكبير/التصغير"></div>
+                  <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: st.w+'px'}}/>
                 </div>
-              )}
+              ); })()}
               {withHeader && <PqFooterBar/>}
               {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
             </div>
