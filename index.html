@@ -6728,6 +6728,10 @@ const PERM_GROUPS = [
     { key: 'suppliers_delete',          label: 'حذف الموردين وأوامر الشراء' },
     { key: 'supplier_invoices_create',  label: 'إنشاء فواتير الموردين' },
     { key: 'supplier_payments_create',  label: 'تسجيل مدفوعات الموردين' },
+    { key: 'supply_chain_access',       label: 'الوصول لسلسلة التوريد' },
+    { key: 'supply_chain_create',       label: 'إنشاء ملف توريد جديد' },
+    { key: 'supply_chain_edit',         label: 'تحديث مراحل سلسلة التوريد' },
+    { key: 'supply_chain_delete',       label: 'حذف ملفات التوريد' },
   ]},
   { label: 'الموارد البشرية', icon: '👥', perms: [
     { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
@@ -6757,6 +6761,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   hr_access: false,
   suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
   supplier_invoices_create: false, supplier_payments_create: false,
+  supply_chain_access: true, supply_chain_create: true, supply_chain_edit: true, supply_chain_delete: false,
   tasks_access: true, change_requests_access: true, inbox_access: true,
 };
 
@@ -10968,6 +10973,41 @@ function SIBadge({ status }) {
   return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,background:s.bg,color:s.color}}>{SI_STATUSES[status]||status}</span>;
 }
 
+/* ---- سلسلة التوريد (استيراد) ---- */
+// 10 مراحل ثابتة بالترتيب — المرحلة "التخليص الجمركي" مقسومة 3 خطوات فرعية مترابطة (group:'customs')
+const SUPPLY_STAGES = [
+  { key:'rfq',              label:'طلب تسعير' },
+  { key:'supplier_quote',   label:'عرض سعر من المورد' },
+  { key:'invoice_approval', label:'اعتماد فاتورة المورد' },
+  { key:'shipping_terms',   label:'الشحن', valueOptions:[{v:'us',label:'علينا'},{v:'supplier',label:'على المورد'}] },
+  { key:'payment_transfer', label:'تحويل الدفعة حسب الاتفاق' },
+  { key:'goods_shipped',    label:'شحن البضاعة' },
+  { key:'border_arrival',   label:'وصول المعبر الحدودي' },
+  { key:'customs_free_zone', label:'نقل لمناطق حرة وتخزين', group:'customs', groupLabel:'التخليص الجمركي' },
+  { key:'customs_warehouse', label:'مستودعاتنا عمان', group:'customs' },
+  { key:'customs_bol_waiver', label:'تنازل بوالص', group:'customs' },
+];
+const SUPPLY_STAGE_STATUSES = { pending:'لم تبدأ', in_progress:'قيد التنفيذ', done:'مكتملة' };
+const SUPPLY_STAGE_COLORS = {
+  pending:     { bg:'#f1f5f9', color:'#64748b' },
+  in_progress: { bg:'#fef3c7', color:'#d97706' },
+  done:        { bg:'#dcfce7', color:'#16a34a' },
+};
+const SUPPLY_FILE_STATUSES = { in_progress:'قيد التنفيذ', completed:'مكتمل', cancelled:'ملغي' };
+const SUPPLY_FILE_COLORS = {
+  in_progress: { bg:'#e0f2fe', color:'#0ea5e9' },
+  completed:   { bg:'#dcfce7', color:'#16a34a' },
+  cancelled:   { bg:'#fee2e2', color:'#dc2626' },
+};
+function SFBadge({ status }) {
+  const s = SUPPLY_FILE_COLORS[status] || { bg:'#f1f5f9', color:'#64748b' };
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,background:s.bg,color:s.color}}>{SUPPLY_FILE_STATUSES[status]||status}</span>;
+}
+function StageBadge({ status }) {
+  const s = SUPPLY_STAGE_COLORS[status] || SUPPLY_STAGE_COLORS.pending;
+  return <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,background:s.bg,color:s.color,whiteSpace:'nowrap'}}>{SUPPLY_STAGE_STATUSES[status]||status}</span>;
+}
+
 /* ---- SupplierForm ---- */
 function SupplierForm({ supplier, onSave, onClose }) {
   const empty = { name:'', code:'', phone:'', email:'', address:'', city:'', country:'الأردن', contact_name:'', contact_phone:'', payment_terms:30, notes:'' };
@@ -11528,6 +11568,258 @@ function SupplierPaymentForm({ suppliers, onSave, onClose }) {
   );
 }
 
+/* ---- SupplyFileForm (إنشاء/تعديل بيانات ملف توريد) ---- */
+function SupplyFileForm({ user, file, onSave, onClose }) {
+  const isEdit = !!file;
+  const [form, setForm] = useState({
+    supplier_id: file?.supplier_id || '', po_id: file?.po_id || '',
+    description: file?.description || '', origin_country: file?.origin_country || '',
+    currency: file?.currency || 'USD', total_value: file?.total_value ?? '',
+    notes: file?.notes || '',
+  });
+  const [suppliers, setSuppliers] = useState([]);
+  const [pos, setPos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(() => {
+    sb.from('suppliers').select('id,name').eq('is_active',true).order('name').then(({data})=>setSuppliers(data||[]));
+  }, []);
+  useEffect(() => {
+    if (!form.supplier_id) { setPos([]); return; }
+    sb.from('purchase_orders').select('id,number').eq('supplier_id',form.supplier_id).order('date',{ascending:false}).then(({data})=>setPos(data||[]));
+  }, [form.supplier_id]);
+
+  const handleSave = async () => {
+    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+    if (!form.description.trim()) { toast('أدخل وصف البضاعة / الصفقة','error'); return; }
+    setLoading(true);
+    try {
+      const sup = suppliers.find(s=>s.id===form.supplier_id);
+      const po  = pos.find(p=>p.id===form.po_id);
+      const payload = {
+        supplier_id: form.supplier_id, supplier_name: sup?.name || file?.supplier_name || null,
+        po_id: form.po_id || null, po_number: po?.number || null,
+        description: form.description.trim(), origin_country: form.origin_country.trim()||null,
+        currency: form.currency||'USD', total_value: form.total_value===''?0:parseFloat(form.total_value)||0,
+        notes: form.notes.trim()||null,
+      };
+      if (isEdit) {
+        const { error } = await sb.from('supply_files').update(payload).eq('id', file.id);
+        if (error) throw error;
+        createLog(user, `عدّل ملف التوريد ${file.number}`, 'supply_file', file.id, file.number);
+        toast('تم التحديث ✓','success');
+      } else {
+        const { data: newFile, error } = await sb.from('supply_files').insert(payload).select().single();
+        if (error) throw error;
+        const stageRows = SUPPLY_STAGES.map((s,idx) => ({ file_id:newFile.id, stage_key:s.key, seq:idx, status:'pending' }));
+        const { error: se } = await sb.from('supply_file_stages').insert(stageRows);
+        if (se) throw se;
+        createLog(user, `أنشأ ملف توريد ${newFile.number}`, 'supply_file', newFile.id, newFile.number);
+        toast('تم إنشاء ملف التوريد ✓','success');
+      }
+      onSave();
+    } catch(err) { toast('خطأ: '+err.message,'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:520}}>
+        <div className="modal-header">
+          <span className="modal-title">🚢 {isEdit ? `تعديل ملف التوريد ${file.number}` : 'ملف توريد جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-group">
+            <label className="form-label">المورد <span style={{color:'var(--danger)'}}>*</span></label>
+            <select className="form-control" value={form.supplier_id} onChange={e=>{setF('supplier_id',e.target.value); setF('po_id','');}}>
+              <option value="">— اختر مورداً —</option>
+              {suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">أمر الشراء المرتبط (اختياري)</label>
+            <select className="form-control" value={form.po_id} onChange={e=>setF('po_id',e.target.value)} disabled={!form.supplier_id}>
+              <option value="">— بدون ربط —</option>
+              {pos.map(p=><option key={p.id} value={p.id}>{p.number}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">وصف البضاعة / الصفقة <span style={{color:'var(--danger)'}}>*</span></label>
+            <textarea className="form-control" rows={2} value={form.description} onChange={e=>setF('description',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">بلد المنشأ</label>
+              <input className="form-control" value={form.origin_country} onChange={e=>setF('origin_country',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">العملة</label>
+              <select className="form-control" value={form.currency} onChange={e=>setF('currency',e.target.value)}>
+                <option value="USD">USD</option><option value="JOD">JOD</option><option value="EUR">EUR</option><option value="CNY">CNY</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">القيمة الإجمالية</label>
+              <input type="number" min="0" step="0.001" className="form-control" value={form.total_value} onChange={e=>setF('total_value',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!form.supplier_id||!form.description.trim()}>{loading?'...':isEdit?'حفظ':'إنشاء الملف'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- SupplyFileDetail (متابعة مراحل سلسلة التوريد) ---- */
+function SupplyFileDetail({ user, file, onClose, onUpdated }) {
+  const [stages, setStages] = useState([]);
+  const [fileStatus, setFileStatus] = useState(file.status);
+  const [loading, setLoading] = useState(true);
+  const [openKey, setOpenKey] = useState(null);
+  const [draft, setDraft] = useState({ status:'pending', stage_date:'', value:'', notes:'' });
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('supply_file_stages').select('*').eq('file_id', file.id).order('seq');
+    setStages(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [file.id]);
+
+  const canEdit = hasPerm(user,'supply_chain_edit');
+  const doneCount = stages.filter(s=>s.status==='done').length;
+  const pct = stages.length ? Math.round(doneCount/stages.length*100) : 0;
+
+  const openRow = (def, row) => {
+    if (!canEdit) return;
+    if (openKey === def.key) { setOpenKey(null); return; }
+    setOpenKey(def.key);
+    setDraft({ status: row.status||'pending', stage_date: row.stage_date||'', value: row.value||'', notes: row.notes||'' });
+  };
+
+  const saveStage = async (row) => {
+    setSaving(true);
+    try {
+      const payload = { status:draft.status, stage_date:draft.stage_date||null, value:draft.value||null, notes:draft.notes.trim()||null, updated_by:user?.id||null, updated_at:new Date().toISOString() };
+      const { error } = await sb.from('supply_file_stages').update(payload).eq('id', row.id);
+      if (error) throw error;
+      const newStages = stages.map(s=>s.id===row.id?{...s,...payload}:s);
+      setStages(newStages);
+      const allDone = newStages.every(s=>s.status==='done');
+      const newFileStatus = allDone ? 'completed' : (fileStatus==='cancelled' ? 'cancelled' : 'in_progress');
+      if (newFileStatus !== fileStatus) {
+        await sb.from('supply_files').update({ status:newFileStatus, updated_at:new Date().toISOString() }).eq('id', file.id);
+        setFileStatus(newFileStatus);
+      }
+      setOpenKey(null);
+      onUpdated?.();
+      toast('تم الحفظ ✓','success');
+    } catch(err) { toast('خطأ: '+err.message,'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:640}}>
+        <div className="modal-header">
+          <span className="modal-title">🚢 {file.number} — {file.supplier_name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:0}}>
+          <div style={{padding:'0 4px 16px'}}>
+            {file.description && <div style={{fontSize:13,color:'var(--gray-600)',marginBottom:8}}>{file.description}</div>}
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{flex:1,height:8,background:'#f1f5f9',borderRadius:99,overflow:'hidden'}}>
+                <div style={{height:'100%',width:pct+'%',background:'#16a34a',borderRadius:99,transition:'width .2s'}}/>
+              </div>
+              <span style={{fontSize:12,fontWeight:700,color:'var(--gray-500)',whiteSpace:'nowrap'}}>{doneCount}/{stages.length}</span>
+              <SFBadge status={fileStatus}/>
+            </div>
+          </div>
+          {loading ? <div style={{textAlign:'center',padding:30}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {SUPPLY_STAGES.map((def, idx) => {
+                const row = stages.find(s=>s.stage_key===def.key);
+                if (!row) return null;
+                const isOpen = openKey === def.key;
+                return (
+                  <React.Fragment key={def.key}>
+                    {def.groupLabel && (
+                      <div style={{fontSize:11,fontWeight:800,color:'#7a8fa6',textTransform:'uppercase',letterSpacing:.4,margin:'8px 0 0 30px'}}>{def.groupLabel}</div>
+                    )}
+                    <div style={{border:'1.5px solid #eef2f6',borderRadius:10,padding:'10px 14px',background: row.status==='done' ? '#f7fdf9' : '#fff', marginRight: def.group ? 24 : 0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10,cursor:canEdit?'pointer':'default'}} onClick={()=>openRow(def,row)}>
+                        <div style={{width:26,height:26,borderRadius:'50%',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:800,
+                          background: row.status==='done'?'#16a34a': row.status==='in_progress'?'#f59e0b':'#e2e8f0',
+                          color: row.status==='pending' ? '#64748b' : '#fff'}}>
+                          {row.status==='done' ? '✓' : idx+1}
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13,color:'#1a2e3d'}}>{def.label}</div>
+                          <div style={{display:'flex',gap:8,alignItems:'center',marginTop:2,flexWrap:'wrap'}}>
+                            <StageBadge status={row.status||'pending'}/>
+                            {row.stage_date && <span style={{fontSize:11,color:'var(--gray-400)'}}>📅 {row.stage_date}</span>}
+                            {row.value && def.valueOptions && <span style={{fontSize:11,color:'var(--primary)',fontWeight:700}}>{def.valueOptions.find(o=>o.v===row.value)?.label}</span>}
+                            {row.notes && <span style={{fontSize:11,color:'var(--gray-400)'}}>📝 {row.notes}</span>}
+                          </div>
+                        </div>
+                        {canEdit && <span style={{fontSize:12,color:'var(--gray-400)'}}>{isOpen?'▲':'▼'}</span>}
+                      </div>
+                      {isOpen && canEdit && (
+                        <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9',display:'flex',flexDirection:'column',gap:10}}>
+                          <div className="form-row">
+                            <div className="form-group">
+                              <label className="form-label">الحالة</label>
+                              <select className="form-control" value={draft.status} onChange={e=>setDraft(d=>({...d,status:e.target.value}))}>
+                                {Object.entries(SUPPLY_STAGE_STATUSES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                              </select>
+                            </div>
+                            <div className="form-group">
+                              <label className="form-label">التاريخ</label>
+                              <input type="date" className="form-control" value={draft.stage_date} onChange={e=>setDraft(d=>({...d,stage_date:e.target.value}))}/>
+                            </div>
+                          </div>
+                          {def.valueOptions && (
+                            <div className="form-group">
+                              <label className="form-label">{def.label}</label>
+                              <select className="form-control" value={draft.value} onChange={e=>setDraft(d=>({...d,value:e.target.value}))}>
+                                <option value="">— لم يُحدَّد —</option>
+                                {def.valueOptions.map(o=><option key={o.v} value={o.v}>{o.label}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <div className="form-group">
+                            <label className="form-label">ملاحظات</label>
+                            <textarea className="form-control" rows={2} value={draft.notes} onChange={e=>setDraft(d=>({...d,notes:e.target.value}))} style={{resize:'vertical'}}/>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'flex-end',gap:8}}>
+                            <button className="btn btn-ghost btn-sm" onClick={()=>setOpenKey(null)}>إلغاء</button>
+                            <button className="btn btn-primary btn-sm" disabled={saving} onClick={()=>saveStage(row)}>{saving?'...':'حفظ'}</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---- ProcurementPage ---- */
 function ProcurementPage({ user }) {
   const [tab, setTab] = useState('suppliers');
@@ -11535,6 +11827,8 @@ function ProcurementPage({ user }) {
   const [pos, setPos] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [supplyFiles, setSupplyFiles] = useState([]);
+  const [sfStages, setSfStages] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [viewingSupplier, setViewingSupplier] = useState(null);
@@ -11548,22 +11842,29 @@ function ProcurementPage({ user }) {
   const [showInvForm, setShowInvForm] = useState(false);
   const [editingInv, setEditingInv] = useState(null);
   const [showPayForm, setShowPayForm] = useState(false);
+  const [showSFForm, setShowSFForm] = useState(false);
+  const [editingSF, setEditingSF] = useState(null);
+  const [viewingSF, setViewingSF] = useState(null);
 
   // filters
   const [supSearch, setSupSearch] = useState('');
   const [poFilter, setPoFilter] = useState('all');
   const [poSearch, setPoSearch] = useState('');
   const [invFilter, setInvFilter] = useState('all');
+  const [sfFilter, setSfFilter] = useState('all');
 
   const load = async () => {
     setLoading(true);
-    const [r1,r2,r3,r4] = await Promise.all([
+    const [r1,r2,r3,r4,r5,r6] = await Promise.all([
       sb.from('suppliers').select('*').eq('is_active',true).order('name'),
       sb.from('purchase_orders').select('*').order('created_at',{ascending:false}),
       sb.from('supplier_invoices').select('*').order('date',{ascending:false}),
       sb.from('supplier_payments').select('*').order('date',{ascending:false}),
+      sb.from('supply_files').select('*').order('created_at',{ascending:false}),
+      sb.from('supply_file_stages').select('file_id,status'),
     ]);
     setSuppliers(r1.data||[]); setPos(r2.data||[]); setInvoices(r3.data||[]); setPayments(r4.data||[]);
+    setSupplyFiles(r5.data||[]); setSfStages(r6.data||[]);
     setLoading(false);
   };
   useEffect(()=>{ load(); },[]);
@@ -11607,6 +11908,13 @@ function ProcurementPage({ user }) {
     createLog(user,`غيّر حالة أمر الشراء ${p.number} إلى "${PO_STATUSES[status]||status}"`,'purchase_order',p.id,p.number);
     toast('تم تحديث الحالة','success'); load();
   };
+  const deleteSF = async (f) => {
+    if(!confirm(`حذف ملف التوريد "${f.number}"؟`)) return;
+    const {error}=await sb.from('supply_files').delete().eq('id',f.id);
+    if(error){toast('خطأ: '+error.message,'error');return;}
+    createLog(user,`حذف ملف التوريد ${f.number}`,'supply_file',f.id,f.number);
+    toast('تم الحذف','success'); load();
+  };
 
   const tabStyle = (t) => ({
     padding:'8px 18px', border:'none', cursor:'pointer', fontWeight:700, fontSize:13,
@@ -11622,6 +11930,7 @@ function ProcurementPage({ user }) {
   const filteredSup = suppliers.filter(s=>!supSearch || s.name.toLowerCase().includes(supSearch.toLowerCase()) || (s.code||'').includes(supSearch) || (s.city||'').includes(supSearch));
   const filteredPO  = pos.filter(p=>(poFilter==='all'||p.status===poFilter)&&(!poSearch||p.number?.includes(poSearch)||p.supplier_name?.toLowerCase().includes(poSearch.toLowerCase())));
   const filteredInv = invoices.filter(i=>invFilter==='all'||i.status===invFilter);
+  const filteredSF  = supplyFiles.filter(f=>sfFilter==='all'||f.status===sfFilter);
 
   const totalPayable = invoices.filter(i=>i.status!=='cancelled').reduce((s,i)=>s+parseFloat(i.total||0)-parseFloat(i.paid_amount||0),0);
 
@@ -11673,6 +11982,13 @@ function ProcurementPage({ user }) {
           {hasPerm(user,'supplier_invoices_create') && <button className="btn btn-primary" onClick={()=>{setEditingInv(null);setShowInvForm(true);}}>➕ فاتورة مورد</button>}
         </>}
         {tab==='payments' && hasPerm(user,'supplier_payments_create') && <button className="btn btn-primary" onClick={()=>setShowPayForm(true)}>➕ دفعة جديدة</button>}
+        {tab==='supply_chain' && <>
+          <select className="form-control" style={{width:'auto'}} value={sfFilter} onChange={e=>setSfFilter(e.target.value)}>
+            <option value="all">كل الحالات</option>
+            {Object.entries(SUPPLY_FILE_STATUSES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+          {hasPerm(user,'supply_chain_create') && <button className="btn btn-primary" onClick={()=>{setEditingSF(null);setShowSFForm(true);}}>➕ ملف توريد جديد</button>}
+        </>}
       </div>
 
       {/* Tabs */}
@@ -11681,6 +11997,7 @@ function ProcurementPage({ user }) {
         <button style={tabStyle('po')} onClick={()=>setTab('po')}>📋 أوامر الشراء ({pos.length})</button>
         <button style={tabStyle('invoices')} onClick={()=>setTab('invoices')}>🧾 فواتير الموردين ({invoices.length})</button>
         <button style={tabStyle('payments')} onClick={()=>setTab('payments')}>💸 المدفوعات ({payments.length})</button>
+        {hasPerm(user,'supply_chain_access') && <button style={tabStyle('supply_chain')} onClick={()=>setTab('supply_chain')}>🚢 سلسلة التوريد ({supplyFiles.length})</button>}
       </div>
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (<>
@@ -11801,6 +12118,47 @@ function ProcurementPage({ user }) {
           </div>
         )}
 
+        {/* ===== SUPPLY CHAIN (سلسلة التوريد) ===== */}
+        {tab==='supply_chain' && (
+          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+            <div style={{display:'grid',gridTemplateColumns:'120px 1fr 160px 110px 130px 130px',padding:'10px 18px',borderRadius:'12px 12px 0 0',...hdrCell}}>
+              <div>الرقم</div><div>المورد / الصفقة</div><div>التقدّم</div><div>القيمة</div><div>الحالة</div><div>إجراءات</div>
+            </div>
+            {filteredSF.length===0 ? (
+              <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>🚢</div><p>{supplyFiles.length===0?'لا توجد ملفات توريد — أنشئ أول ملف':'لا توجد نتائج'}</p></div>
+            ):filteredSF.map((f,i)=>{
+              const rows = sfStages.filter(s=>s.file_id===f.id);
+              const done = rows.filter(s=>s.status==='done').length;
+              const total = rows.length || 10;
+              const pct = Math.round(done/total*100);
+              return (
+              <div key={f.id} style={{display:'grid',gridTemplateColumns:'120px 1fr 160px 110px 130px 130px',padding:'11px 18px',...rowStyle(i)}}>
+                <div style={{fontWeight:800,color:'#1C6A99',fontSize:13}}>{f.number}</div>
+                <div>
+                  <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{f.supplier_name}</div>
+                  {f.description && <div style={{fontSize:11,color:'var(--gray-400)'}}>{f.description}</div>}
+                </div>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <div style={{flex:1,height:6,background:'#f1f5f9',borderRadius:99,overflow:'hidden',minWidth:60}}>
+                      <div style={{height:'100%',width:pct+'%',background:'#16a34a',borderRadius:99}}/>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',whiteSpace:'nowrap'}}>{done}/{total}</span>
+                  </div>
+                </div>
+                <div style={{fontSize:13,fontWeight:700,color:'var(--primary)'}}>{numFmt(f.total_value)} {f.currency}</div>
+                <div><SFBadge status={f.status}/></div>
+                <div style={{display:'flex',gap:4}}>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setViewingSF(f)} style={{padding:'3px 7px'}} title="متابعة المراحل">👁</button>
+                  {hasPerm(user,'supply_chain_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSF(f);setShowSFForm(true);}} style={{padding:'3px 7px'}}>✏️</button>}
+                  {hasPerm(user,'supply_chain_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSF(f)} style={{padding:'3px 7px'}}>🗑</button>}
+                </div>
+              </div>
+              );
+            })}
+          </div>
+        )}
+
       </>)}
 
       {/* Modals */}
@@ -11809,6 +12167,8 @@ function ProcurementPage({ user }) {
       {viewingPO && <PODetail po={viewingPO} onClose={()=>setViewingPO(null)} onEdit={hasPerm(user,'suppliers_edit')?()=>{setEditingPO(viewingPO);setViewingPO(null);setShowPOForm(true);}:null}/>}
       {showInvForm && <SupplierInvoiceForm invoice={editingInv} suppliers={suppliers} onSave={()=>{setShowInvForm(false);load();}} onClose={()=>setShowInvForm(false)}/>}
       {showPayForm && <SupplierPaymentForm suppliers={suppliers} onSave={()=>{setShowPayForm(false);load();}} onClose={()=>setShowPayForm(false)}/>}
+      {showSFForm && <SupplyFileForm user={user} file={editingSF} onSave={()=>{setShowSFForm(false);load();}} onClose={()=>setShowSFForm(false)}/>}
+      {viewingSF && <SupplyFileDetail user={user} file={viewingSF} onClose={()=>setViewingSF(null)} onUpdated={load}/>}
     </div>
   );
 }
