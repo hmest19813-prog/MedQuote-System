@@ -8503,11 +8503,68 @@ function ProspectForm({ prospect, profiles, user, onSave, onClose }) {
   );
 }
 
+/* بطاقة موحّدة لعرض العملاء/المحتملين/عملاء الأونلاين بشكل بطاقات بدل الجدول */
+function EntityCard({ onClick, avatar, title, subtitle, badge, rows, actions }) {
+  return (
+    <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:14,boxShadow:'0 2px 8px rgba(43,143,196,.06)',cursor: onClick?'pointer':'default'}} onClick={onClick}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:badge?6:8}}>
+        <div style={{width:38,height:38,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:17,flexShrink:0}}>{avatar}</div>
+        <div style={{minWidth:0,flex:1}}>
+          <div style={{fontWeight:800,color:'#1a2e3d',fontSize:14,whiteSpace:'normal',wordBreak:'break-word',lineHeight:1.35}}>{title}</div>
+          {subtitle && <div style={{fontSize:11,color:'#9ca3af',fontWeight:600,marginTop:2}}>{subtitle}</div>}
+        </div>
+      </div>
+      {badge && <div style={{marginBottom:8}}>{badge}</div>}
+      <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:actions?10:0}}>
+        {rows.filter(Boolean).map((r,i)=>(
+          <div key={i} style={{fontSize:12,color:'#374151',display:'flex',gap:6,alignItems:'center'}}>
+            <span style={{opacity:.7,flexShrink:0}}>{r.icon}</span>
+            <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.text}</span>
+          </div>
+        ))}
+      </div>
+      {actions && (
+        <div style={{display:'flex',gap:6,paddingTop:10,borderTop:'1px solid #f0f4f8',flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
+          {actions}
+        </div>
+      )}
+    </div>
+  );
+}
+const ENTITY_GRID_STYLE = {display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14};
+
+/* زر فلتر موحّد يجمع كل حقول الفلترة بقائمة منسدلة واحدة */
+function FilterPopover({ active, onClear, children }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  return (
+    <div ref={ref} style={{position:'relative'}}>
+      <button className="btn btn-ghost" onClick={()=>setOpen(o=>!o)}
+        style={{whiteSpace:'nowrap', borderColor: active?'var(--primary)':undefined, color: active?'var(--primary)':undefined}}>
+        🔽 فلتر {active && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:9,padding:'1px 6px',marginRight:4}}>●</span>}
+      </button>
+      {open && (
+        <div style={{position:'absolute',top:'100%',left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:10,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:6,padding:14,minWidth:220,display:'flex',flexDirection:'column',gap:10}}>
+          {children}
+          {active && onClear && <button className="btn btn-ghost btn-sm" onClick={()=>{ onClear(); setOpen(false); }}>✕ مسح الفلاتر</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProspectsTab({ user, profiles, onCountChange }) {
   const [prospects, setProspects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [repFilter, setRepFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [converting, setConverting] = useState(null);
@@ -8531,10 +8588,15 @@ function ProspectsTab({ user, profiles, onCountChange }) {
 
   const filtered = prospects.filter(p => {
     if (levelFilter !== 'all' && p.interest_level !== levelFilter) return false;
+    if (sourceFilter !== 'all' && (p.source||'') !== sourceFilter) return false;
+    if (repFilter !== 'all' && (p.assigned_to||'') !== repFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return p.name?.toLowerCase().includes(q) || (p.phone||'').includes(search) || (p.source||'').toLowerCase().includes(q);
   });
+
+  const hasActiveFilters = levelFilter!=='all' || sourceFilter!=='all' || repFilter!=='all';
+  const clearFilters = () => { setLevelFilter('all'); setSourceFilter('all'); setRepFilter('all'); };
 
   const assignedName = (p) => profiles.find(pr=>pr.id===p.assigned_to)?.full_name || '—';
 
@@ -8549,41 +8611,57 @@ function ProspectsTab({ user, profiles, onCountChange }) {
     <div>
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
         <input className="search-input" placeholder="بحث: الاسم، الهاتف، المصدر..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260,flex:1}}/>
-        <select className="form-control" style={{width:'auto'}} value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>
-          <option value="all">كل المستويات</option>
-          {Object.entries(PROSPECT_LEVELS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-        </select>
+        <FilterPopover active={hasActiveFilters} onClear={clearFilters}>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">مستوى الاهتمام</label>
+            <select className="form-control" value={levelFilter} onChange={e=>setLevelFilter(e.target.value)}>
+              <option value="all">كل المستويات</option>
+              {Object.entries(PROSPECT_LEVELS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">المصدر</label>
+            <select className="form-control" value={sourceFilter} onChange={e=>setSourceFilter(e.target.value)}>
+              <option value="all">كل المصادر</option>
+              {PROSPECT_SOURCES.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">المندوب</label>
+            <select className="form-control" value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
+              <option value="all">كل المندوبين</option>
+              {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+          </div>
+        </FilterPopover>
         <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ عميل محتمل</button>
       </div>
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
-        <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 120px 130px 110px 110px 110px',padding:'10px 18px',background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',fontSize:11,fontWeight:800,letterSpacing:'.05em',borderRadius:'12px 12px 0 0'}}>
-            <div>الاسم / الشركة</div><div>الهاتف</div><div>مستوى الاهتمام</div><div>المصدر</div><div>المندوب</div><div>إجراءات</div>
+        filtered.length === 0 ? (
+          <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+            <div style={{fontSize:48,marginBottom:12}}>🎯</div>
+            <p>{prospects.length===0 ? 'لا يوجد عملاء محتملون بعد' : 'لا توجد نتائج مطابقة'}</p>
           </div>
-          {filtered.length === 0 ? (
-            <div className="empty-state" style={{padding:'60px 20px'}}>
-              <div style={{fontSize:48,marginBottom:12}}>🎯</div>
-              <p>{prospects.length===0 ? 'لا يوجد عملاء محتملون بعد' : 'لا توجد نتائج مطابقة'}</p>
-            </div>
-          ) : filtered.map((p,idx)=>(
-            <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 120px 130px 110px 110px 110px',padding:'11px 18px',borderBottom:'1px solid #f0f4f8',background:idx%2===0?'#fff':'#fafcfd',alignItems:'center'}}>
-              <div>
-                <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{p.name}</div>
-                {p.notes && <div style={{fontSize:11,color:'#9ca3af',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:280}}>{p.notes}</div>}
-              </div>
-              <div style={{fontSize:12,color:'#374151'}}>{p.phone||'—'}</div>
-              <div><ProspectBadge level={p.interest_level}/></div>
-              <div style={{fontSize:12,color:'#6b7280'}}>{p.source||'—'}</div>
-              <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(p)}</div>
-              <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(p); setShowForm(true); }} title="تعديل" style={{padding:'3px 7px'}}>✏️</button>
-                <button className="btn btn-primary btn-sm" onClick={()=>setConverting(p)} title="تحويل لعميل" style={{padding:'3px 7px',fontSize:11}}>🔄 تحويل</button>
-                <button className="btn btn-danger btn-sm" onClick={()=>deleteProspect(p)} style={{padding:'3px 7px'}}>🗑</button>
-              </div>
-            </div>
-          ))}
-        </div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filtered.map(p=>(
+              <EntityCard key={p.id} avatar="🎯" title={p.name} badge={<ProspectBadge level={p.interest_level}/>}
+                rows={[
+                  {icon:'📞', text: p.phone||'—'},
+                  {icon:'🏷️', text: p.source||'—'},
+                  {icon:'👤', text: assignedName(p)},
+                  p.notes && {icon:'📝', text: p.notes},
+                ]}
+                actions={<>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(p); setShowForm(true); }} title="تعديل" style={{padding:'3px 7px'}}>✏️</button>
+                  <button className="btn btn-primary btn-sm" onClick={()=>setConverting(p)} title="تحويل لعميل" style={{padding:'3px 7px',fontSize:11}}>🔄 تحويل</button>
+                  <button className="btn btn-danger btn-sm" onClick={()=>deleteProspect(p)} style={{padding:'3px 7px'}}>🗑</button>
+                </>}
+              />
+            ))}
+          </div>
+        )
       )}
 
       {showForm && <ProspectForm prospect={editing} profiles={profiles} user={user}
@@ -8974,6 +9052,17 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
 
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
+  const lookupOnlineCustomer = async (phone) => {
+    if (isEdit || !phone.trim()) return;
+    const { data } = await sb.from('online_customers').select('name,region').eq('phone', phone.trim()).maybeSingle();
+    if (!data) return;
+    if (!form.customer_name.trim()) setF('customer_name', data.name);
+    if (data.region && !regionGov) {
+      const parts = data.region.split(' - ');
+      if (CUST_GOVS.includes(parts[0])) { setRegionGov(parts[0]); setRegionDistrict(parts.slice(1).join(' - ')); }
+    }
+  };
+
   useEffect(() => {
     sb.from('customer_districts').select('governorate,name').order('sort_order').order('name')
       .then(({data}) => {
@@ -9017,10 +9106,16 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
       const region = regionGov && regionDistrict.trim()
         ? `${regionGov} - ${regionDistrict.trim()}`
         : (regionGov || null);
+      const customerPhone = form.customer_phone.trim() || null;
+      if (customerPhone) {
+        const { error: ocErr } = await sb.from('online_customers')
+          .upsert({ phone: customerPhone, name: form.customer_name.trim(), region }, { onConflict: 'phone' });
+        if (ocErr) throw ocErr;
+      }
       const payload = {
         order_date:      form.order_date,
         customer_name:   form.customer_name.trim(),
-        customer_phone:  form.customer_phone.trim() || null,
+        customer_phone:  customerPhone,
         region,
         sales_rep_id:    form.sales_rep_id || null,
         channel:         form.channel,
@@ -9091,7 +9186,7 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">هاتف الزبون</label>
-              <input className="form-control" value={form.customer_phone} onChange={e=>setF('customer_phone',e.target.value)} placeholder="07XXXXXXXX"/>
+              <input className="form-control" value={form.customer_phone} onChange={e=>setF('customer_phone',e.target.value)} onBlur={e=>lookupOnlineCustomer(e.target.value)} placeholder="07XXXXXXXX"/>
             </div>
           </div>
 
@@ -9236,6 +9331,235 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving||loading}>{saving?'...':'حفظ'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ===================== عملاء الأونلاين ===================== */
+function OnlineCustomerForm({ customer, onSave, onClose }) {
+  const isEdit = !!customer;
+  const [name, setName] = useState(customer?.name || '');
+  const [phone, setPhone] = useState(customer?.phone || '');
+  const [districtsMap, setDistrictsMap] = useState(CUST_DISTRICTS);
+  const [regionGov, setRegionGov] = useState(() => {
+    if (!customer?.region) return '';
+    const gov = customer.region.split(' - ')[0];
+    return CUST_GOVS.includes(gov) ? gov : '';
+  });
+  const [regionDistrict, setRegionDistrict] = useState(() => {
+    if (!customer?.region) return '';
+    const parts = customer.region.split(' - ');
+    return parts.length > 1 ? parts.slice(1).join(' - ') : '';
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    sb.from('customer_districts').select('governorate,name').order('sort_order').order('name')
+      .then(({data}) => {
+        if (data?.length) {
+          const map = {};
+          data.forEach(d=>{ if(!map[d.governorate]) map[d.governorate]=[]; map[d.governorate].push(d.name); });
+          setDistrictsMap(map);
+        }
+      });
+  }, []);
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast('اسم الزبون مطلوب', 'error'); return; }
+    if (!phone.trim()) { toast('رقم الهاتف مطلوب', 'error'); return; }
+    setSaving(true);
+    const region = regionGov && regionDistrict.trim() ? `${regionGov} - ${regionDistrict.trim()}` : (regionGov || null);
+    let error;
+    if (isEdit) {
+      ({ error } = await sb.from('online_customers').update({ name: name.trim(), region }).eq('phone', customer.phone));
+    } else {
+      ({ error } = await sb.from('online_customers').insert({ phone: phone.trim(), name: name.trim(), region }));
+    }
+    setSaving(false);
+    if (error) { toast('خطأ: ' + (error.code==='23505' ? 'رقم الهاتف مسجّل مسبقاً' : error.message), 'error'); return; }
+    toast(isEdit ? 'تم التعديل' : 'تمت الإضافة', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:440}}>
+        <div className="modal-header">
+          <span className="modal-title">🛒 {isEdit ? 'تعديل عميل أونلاين' : 'عميل أونلاين جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className="form-group">
+            <label className="form-label">الاسم <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" value={name} onChange={e=>setName(e.target.value)} autoFocus/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="07XXXXXXXX" disabled={isEdit}/>
+            {isEdit && <small style={{color:'var(--gray-500)'}}>الهاتف هو المعرّف الأساسي للعميل — لا يمكن تعديله</small>}
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المحافظة</label>
+              <select className="form-control" value={regionGov} onChange={e=>{ setRegionGov(e.target.value); setRegionDistrict(''); }}>
+                <option value="">— اختر المحافظة —</option>
+                {CUST_GOVS.map(g=><option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            {regionGov && (
+              <div className="form-group">
+                <label className="form-label">المنطقة</label>
+                <SuggestInput value={regionDistrict} onChange={setRegionDistrict} options={districtsMap[regionGov]||[]} placeholder={`اختر أو اكتب منطقة ${regionGov}`}/>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnlineCustomerOrders({ customer, onClose }) {
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    sb.from('daily_orders').select('*').eq('customer_phone', customer.phone).order('order_date',{ascending:false})
+      .then(({data}) => { setOrders(data||[]); setLoading(false); });
+  }, []);
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:640,maxHeight:'85vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">📦 طلبيات {customer.name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {loading ? <div style={{textAlign:'center',padding:40}}><div className="spinner" style={{margin:'auto'}}/></div> : orders.length === 0 ? (
+            <div className="empty-state" style={{padding:'40px 20px'}}><p>لا توجد طلبيات لهذا العميل بعد</p></div>
+          ) : (
+            <table style={{width:'100%',fontSize:13}}>
+              <thead><tr style={{textAlign:'right',color:'var(--gray-500)',fontSize:11}}>
+                <th style={{padding:'4px 0'}}>رقم الطلبية</th><th>التاريخ</th><th>الحالة</th><th>الإجمالي</th>
+              </tr></thead>
+              <tbody>
+                {orders.map(o=>(
+                  <tr key={o.id} style={{borderTop:'1px solid #f0f4f8'}}>
+                    <td style={{padding:'8px 0',fontWeight:700,color:'#1C6A99'}}>{o.number}</td>
+                    <td>{o.order_date}</td>
+                    <td><span className={`badge ${DO_STATUS[o.status]?.badge}`}>{DO_STATUS[o.status]?.label}</span></td>
+                    <td style={{fontWeight:700}}>{numFmt(o.total_amount)} د.أ</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnlineCustomersTab({ user, onCountChange }) {
+  const [customers, setCustomers] = useState([]);
+  const [orderCounts, setOrderCounts] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [govFilter, setGovFilter] = useState('all');
+  const [ordersFilter, setOrdersFilter] = useState('all');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: c }, { data: o }] = await Promise.all([
+      sb.from('online_customers').select('*').order('created_at', {ascending:false}),
+      sb.from('daily_orders').select('customer_phone'),
+    ]);
+    const counts = {};
+    (o||[]).forEach(r => { if (r.customer_phone) counts[r.customer_phone] = (counts[r.customer_phone]||0)+1; });
+    setCustomers(c||[]); setOrderCounts(counts); setLoading(false);
+    if (onCountChange) onCountChange((c||[]).length);
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const deleteCustomer = async (c) => {
+    if (!confirm(`حذف العميل "${c.name}"؟`)) return;
+    const { error } = await sb.from('online_customers').delete().eq('phone', c.phone);
+    if (error) { toast(error.code==='23503' ? 'لا يمكن الحذف — هذا العميل مرتبط بطلبيات يومية موجودة' : 'خطأ: '+error.message, 'error'); return; }
+    toast('تم الحذف','success'); load();
+  };
+
+  const usedGovs = CUST_GOVS.filter(g => customers.some(c => (c.region||'').split(' - ')[0] === g));
+
+  const filtered = customers.filter(c => {
+    if (govFilter !== 'all' && (c.region||'').split(' - ')[0] !== govFilter) return false;
+    const cnt = orderCounts[c.phone]||0;
+    if (ordersFilter === 'none' && cnt !== 0) return false;
+    if (ordersFilter === 'repeat' && cnt < 2) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return c.name?.toLowerCase().includes(q) || (c.phone||'').includes(search) || (c.region||'').toLowerCase().includes(q);
+  });
+
+  const hasActiveFilters = govFilter!=='all' || ordersFilter!=='all';
+  const clearFilters = () => { setGovFilter('all'); setOrdersFilter('all'); };
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، المنطقة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260,flex:1}}/>
+        <FilterPopover active={hasActiveFilters} onClear={clearFilters}>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">المحافظة</label>
+            <select className="form-control" value={govFilter} onChange={e=>setGovFilter(e.target.value)}>
+              <option value="all">كل المحافظات</option>
+              {usedGovs.map(g=><option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">الطلبيات</label>
+            <select className="form-control" value={ordersFilter} onChange={e=>setOrdersFilter(e.target.value)}>
+              <option value="all">كل العملاء</option>
+              <option value="none">بدون طلبيات</option>
+              <option value="repeat">عميل متكرر (طلبيتان فأكثر)</option>
+            </select>
+          </div>
+        </FilterPopover>
+        {hasPerm(user,'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ عميل أونلاين جديد</button>}
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        filtered.length === 0 ? (
+          <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+            <div style={{fontSize:48,marginBottom:12}}>🛒</div>
+            <p>{customers.length===0 ? 'لا يوجد عملاء أونلاين بعد — يُضافون تلقائياً عند إنشاء طلبية يومية' : 'لا توجد نتائج مطابقة'}</p>
+          </div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filtered.map(c=>(
+              <EntityCard key={c.phone} avatar="🛒" title={c.name} subtitle={c.phone}
+                rows={[
+                  {icon:'📍', text: c.region||'—'},
+                  {icon:'📦', text: `${orderCounts[c.phone]||0} طلبية`},
+                ]}
+                actions={<>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setViewing(c)} title="عرض الطلبيات" style={{padding:'3px 7px'}}>📦</button>
+                  {hasPerm(user,'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 7px'}}>✏️</button>}
+                  {hasPerm(user,'customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 7px'}}>🗑</button>}
+                </>}
+              />
+            ))}
+          </div>
+        )
+      )}
+
+      {showForm && <OnlineCustomerForm customer={editing} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
+      {viewing && <OnlineCustomerOrders customer={viewing} onClose={()=>setViewing(null)}/>}
     </div>
   );
 }
@@ -9726,15 +10050,20 @@ function CustomersPage({ user }) {
   const [selected,  setSelected]  = useState(null);
   const [showListMgr, setShowListMgr] = useState(false);
   const [prospectCount, setProspectCount] = useState(0);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [cityFilter, setCityFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [repFilter, setRepFilter] = useState('all');
 
   const load = async () => {
     setLoading(true);
-    const [{ data: c }, { data: p }, { count }] = await Promise.all([
+    const [{ data: c }, { data: p }, { count }, { count: onlineCnt }] = await Promise.all([
       sb.from('customers').select('*').order('customer_code', {ascending: true, nullsFirst: false}),
       sb.from('profiles').select('id,full_name,role').eq('is_active',true).order('full_name'),
       sb.from('prospects').select('id', {count:'exact',head:true}).eq('converted',false),
+      sb.from('online_customers').select('phone', {count:'exact',head:true}),
     ]);
-    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setLoading(false);
+    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setOnlineCount(onlineCnt||0); setLoading(false);
   };
   useEffect(()=>{ load(); },[]);
 
@@ -9746,7 +10075,13 @@ function CustomersPage({ user }) {
     toast('تم الحذف','success'); load();
   };
 
+  const usedCities = [...new Set(customers.map(c=>c.city).filter(Boolean))].sort();
+  const usedCategories = [...new Set(customers.map(c=>c.category).filter(Boolean))].sort();
+
   const filtered = customers.filter(c => {
+    if (cityFilter !== 'all' && c.city !== cityFilter) return false;
+    if (categoryFilter !== 'all' && c.category !== categoryFilter) return false;
+    if (repFilter !== 'all' && (c.assigned_to||'') !== repFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return c.name?.toLowerCase().includes(q)
@@ -9756,6 +10091,9 @@ function CustomersPage({ user }) {
       || (c.district||'').toLowerCase().includes(q)
       || (c.address||'').toLowerCase().includes(q);
   });
+
+  const hasActiveFilters = cityFilter!=='all' || categoryFilter!=='all' || repFilter!=='all';
+  const clearFilters = () => { setCityFilter('all'); setCategoryFilter('all'); setRepFilter('all'); };
 
   const assignedName = (c) => c.rep_name || profiles.find(p=>p.id===c.assigned_to)?.full_name || '—';
 
@@ -9782,6 +10120,29 @@ function CustomersPage({ user }) {
         <div style={{flex:1}}/>
         {tab==='customers' && <>
           <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:280}}/>
+          <FilterPopover active={hasActiveFilters} onClear={clearFilters}>
+            <div className="form-group" style={{margin:0}}>
+              <label className="form-label">المدينة</label>
+              <select className="form-control" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}>
+                <option value="all">كل المدن</option>
+                {usedCities.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{margin:0}}>
+              <label className="form-label">التصنيف</label>
+              <select className="form-control" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+                <option value="all">كل التصنيفات</option>
+                {usedCategories.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{margin:0}}>
+              <label className="form-label">المندوب</label>
+              <select className="form-control" value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
+                <option value="all">كل المندوبين</option>
+                {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+          </FilterPopover>
           {hasPerm(user, 'customers_delete') && <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>}
           {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
         </>}
@@ -9791,46 +10152,44 @@ function CustomersPage({ user }) {
       <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5'}}>
         <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({customers.length})</button>
         <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>
+        <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
       </div>
 
-      {tab === 'customers' && (
-        loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
-          <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',overflow:'hidden',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
-            <div className="erp-list-header">
-              <div>رقم العميل</div><div>اسم الشركة / العميل</div><div>الهاتف</div>
-              <div>المسؤول الأول</div><div>المدينة</div><div>المندوب</div><div>إجراءات</div>
+      {tab === 'customers' && <>
+        <div style={{marginTop:16}}/>
+        {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+          filtered.length === 0 ? (
+            <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+              <div style={{fontSize:48,marginBottom:12}}>🏢</div>
+              <p>لا يوجد عملاء مطابقون</p>
+              <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث أو الفلاتر'}</small>
             </div>
-            {filtered.length === 0 ? (
-              <div className="empty-state" style={{padding:'60px 20px'}}>
-                <div style={{fontSize:48,marginBottom:12}}>🏢</div>
-                <p>لا يوجد عملاء مطابقون</p>
-                <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث'}</small>
-              </div>
-            ) : filtered.map((c, idx) => (
-              <div key={c.id} className="erp-list-row" style={{background:idx%2===0?'#fff':'#fafcfd'}} onClick={()=>setSelected(c)}>
-                <div style={{fontSize:12,fontWeight:700,color:'#1C6A99'}}>{c.customer_code||'—'}</div>
-                <div>
-                  <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{c.name}</div>
-                  {c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>{c.category}</span>}
-                </div>
-                <div style={{fontSize:12,color:'#374151'}}>{c.phone||c.mobile||'—'}</div>
-                <div style={{fontSize:12,color:'#374151'}}>
-                  {c.contact1_name ? <span>{c.contact1_name}{c.contact1_title && <span style={{color:'#9ca3af',fontWeight:400}}> — {c.contact1_title}</span>}</span> : '—'}
-                </div>
-                <div style={{fontSize:12,color:'#6b7280'}}>{c.city||'—'}</div>
-                <div style={{fontSize:12,color:'#6b7280'}}>{assignedName(c)}</div>
-                <div style={{display:'flex',gap:4}} onClick={e=>e.stopPropagation()}>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
-                  {hasPerm(user, 'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
-                  {hasPerm(user, 'customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      )}
+          ) : (
+            <div style={ENTITY_GRID_STYLE}>
+              {filtered.map(c=>(
+                <EntityCard key={c.id} onClick={()=>setSelected(c)} avatar="🏢" title={c.name} subtitle={c.customer_code||'—'}
+                  badge={c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10,whiteSpace:'nowrap'}}>{c.category}</span>}
+                  rows={[
+                    {icon:'📞', text: c.phone||c.mobile||'—'},
+                    {icon:'📍', text: c.city||'—'},
+                    {icon:'👤', text: assignedName(c)},
+                    c.contact1_name && {icon:'🧑‍💼', text: c.contact1_name + (c.contact1_title?' — '+c.contact1_title:'')},
+                  ]}
+                  actions={<>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
+                    {hasPerm(user, 'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
+                    {hasPerm(user, 'customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
+                  </>}
+                />
+              ))}
+            </div>
+          )
+        )}
+      </>}
 
       {tab === 'prospects' && <ProspectsTab user={user} profiles={profiles} onCountChange={setProspectCount}/>}
+
+      {tab === 'online' && <OnlineCustomersTab user={user} onCountChange={setOnlineCount}/>}
 
       {showForm && <CustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
       {showListMgr && <CustomerListsManager user={user} onClose={()=>setShowListMgr(false)}/>}
