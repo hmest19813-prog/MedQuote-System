@@ -6586,6 +6586,9 @@ const PERM_GROUPS = [
     { key: 'customers_create', label: 'إضافة عميل جديد' },
     { key: 'customers_edit',   label: 'تعديل بيانات العملاء' },
     { key: 'customers_delete', label: 'حذف العملاء وإدارة القوائم' },
+    { key: 'export_customers_create', label: 'إضافة عميل تصدير جديد' },
+    { key: 'export_customers_edit',   label: 'تعديل بيانات عملاء التصدير' },
+    { key: 'export_customers_delete', label: 'حذف عملاء التصدير' },
   ]},
   { label: 'الكتالوج', icon: '🗂️', perms: [
     { key: 'catalog_access', label: 'الوصول للكتالوج' },
@@ -6625,6 +6628,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
   daily_orders_access: true, daily_orders_create: true, daily_orders_edit: true, daily_orders_delete: false, daily_orders_prepare: false,
   customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
+  export_customers_create: true, export_customers_edit: false, export_customers_delete: false,
   catalog_access: true, catalog_edit: false,    catalog_delete: false,
   letters_access: true, letters_manage: false,
   archive_access: true, activity_access: false,
@@ -8048,6 +8052,274 @@ function CatalogPicker({ onSelect, onClose }) {
           }
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ===================== عملاء التصدير ===================== */
+function ExportCustomerForm({ customer, profiles: profilesProp, user, onSave, onClose }) {
+  const empty = {
+    name:'', customer_code:'', phone:'', fax:'', alt_phone:'',
+    email:'', address:'', country:'', website:'', notes:'', category:'', tags:'', assigned_to:'', rep_name:'',
+    contact1_name:'', contact1_last_name:'', contact1_title:'', contact1_phone:'', contact1_mobile2:'', contact1_ext:'', contact1_email:'', contact1_notes:'',
+    contact2_name:'', contact2_last_name:'', contact2_title:'', contact2_phone:'', contact2_mobile2:'', contact2_ext:'', contact2_email:'', contact2_notes:'',
+  };
+  const [form, setForm] = useState({ ...empty, ...(customer||{}) });
+  const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState(profilesProp||[]);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(() => {
+    if (profilesProp?.length) return;
+    sb.from('profiles').select('id,full_name').eq('is_active',true).order('full_name')
+      .then(({data})=>setProfiles(data||[]));
+  }, []);
+
+  const [previewCode, setPreviewCode] = useState('...');
+  useEffect(() => {
+    if (!customer?.id) {
+      sb.from('export_customers').select('customer_code').not('customer_code','is',null)
+        .then(({data}) => {
+          const nums = (data||[]).map(r => parseInt((r.customer_code||'').replace(/\D/g,''))||0).filter(n=>n>0);
+          setPreviewCode('EX-' + String(nums.length ? Math.max(...nums)+1 : 1).padStart(4,'0'));
+        })
+        .catch(() => setPreviewCode('EX-0001'));
+    }
+  }, []);
+
+  const handleSave = async () => {
+    if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    setLoading(true);
+    try {
+      const payload = {
+        name:form.name, customer_code:form.customer_code||null,
+        phone:form.phone||null, fax:form.fax||null,
+        alt_phone:form.alt_phone||null, email:form.email||null,
+        address:form.address||null, country:form.country||null,
+        website:form.website||null, notes:form.notes||null,
+        category:form.category||null, tags:form.tags||null,
+        assigned_to:form.assigned_to||null,
+        rep_name:form.rep_name||null,
+        contact1_name:form.contact1_name||null, contact1_last_name:form.contact1_last_name||null,
+        contact1_title:form.contact1_title||null,
+        contact1_phone:form.contact1_phone||null, contact1_mobile2:form.contact1_mobile2||null,
+        contact1_email:form.contact1_email||null, contact1_ext:form.contact1_ext||null,
+        contact1_notes:form.contact1_notes||null,
+        contact2_name:form.contact2_name||null, contact2_last_name:form.contact2_last_name||null,
+        contact2_title:form.contact2_title||null,
+        contact2_phone:form.contact2_phone||null, contact2_mobile2:form.contact2_mobile2||null,
+        contact2_email:form.contact2_email||null, contact2_ext:form.contact2_ext||null,
+        contact2_notes:form.contact2_notes||null,
+      };
+      if (customer?.id) {
+        const {error} = await sb.from('export_customers').update(payload).eq('id', customer.id);
+        if(error) throw error;
+        createLog(user, `عدّل بيانات عميل التصدير ${form.name}`, 'export_customer', customer.id, form.name);
+        toast('تم التعديل','success');
+      } else {
+        const { data: genCode, error: genErr } = await sb.rpc('generate_export_customer_number');
+        if (genErr) throw genErr;
+        payload.customer_code = genCode;
+        payload.created_by = user?.id || null;
+        const {data: inserted, error} = await sb.from('export_customers').insert(payload).select('id,name,customer_code').single();
+        if(error) throw error;
+        createLog(user, `أضاف عميل تصدير جديد: ${form.name} (#${genCode})`, 'export_customer', inserted.id, form.name);
+        toast(`تمت الإضافة — رقم العميل: ${genCode}`,'success');
+      }
+      onSave();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:920,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header" style={{background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',borderRadius:'12px 12px 0 0',position:'sticky',top:0,zIndex:10}}>
+          <span className="modal-title" style={{color:'white'}}>{customer ? 'تعديل بيانات عميل التصدير' : 'إضافة عميل تصدير جديد'}</span>
+          <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>✕</button>
+        </div>
+        <div style={{background:'#f0f4f8',padding:'20px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1.35fr 1fr 1fr',gap:14,marginBottom:14}}>
+
+            <div className="erp-card main-card">
+              <div className="erp-section-header">بيانات الشركة / العميل</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div className="erp-field">
+                  <label>رقم العميل</label>
+                  <div className="erp-input" style={{background:'#f0f4f8',color:'var(--gray-500)',display:'flex',alignItems:'center',gap:6,cursor:'default',userSelect:'none'}}>
+                    {customer?.id
+                      ? <span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{form.customer_code||'—'}</span>
+                      : <><span style={{fontWeight:700,color:'var(--primary)',letterSpacing:1}}>{previewCode}</span><span style={{fontSize:10,color:'var(--gray-400)',marginRight:6}}>(متوقع)</span></>
+                    }
+                  </div>
+                </div>
+                <div className="erp-field">
+                  <label>المندوب المسؤول</label>
+                  <input className="erp-input" list="export-rep-list"
+                    value={form.rep_name||''}
+                    onChange={e=>{
+                      const val = e.target.value;
+                      setF('rep_name', val);
+                      const matched = profiles.find(p=>p.full_name===val);
+                      setF('assigned_to', matched ? matched.id : '');
+                    }}
+                    placeholder="اختر من النظام أو اكتب اسم المندوب"/>
+                  <datalist id="export-rep-list">
+                    {profiles.map(p=><option key={p.id} value={p.full_name}/>)}
+                  </datalist>
+                </div>
+              </div>
+              <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة أو الجهة" span/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+                <ErpField label="هاتف" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+..."/>
+                <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+..."/>
+                <ErpField label="موبايل" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+..."/>
+              </div>
+              <ErpField label="البريد الإلكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
+              <ErpField label="الموقع الإلكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
+              <ErpField label="الدولة" value={form.country} onChange={v=>setF('country',v)} placeholder="مثال: السعودية"/>
+              <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="export-cats-list" options={CUST_CATS} placeholder="اختر أو اكتب التصنيف"/>
+              <ErpDatalist label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} listId="export-tags-list" options={CUST_TAGS} placeholder="اختر أو اكتب وسماً"/>
+              <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="المدينة، الشارع، الرقم" span/>
+              <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..." span/>
+            </div>
+
+            <div className="erp-card contact-card">
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الأول</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم الأول"/>
+                <ErpField label="الكنية" value={form.contact1_last_name||''} onChange={v=>setF('contact1_last_name',v)} placeholder="اختياري"/>
+              </div>
+              <ErpDatalist label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} listId="export-job-t1" options={CUST_TITLES} placeholder="مدير المشتريات"/>
+              <ErpField label="رقم موبايل أساسي" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+..."/>
+              <ErpField label="رقم موبايل ثانوي" value={form.contact1_mobile2||''} onChange={v=>setF('contact1_mobile2',v)} placeholder="+..."/>
+              <ErpField label="تحويلة EXT" value={form.contact1_ext} onChange={v=>setF('contact1_ext',v)} placeholder="123"/>
+              <ErpField label="البريد الإلكتروني" value={form.contact1_email} onChange={v=>setF('contact1_email',v)} type="email" placeholder="name@co.com"/>
+              <ErpField label="ملاحظات" value={form.contact1_notes} onChange={v=>setF('contact1_notes',v)} type="textarea" placeholder=""/>
+            </div>
+
+            <div className="erp-card contact-card">
+              <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم الأول"/>
+                <ErpField label="الكنية" value={form.contact2_last_name||''} onChange={v=>setF('contact2_last_name',v)} placeholder="اختياري"/>
+              </div>
+              <ErpDatalist label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} listId="export-job-t2" options={CUST_TITLES} placeholder="المحاسب / المشرف"/>
+              <ErpField label="رقم موبايل أساسي" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+..."/>
+              <ErpField label="رقم موبايل ثانوي" value={form.contact2_mobile2||''} onChange={v=>setF('contact2_mobile2',v)} placeholder="+..."/>
+              <ErpField label="تحويلة EXT" value={form.contact2_ext} onChange={v=>setF('contact2_ext',v)} placeholder="456"/>
+              <ErpField label="البريد الإلكتروني" value={form.contact2_email} onChange={v=>setF('contact2_email',v)} type="email" placeholder="name@co.com"/>
+              <ErpField label="ملاحظات" value={form.contact2_notes} onChange={v=>setF('contact2_notes',v)} type="textarea" placeholder=""/>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer" style={{borderTop:'2px solid var(--primary-light)',position:'sticky',bottom:0,background:'#fff'}}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={loading}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading} style={{minWidth:130}}>
+            {loading ? '...' : 'حفظ البيانات'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportCustomersTab({ user, profiles, onCountChange }) {
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [countryFilter, setCountryFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('export_customers').select('*').order('customer_code', {ascending:true, nullsFirst:false});
+    const list = data||[];
+    setCustomers(list); setLoading(false);
+    if (onCountChange) onCountChange(list.length);
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const deleteCustomer = async (c) => {
+    if (!confirm(`حذف العميل "${c.name}"؟`)) return;
+    const { error } = await sb.from('export_customers').delete().eq('id', c.id);
+    if (error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `حذف عميل التصدير ${c.name}`, 'export_customer', c.id, c.name);
+    toast('تم الحذف','success'); load();
+  };
+
+  const assignedName = (c) => c.rep_name || profiles.find(p=>p.id===c.assigned_to)?.full_name || '—';
+  const usedCountries = [...new Set(customers.map(c=>c.country).filter(Boolean))].sort();
+  const usedCategories = [...new Set(customers.map(c=>c.category).filter(Boolean))].sort();
+
+  const filtered = customers.filter(c => {
+    if (countryFilter !== 'all' && c.country !== countryFilter) return false;
+    if (categoryFilter !== 'all' && c.category !== categoryFilter) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return c.name?.toLowerCase().includes(q)
+      || (c.phone||'').includes(search)
+      || (c.customer_code||'').toLowerCase().includes(q)
+      || (c.country||'').toLowerCase().includes(q);
+  });
+
+  const hasActiveFilters = countryFilter!=='all' || categoryFilter!=='all';
+  const clearFilters = () => { setCountryFilter('all'); setCategoryFilter('all'); };
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
+        <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، الدولة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260,flex:1}}/>
+        <FilterPopover active={hasActiveFilters} onClear={clearFilters}>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">الدولة</label>
+            <select className="form-control" value={countryFilter} onChange={e=>setCountryFilter(e.target.value)}>
+              <option value="all">كل الدول</option>
+              {usedCountries.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{margin:0}}>
+            <label className="form-label">التصنيف</label>
+            <select className="form-control" value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}>
+              <option value="all">كل التصنيفات</option>
+              {usedCategories.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </FilterPopover>
+        {hasPerm(user,'export_customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ عميل تصدير جديد</button>}
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        filtered.length === 0 ? (
+          <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+            <div style={{fontSize:48,marginBottom:12}}>🌍</div>
+            <p>{customers.length===0 ? 'لا يوجد عملاء تصدير بعد' : 'لا توجد نتائج مطابقة'}</p>
+          </div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filtered.map(c=>(
+              <EntityCard key={c.id} onClick={()=>{ if (hasPerm(user,'export_customers_edit')) { setEditing(c); setShowForm(true); } }}
+                avatar="🌍" title={c.name} subtitle={c.customer_code||'—'}
+                badge={c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10,whiteSpace:'nowrap'}}>{c.category}</span>}
+                rows={[
+                  {icon:'📞', text: c.phone||c.alt_phone||'—'},
+                  {icon:'🌍', text: c.country||'—'},
+                  {icon:'👤', text: assignedName(c)},
+                  c.contact1_name && {icon:'🧑‍💼', text: c.contact1_name + (c.contact1_title?' — '+c.contact1_title:'')},
+                ]}
+                actions={<>
+                  {hasPerm(user,'export_customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
+                  {hasPerm(user,'export_customers_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteCustomer(c)} style={{padding:'3px 8px'}}>🗑</button>}
+                </>}
+              />
+            ))}
+          </div>
+        )
+      )}
+
+      {showForm && <ExportCustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
     </div>
   );
 }
@@ -10051,19 +10323,21 @@ function CustomersPage({ user }) {
   const [showListMgr, setShowListMgr] = useState(false);
   const [prospectCount, setProspectCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [exportCount, setExportCount] = useState(0);
   const [cityFilter, setCityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [repFilter, setRepFilter] = useState('all');
 
   const load = async () => {
     setLoading(true);
-    const [{ data: c }, { data: p }, { count }, { count: onlineCnt }] = await Promise.all([
+    const [{ data: c }, { data: p }, { count }, { count: onlineCnt }, { count: exportCnt }] = await Promise.all([
       sb.from('customers').select('*').order('customer_code', {ascending: true, nullsFirst: false}),
       sb.from('profiles').select('id,full_name,role').eq('is_active',true).order('full_name'),
       sb.from('prospects').select('id', {count:'exact',head:true}).eq('converted',false),
       sb.from('online_customers').select('phone', {count:'exact',head:true}),
+      sb.from('export_customers').select('id', {count:'exact',head:true}),
     ]);
-    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setOnlineCount(onlineCnt||0); setLoading(false);
+    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setOnlineCount(onlineCnt||0); setExportCount(exportCnt||0); setLoading(false);
   };
   useEffect(()=>{ load(); },[]);
 
@@ -10153,6 +10427,7 @@ function CustomersPage({ user }) {
         <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({customers.length})</button>
         <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>
         <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
+        <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
       </div>
 
       {tab === 'customers' && <>
@@ -10190,6 +10465,8 @@ function CustomersPage({ user }) {
       {tab === 'prospects' && <ProspectsTab user={user} profiles={profiles} onCountChange={setProspectCount}/>}
 
       {tab === 'online' && <OnlineCustomersTab user={user} onCountChange={setOnlineCount}/>}
+
+      {tab === 'export' && <ExportCustomersTab user={user} profiles={profiles} onCountChange={setExportCount}/>}
 
       {showForm && <CustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
       {showListMgr && <CustomerListsManager user={user} onClose={()=>setShowListMgr(false)}/>}
