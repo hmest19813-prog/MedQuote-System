@@ -2643,6 +2643,114 @@ function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
   );
 }
 
+/* ---- اختيار عميل موجود (يُفتح تلقائياً عند إنشاء عرض سعر جديد) ---- */
+function CustomerPicker({ customers, onSelect, onCreateNew, onClose }) {
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const filtered = !q ? customers : customers.filter(c =>
+    c.name.toLowerCase().includes(q) || (c.phone||'').includes(q) || (c.alt_phone||'').includes(q));
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">👤 اختر العميل</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:'12px 16px'}}>
+          <div style={{display:'flex',gap:6,marginBottom:12}}>
+            <input className="search-input" autoFocus value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="ابحث بالاسم أو رقم الهاتف..." style={{flex:1}}/>
+            <button type="button" onClick={()=>onCreateNew(search.trim())}
+              style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:7,padding:'0 12px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+              ➕ عميل جديد
+            </button>
+          </div>
+          {filtered.length === 0 ? (
+            <div style={{textAlign:'center',padding:'24px 10px',color:'var(--gray-400)'}}>
+              <div style={{fontSize:13,marginBottom:12}}>لا يوجد عميل بهذا الاسم</div>
+              <button className="btn btn-primary btn-sm" onClick={()=>onCreateNew(search.trim())}>➕ إضافة عميل جديد</button>
+            </div>
+          ) : (
+            <div style={{maxHeight:360,overflowY:'auto',display:'flex',flexDirection:'column',gap:4}}>
+              {filtered.map(c => (
+                <div key={c.id} className="cat-picker-row" onClick={()=>onSelect(c)}>
+                  <div style={{flex:1}}>
+                    <div className="cat-picker-name">{c.name}</div>
+                    {(c.phone||c.alt_phone) && <div className="cat-picker-meta">{c.phone||c.alt_phone}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- إضافة عميل مبسّطة (من داخل عرض السعر) ---- */
+function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose }) {
+  const [name, setName] = useState(prefillName||'');
+  const [phone, setPhone] = useState(prefillPhone||'');
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    setLoading(true);
+    try {
+      const { data: genCode, error: genErr } = await sb.rpc('generate_customer_number');
+      if (genErr) throw genErr;
+      const payload = {
+        name: name.trim(), phone: phone.trim()||null,
+        contact1_name: contactName.trim()||null, contact1_phone: contactPhone.trim()||null,
+        customer_code: genCode, created_by: user?.id||null,
+      };
+      const { data: inserted, error } = await sb.from('customers').insert(payload).select('id,name,phone,contact1_name,contact1_phone,customer_code').single();
+      if (error) throw error;
+      createLog(user, `أضاف عميلاً جديداً: ${name.trim()} (#${genCode})`, 'customer', inserted.id, name.trim());
+      toast(`تمت إضافة العميل — رقم العميل: ${genCode}`,'success');
+      onSave(inserted);
+    } catch(e) { toast('خطأ: '+e.message,'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:420}}>
+        <div className="modal-header">
+          <span className="modal-title">➕ عميل جديد</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group mb-3">
+            <label className="form-label">اسم العميل <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="اسم الجهة / الشركة"/>
+          </div>
+          <div className="form-group mb-3">
+            <label className="form-label">رقم الهاتف</label>
+            <input className="form-control" dir="ltr" value={phone} onChange={e=>setPhone(e.target.value)}/>
+          </div>
+          <div className="form-group mb-3">
+            <label className="form-label">اسم عميل المتابعة</label>
+            <input className="form-control" value={contactName} onChange={e=>setContactName(e.target.value)} placeholder="الشخص المسؤول للمتابعة معه"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">رقم هاتف عميل المتابعة</label>
+            <input className="form-control" dir="ltr" value={contactPhone} onChange={e=>setContactPhone(e.target.value)}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!name.trim()}>{loading?'...':'💾 حفظ العميل'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== QUOTE FORM (عرض + فاتورة) ===================== */
 function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave, onClose }) {
   const [form, setForm] = useState(() => {
@@ -2683,13 +2791,11 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(!!editQuote);
   const [customers, setCustomers] = useState([]);
-  const [customerHistory, setCustomerHistory] = useState([]);
   const [referenceHistory, setReferenceHistory] = useState([]);
   const [requesterHistory, setRequesterHistory] = useState([]);
 
   useEffect(() => {
     sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2,email,contact1_email').order('name').then(({data})=>setCustomers(data||[]));
-    sb.from('customer_name_history').select('name').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setCustomerHistory((data||[]).map(r=>r.name)));
     sb.from('reference_history').select('name').order('last_used_at',{ascending:false}).limit(200).then(({data})=>setReferenceHistory((data||[]).map(r=>r.name)));
     sb.from('requester_history').select('name,phone,phone2').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setRequesterHistory(data||[]));
   }, []);
@@ -2707,43 +2813,19 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   useEffect(() => { loadCustomUnits().then(setCustomUnits); }, []);
   const handleUnitBlur = async (val) => { if (val && !STD_UNITS.includes(val.trim().toUpperCase())) { await saveUnit(val); loadCustomUnits().then(setCustomUnits); } };
 
-  const [custSuggest, setCustSuggest] = useState([]);
-  const [showCustSuggest, setShowCustSuggest] = useState(false);
-  const [isNewCustomer, setIsNewCustomer] = useState(false);
-
-  const onCustomerNameChange = (val) => {
-    setF('customer_name', val);
-    setF('customer_id', null);
-    if (val.trim().length >= 2) {
-      const q = val.toLowerCase();
-      const formal = customers.filter(c => c.name.toLowerCase().includes(q)).slice(0, 6);
-      const formalNames = new Set(formal.map(c => c.name.toLowerCase()));
-      const fromHistory = customerHistory
-        .filter(n => n.toLowerCase().includes(q) && !formalNames.has(n.toLowerCase()))
-        .slice(0, Math.max(0, 8 - formal.length))
-        .map(n => ({ name: n, _history: true }));
-      const all = [...formal, ...fromHistory];
-      setCustSuggest(all);
-      setShowCustSuggest(all.length > 0);
-      setIsNewCustomer(all.length === 0);
-    } else {
-      setShowCustSuggest(false);
-      setIsNewCustomer(false);
-    }
-  };
+  // اختيار العميل يتم عبر نافذة CustomerPicker (تُفتح تلقائياً لعرض جديد بدون عميل مربوط)
+  const [showCustomerPicker, setShowCustomerPicker] = useState(() => !form.customer_id);
+  const [quickAddPrefill, setQuickAddPrefill] = useState('');
 
   const pickCustomer = (c) => {
     setF('customer_name', c.name);
-    setF('customer_id', c._history ? null : c.id);
-    if (!c._history) {
-      // أولوية رقم الهاتف: هاتف ← موبايل أساسي ← موبايل ثانوي
-      const phoneVal = c.alt_phone || c.phone || c.contact1_phone || c.contact1_mobile2 || '';
-      if (phoneVal) setF('phone', phoneVal);
-      const emailVal = c.email || c.contact1_email || '';
-      if (emailVal) setF('email', emailVal);
-    }
-    setShowCustSuggest(false);
-    setIsNewCustomer(false);
+    setF('customer_id', c.id);
+    // أولوية رقم الهاتف: هاتف ← موبايل أساسي ← موبايل ثانوي
+    const phoneVal = c.alt_phone || c.phone || c.contact1_phone || c.contact1_mobile2 || '';
+    if (phoneVal) setF('phone', phoneVal);
+    const emailVal = c.email || c.contact1_email || '';
+    if (emailVal) setF('email', emailVal);
+    setShowCustomerPicker(false);
   };
 
   const [requesterSuggest, setRequesterSuggest] = useState([]);
@@ -2869,8 +2951,8 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     } : it));
   };
 
-  const saveCustomerFromQuote = () => {
-    if (!form.customer_name?.trim()) { toast('أدخل اسم العميل أولاً','error'); return; }
+  const openQuickAddCustomer = (typedName) => {
+    setQuickAddPrefill(typedName||'');
     setShowSaveCustomer(true);
   };
 
@@ -2892,6 +2974,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
   const handleSave = async (status='draft') => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    if (!editQuote?.id && !form.customer_id) { toast('يجب اختيار عميل موجود من القائمة — أو إضافته أولاً عبر زر "➕ عميل جديد"','error'); return; }
     if (!form.reference?.trim()) { toast('يجب إدخال رقم المرجع','error'); return; }
     if (!form.requester_name?.trim()) { toast('يجب إدخال اسم العميل للمتابعة','error'); return; }
     if (!form.requester_phone?.trim()) { toast('يجب إدخال رقم هاتف المتابعة','error'); return; }
@@ -3021,11 +3104,22 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
       {pendingCatalogItem && <CatalogForm user={user} item={pendingCatalogItem}
         onSave={()=>{ setPendingCatalogItem(null); toast('تم حفظ المنتج في الكتالوج ✓','success'); }}
         onClose={()=>setPendingCatalogItem(null)}/>}
-      {showSaveCustomer && <CustomerForm
-        customer={{ name: form.customer_name, phone: form.phone||'', email: form.email||'' }}
-        profiles={[]}
+      {showCustomerPicker && <CustomerPicker
+        customers={customers}
+        onSelect={pickCustomer}
+        onCreateNew={openQuickAddCustomer}
+        onClose={()=>{ if (!form.customer_id) onClose(); else setShowCustomerPicker(false); }}
+      />}
+      {showSaveCustomer && <QuickCustomerForm
+        prefillName={quickAddPrefill} prefillPhone=""
         user={user}
-        onSave={(saved)=>{ if(saved?.id) setF('customer_id', saved.id); if(saved?.name) setF('customer_name', saved.name); setShowSaveCustomer(false); toast('تم حفظ العميل ✓ يمكنك الآن إكمال العرض','success'); }}
+        onSave={(saved)=>{
+          setCustomers(list=>[...list, saved]);
+          setF('customer_id', saved.id); setF('customer_name', saved.name);
+          if (saved.phone) setF('phone', saved.phone);
+          setShowSaveCustomer(false);
+          setShowCustomerPicker(false);
+        }}
         onClose={()=>setShowSaveCustomer(false)}
       />}
       <div className="modal" style={{maxWidth:'98vw'}}>
@@ -3081,39 +3175,20 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
           <div className="form-row mb-4">
             <div className="form-group">
               <label className="form-label">اسم العميل *</label>
-              <div style={{position:'relative'}}>
-                <div style={{display:'flex',gap:6}}>
-                  <input className="form-control" value={form.customer_name}
-                    onChange={e=>onCustomerNameChange(e.target.value)}
-                    onBlur={()=>setTimeout(()=>setShowCustSuggest(false),180)}
-                    onFocus={()=>form.customer_name&&onCustomerNameChange(form.customer_name)}
-                    placeholder="اسم الجهة / الشركة — ابدأ بالكتابة للبحث" style={{flex:1}}/>
-                  <button type="button" onClick={saveCustomerFromQuote} title="حفظ في قائمة العملاء" style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:7,padding:'0 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>💾 حفظ</button>
+              {form.customer_id ? (
+                <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8}}>
+                  <span style={{flex:1,fontWeight:700,color:'#166534'}}>✓ {form.customer_name}</span>
+                  <button type="button" onClick={()=>setShowCustomerPicker(true)}
+                    style={{background:'#fff',border:'1px solid var(--primary)',color:'var(--primary)',borderRadius:6,padding:'3px 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',fontWeight:600}}>
+                    🔄 تغيير
+                  </button>
                 </div>
-                {showCustSuggest && (
-                  <div style={{position:'absolute',top:'100%',right:0,left:0,zIndex:999,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.12)',marginTop:2}}>
-                    {custSuggest.map((c,i)=>(
-                      <div key={c._history ? `h-${c.name}` : c.id} onMouseDown={()=>pickCustomer(c)} onTouchStart={e=>{e.preventDefault();pickCustomer(c);}}
-                        style={{padding:'8px 14px',cursor:'pointer',fontSize:13,borderBottom:'1px solid #f0f4f8',display:'flex',justifyContent:'space-between',alignItems:'center'}}
-                        onMouseEnter={e=>e.currentTarget.style.background='#EBF5FB'}
-                        onMouseLeave={e=>e.currentTarget.style.background='#fff'}>
-                        <span style={{fontWeight:600}}>{c.name}</span>
-                        {c._history
-                          ? <span style={{fontSize:10,color:'#94a3b8',background:'#f1f5f9',borderRadius:4,padding:'1px 5px'}}>سابق</span>
-                          : c.phone && <span style={{fontSize:11,color:'var(--gray-400)'}}>{c.phone}</span>
-                        }
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {isNewCustomer && (
-                <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,padding:'7px 12px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:7,fontSize:12}}>
-                  <span>🆕</span>
-                  <span style={{flex:1,color:'#92400e',fontWeight:500}}>عميل جديد — هل تريد حفظه في قائمة العملاء؟</span>
-                  <button type="button" onMouseDown={saveCustomerFromQuote} onTouchStart={e=>{e.preventDefault();saveCustomerFromQuote(e);}}
-                    style={{background:'#16a34a',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontSize:12,cursor:'pointer',fontWeight:600,whiteSpace:'nowrap'}}>
-                    💾 حفظ العميل
+              ) : (
+                <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:8}}>
+                  <span style={{flex:1,color:'#92400e',fontWeight:500}}>⚠️ لم يتم اختيار عميل</span>
+                  <button type="button" onClick={()=>setShowCustomerPicker(true)}
+                    style={{background:'var(--primary)',color:'#fff',border:'none',borderRadius:6,padding:'3px 10px',fontSize:12,cursor:'pointer',whiteSpace:'nowrap',fontWeight:600}}>
+                    اختر عميل
                   </button>
                 </div>
               )}
@@ -3126,7 +3201,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
           <div className="form-row-3 mb-4" style={{gridTemplateColumns:'1fr 1fr 1fr 0.55fr'}}>
             <div className="form-group">
               <label className="form-label">هاتف</label>
-              <input className="form-control" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
+              <input className="form-control" dir="ltr" value={form.phone} onChange={e=>setF('phone',e.target.value)}/>
             </div>
             <div className="form-group">
               <label className="form-label">إيميل <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11}}>(اختياري)</span></label>
@@ -3178,13 +3253,13 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
               </div>
               <div className="form-group" style={{marginBottom:0}}>
                 <label className="form-label" style={{fontSize:11,marginBottom:3}}>رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
-                <input className="form-control" type="tel" style={{fontSize:12,padding:'5px 8px',borderColor:!form.requester_phone?.trim()?'#fca5a5':''}} value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX"/>
+                <input className="form-control" type="tel" dir="ltr" style={{fontSize:12,padding:'5px 8px',borderColor:!form.requester_phone?.trim()?'#fca5a5':''}} value={form.requester_phone||''} onChange={e=>setF('requester_phone',e.target.value)} placeholder="07XXXXXXXX"/>
                 {!form.requester_phone?.trim() && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>مطلوب</p>}
                 {form.requester_phone && form.requester_phone.replace(/\D/g,'').length < 9 && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>⚠️ أقل من 9 أرقام</p>}
               </div>
               <div className="form-group" style={{marginBottom:0}}>
                 <label className="form-label" style={{fontSize:11,marginBottom:3,color:'var(--gray-500)'}}>رقم ثاني <span style={{fontWeight:400}}>(اختياري)</span></label>
-                <input className="form-control" type="tel" style={{fontSize:12,padding:'5px 8px'}} value={form.requester_phone2||''} onChange={e=>setF('requester_phone2',e.target.value)} placeholder="07XXXXXXXX"/>
+                <input className="form-control" type="tel" dir="ltr" style={{fontSize:12,padding:'5px 8px'}} value={form.requester_phone2||''} onChange={e=>setF('requester_phone2',e.target.value)} placeholder="07XXXXXXXX"/>
                 {form.requester_phone2 && form.requester_phone2.replace(/\D/g,'').length < 9 && <p style={{color:'var(--danger)',fontSize:10,marginTop:2,marginBottom:0}}>⚠️ أقل من 9 أرقام</p>}
               </div>
             </div>
@@ -7628,7 +7703,8 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
   const printCustomerReport = () => {
     const filterLabel = statusFilter === 'all' ? 'جميع الحالات' : (SL[statusFilter] || statusFilter);
 
-    const f = (label, val) => val ? `<div class="ii"><span class="il">${label}</span><span>${val}</span></div>` : '';
+    const f  = (label, val) => val ? `<div class="ii"><span class="il">${label}</span><span>${val}</span></div>` : '';
+    const fL = (label, val) => val ? `<div class="ii"><span class="il">${label}</span><span dir="ltr" style="unicode-bidi:embed">${val}</span></div>` : '';
 
     const rows = filteredQuotes.map(q =>
       `<tr>
@@ -7674,11 +7750,11 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
 
       <div class="sec-title">🏢 بيانات الشركة</div>
       <div class="ig">
-        ${f('موبايل',       customer.phone||customer.mobile)}
-        ${f('هاتف بديل',   customer.alt_phone)}
-        ${f('فاكس',         customer.fax)}
-        ${f('البريد الإلكتروني', customer.email)}
-        ${f('الموقع الإلكتروني', customer.website)}
+        ${fL('موبايل',       customer.phone||customer.mobile)}
+        ${fL('هاتف بديل',   customer.alt_phone)}
+        ${fL('فاكس',         customer.fax)}
+        ${fL('البريد الإلكتروني', customer.email)}
+        ${fL('الموقع الإلكتروني', customer.website)}
         ${f('المدينة / المنطقة', customer.city)}
         ${f('العنوان',      customer.address)}
         ${f('ملاحظات',      customer.notes)}
@@ -7690,10 +7766,10 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       <div class="ig">
         ${f('الاسم',               customer.contact1_name)}
         ${f('المسمى الوظيفي',     customer.contact1_title)}
-        ${f('الهاتف',              customer.contact1_phone)}
-        ${f('الموبايل',           customer.contact1_mobile)}
-        ${f('البريد الإلكتروني',  customer.contact1_email)}
-        ${f('التحويلة EXT',       customer.contact1_ext)}
+        ${fL('الهاتف',              customer.contact1_phone)}
+        ${fL('الموبايل',           customer.contact1_mobile)}
+        ${fL('البريد الإلكتروني',  customer.contact1_email)}
+        ${fL('التحويلة EXT',       customer.contact1_ext)}
         ${f('ملاحظات',             customer.contact1_notes)}
       </div>` : ''}
 
@@ -7703,10 +7779,10 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       <div class="ig">
         ${f('الاسم',               customer.contact2_name)}
         ${f('المسمى الوظيفي',     customer.contact2_title)}
-        ${f('الهاتف',              customer.contact2_phone)}
-        ${f('الموبايل',           customer.contact2_mobile)}
-        ${f('البريد الإلكتروني',  customer.contact2_email)}
-        ${f('التحويلة EXT',       customer.contact2_ext)}
+        ${fL('الهاتف',              customer.contact2_phone)}
+        ${fL('الموبايل',           customer.contact2_mobile)}
+        ${fL('البريد الإلكتروني',  customer.contact2_email)}
+        ${fL('التحويلة EXT',       customer.contact2_ext)}
         ${f('ملاحظات',             customer.contact2_notes)}
       </div>` : ''}
 
@@ -7724,10 +7800,10 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
     allChildren.forEach((c,i) => { c.style.cssText = originalStyles[i]; });
   };
 
-  const Field = ({label, val}) => (
+  const Field = ({label, val, dir}) => (
     <div className="erp-field">
       <label>{label}</label>
-      <div className="erp-value">{val||'—'}</div>
+      <div className="erp-value" dir={dir}>{val||'—'}</div>
     </div>
   );
 
@@ -7775,11 +7851,11 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       <div className="erp-cards">
         <div className="erp-card main-card">
           <div className="erp-section-header">🏢 بيانات الشركة</div>
-          <Field label="موبايل" val={customer.phone||customer.mobile}/>
-          <Field label="هاتف بديل" val={customer.alt_phone}/>
-          <Field label="فاكس" val={customer.fax}/>
-          <Field label="البريد الإلكتروني" val={customer.email}/>
-          <Field label="الموقع الإلكتروني" val={customer.website}/>
+          <Field label="موبايل" val={customer.phone||customer.mobile} dir="ltr"/>
+          <Field label="هاتف بديل" val={customer.alt_phone} dir="ltr"/>
+          <Field label="فاكس" val={customer.fax} dir="ltr"/>
+          <Field label="البريد الإلكتروني" val={customer.email} dir="ltr"/>
+          <Field label="الموقع الإلكتروني" val={customer.website} dir="ltr"/>
           <Field label="المدينة / المنطقة" val={customer.city}/>
           <Field label="العنوان" val={customer.address}/>
           {customer.notes && <Field label="ملاحظات" val={customer.notes}/>}
@@ -7788,20 +7864,20 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
           <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الأول</div>
           <Field label="الاسم" val={customer.contact1_name}/>
           <Field label="المسمى الوظيفي" val={customer.contact1_title}/>
-          <Field label="الهاتف" val={customer.contact1_phone}/>
-          <Field label="الموبايل" val={customer.contact1_mobile}/>
-          <Field label="البريد الإلكتروني" val={customer.contact1_email}/>
-          <Field label="التحويلة EXT" val={customer.contact1_ext}/>
+          <Field label="الهاتف" val={customer.contact1_phone} dir="ltr"/>
+          <Field label="الموبايل" val={customer.contact1_mobile} dir="ltr"/>
+          <Field label="البريد الإلكتروني" val={customer.contact1_email} dir="ltr"/>
+          <Field label="التحويلة EXT" val={customer.contact1_ext} dir="ltr"/>
           {customer.contact1_notes && <Field label="ملاحظات" val={customer.contact1_notes}/>}
         </div>
         <div className="erp-card contact-card">
           <div className="erp-section-header" style={{color:'#1C6A99'}}>👤 الشخص المسؤول الثاني</div>
           <Field label="الاسم" val={customer.contact2_name}/>
           <Field label="المسمى الوظيفي" val={customer.contact2_title}/>
-          <Field label="الهاتف" val={customer.contact2_phone}/>
-          <Field label="الموبايل" val={customer.contact2_mobile}/>
-          <Field label="البريد الإلكتروني" val={customer.contact2_email}/>
-          <Field label="التحويلة EXT" val={customer.contact2_ext}/>
+          <Field label="الهاتف" val={customer.contact2_phone} dir="ltr"/>
+          <Field label="الموبايل" val={customer.contact2_mobile} dir="ltr"/>
+          <Field label="البريد الإلكتروني" val={customer.contact2_email} dir="ltr"/>
+          <Field label="التحويلة EXT" val={customer.contact2_ext} dir="ltr"/>
           {customer.contact2_notes && <Field label="ملاحظات" val={customer.contact2_notes}/>}
         </div>
       </div>
@@ -8167,6 +8243,57 @@ function CatalogPicker({ onSelect, onClose }) {
             </div>
           }
         </div>
+      </div>
+    </div>
+  );
+}
+
+function StockHistoryModal({ item, onClose }) {
+  const [moves, setMoves] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    sb.from('stock_movements').select('*').eq('catalog_id', item.id)
+      .order('movement_date', {ascending:false}).order('created_at', {ascending:false})
+      .then(({data}) => { setMoves(data||[]); setLoading(false); });
+  }, [item.id]);
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:640}}>
+        <div className="modal-header">
+          <span className="modal-title">📦 سجل توريد: {item.name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,padding:'10px 16px',background:'#f8fafc',borderRadius:8}}>
+            <span style={{fontSize:13,color:'var(--gray-500)'}}>الرصيد الحالي بالمخزون</span>
+            <strong style={{color:'var(--primary)',fontSize:18}}>{numFmt(item.qty_on_hand||0)} {item.unit}</strong>
+          </div>
+          {loading ? (
+            <div style={{textAlign:'center',padding:30,color:'var(--gray-400)'}}>جارٍ التحميل...</div>
+          ) : moves.length === 0 ? (
+            <div style={{textAlign:'center',padding:30,color:'var(--gray-400)'}}>لا يوجد توريد مسجّل لهذا الصنف بعد</div>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>التاريخ</th><th>أمر الشراء</th><th>المورد</th><th>الكمية</th><th>سعر الوحدة</th></tr></thead>
+                <tbody>
+                  {moves.map(m => (
+                    <tr key={m.id}>
+                      <td>{m.movement_date||'—'}</td>
+                      <td style={{fontWeight:700,color:'var(--primary)'}}>{m.po_number||'—'}</td>
+                      <td>{m.supplier_name||'—'}</td>
+                      <td style={{fontWeight:700}}>{numFmt(m.quantity)} {m.unit}</td>
+                      <td>{numFmt(m.unit_price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>إغلاق</button></div>
       </div>
     </div>
   );
@@ -8647,6 +8774,7 @@ function CatalogPage({ user }) {
   const [editing,       setEditing]       = React.useState(null);
   const [dbCategories,  setDbCategories]  = React.useState([]);
   const [showCatMgr,    setShowCatMgr]    = React.useState(false);
+  const [stockItem,     setStockItem]     = React.useState(null);
   const canDeleteCatalog = hasPerm(user, 'catalog_delete');
 
   const loadCats = async () => {
@@ -8698,6 +8826,7 @@ function CatalogPage({ user }) {
         onClose={()=>{ setShowForm(false); setEditing(null); }}/>}
       {showCatMgr && <CategoriesManager user={user} categories={dbCategories}
         onRefresh={loadCats} onClose={()=>setShowCatMgr(false)}/>}
+      {stockItem && <StockHistoryModal item={stockItem} onClose={()=>setStockItem(null)}/>}
 
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
         <h2 style={{fontSize:20,fontWeight:800}}>كتالوج الأصناف</h2>
@@ -8740,6 +8869,7 @@ function CatalogPage({ user }) {
                     <th>السعر</th>
                     <th>المنشأ</th>
                     <th>التوريد</th>
+                    <th>المخزون</th>
                     <th>الحالة</th>
                     <th>إجراءات</th>
                   </tr>
@@ -8761,6 +8891,13 @@ function CatalogPage({ user }) {
                       <td className="font-bold" style={{color:'var(--primary)'}}>{numFmt(it.unit_price)}</td>
                       <td className="text-sm">{it.origin || '—'}</td>
                       <td className="text-sm">{it.delivery || '—'}</td>
+                      <td>
+                        <button className="btn btn-ghost btn-sm" style={{padding:'3px 8px',fontWeight:700,color:parseFloat(it.qty_on_hand||0)>0?'var(--primary)':'var(--gray-400)'}}
+                          onClick={()=>setStockItem(it)} title="سجل التوريد">
+                          📦 {numFmt(it.qty_on_hand||0)}
+                        </button>
+                        {it.last_received_at && <div style={{fontSize:10,color:'var(--gray-400)'}}>آخر توريد: {it.last_received_at}</div>}
+                      </td>
                       <td>
                         {it.is_active
                           ? <span className="badge badge-success">نشط</span>
@@ -11101,25 +11238,49 @@ function SupplierForm({ supplier, onSave, onClose }) {
 }
 
 /* ---- POForm ---- */
-function POForm({ po, onSave, onClose }) {
+function POForm({ po, user, onSave, onClose }) {
   const today = () => new Date().toISOString().slice(0,10);
-  const emptyItem = () => ({ item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:0, total:0 });
+  const emptyItem = () => ({ item_name:'', description:'', unit:'EACH', quantity:1, unit_price:'', tax_pct:0, total:0, catalog_id:'' });
   const [form, setForm] = useState({ date: today(), expected_delivery:'', currency:'JOD', tax_pct:0, notes:'', status:'draft', supplier_id:'', supplier_name:'', ...(po||{}) });
   const [items, setItems] = useState([emptyItem()]);
   const [suppliers, setSuppliers] = useState([]);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupSug, setShowSupSug] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [catalogPicker, setCatalogPicker] = useState(null); // index of item row
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const setItem = (idx,k,v) => setItems(i=>i.map((it,j)=>j===idx?{...it,[k]:v}:it));
+  const setItemName = (idx,v) => setItems(i=>i.map((it,j)=>j===idx?{...it,item_name:v,catalog_id:''}:it));
 
   useEffect(() => {
     sb.from('suppliers').select('id,name,code').eq('is_active',true).order('name').then(({data})=>setSuppliers(data||[]));
     if (po?.id) {
-      sb.from('purchase_order_items').select('*').eq('po_id',po.id).order('sort_order').then(({data})=>{ if(data?.length) setItems(data); });
+      sb.from('purchase_order_items').select('*').eq('po_id',po.id).order('sort_order').then(async ({data})=>{
+        if (!data?.length) return;
+        let rows = data;
+        if (rows.some(it=>!it.catalog_id)) {
+          const { data: cats } = await sb.from('catalog_items').select('id,name');
+          const map = {};
+          (cats||[]).forEach(c=>{ map[c.name.trim().toLowerCase()] = c.id; });
+          rows = rows.map(it => it.catalog_id ? it : { ...it, catalog_id: map[it.item_name?.trim().toLowerCase()] || '' });
+        }
+        setItems(rows);
+      });
       setSupplierSearch(po.supplier_name||'');
     }
   }, []);
+
+  const applyCatalogItem = (idx, cat) => {
+    setItems(i => i.map((it,j) => j===idx ? {
+      ...it,
+      catalog_id: cat.id,
+      item_name: cat.name,
+      description: cat.description || it.description,
+      unit: cat.unit || it.unit,
+      unit_price: cat.unit_price ?? it.unit_price,
+    } : it));
+    setCatalogPicker(null);
+  };
 
   const filteredSup = supplierSearch.trim().length >= 1
     ? suppliers.filter(s=>s.name.toLowerCase().includes(supplierSearch.toLowerCase())||s.code?.includes(supplierSearch)).slice(0,8)
@@ -11139,26 +11300,59 @@ function POForm({ po, onSave, onClose }) {
     setLoading(true);
     try {
       const payload = { supplier_id:form.supplier_id, supplier_name:form.supplier_name, date:form.date, expected_delivery:form.expected_delivery||null, status:form.status||'draft', currency:form.currency||'JOD', tax_pct:parseFloat(form.tax_pct||0), subtotal:subtotal.toFixed(3), tax_amt:tax_amt.toFixed(3), total:total.toFixed(3), notes:form.notes||null };
-      let poId;
+      let poId, poNumber;
       if (po?.id) {
         const {error:e} = await sb.from('purchase_orders').update(payload).eq('id',po.id);
         if(e) throw e;
-        poId = po.id;
+        poId = po.id; poNumber = po.number;
         await sb.from('purchase_order_items').delete().eq('po_id',poId);
       } else {
         const {data:newPO,error:e} = await sb.from('purchase_orders').insert(payload).select().single();
         if(e) throw e;
-        poId = newPO.id;
+        poId = newPO.id; poNumber = newPO.number;
       }
-      const itemRows = items.filter(i=>i.item_name?.trim()).map((i,idx)=>({
+      const validItems = items.filter(i=>i.item_name?.trim());
+
+      // أي صنف بدون ربط كتالوج (كتابة حرة) يُربط بصنف موجود بنفس الاسم أو يُنشأ له صنف جديد تلقائياً
+      const unlinked = validItems.filter(i=>!i.catalog_id);
+      if (unlinked.length) {
+        const { data: existingCats } = await sb.from('catalog_items').select('id,name');
+        const nameMap = {};
+        (existingCats||[]).forEach(c=>{ nameMap[c.name.trim().toLowerCase()] = c.id; });
+        for (const it of unlinked) {
+          const key = it.item_name.trim().toLowerCase();
+          if (nameMap[key]) { it.catalog_id = nameMap[key]; continue; }
+          const { data: newCat, error: ce } = await sb.from('catalog_items').insert({
+            name: it.item_name.trim(), description: it.description||null,
+            unit: it.unit||'EACH', unit_price: parseFloat(it.unit_price)||0,
+            created_by: user?.id||null,
+          }).select().single();
+          if (ce) throw ce;
+          it.catalog_id = newCat.id;
+          nameMap[key] = newCat.id;
+        }
+      }
+
+      const itemRows = validItems.map((i,idx)=>({
         po_id:poId, sort_order:idx,
         item_name:i.item_name.trim(), description:i.description||null,
         unit:i.unit||'EACH', quantity:parseFloat(i.quantity)||1,
         unit_price:parseFloat(i.unit_price)||0,
         tax_pct:(i.tax_pct===''||i.tax_pct==null)?parseFloat(form.tax_pct||0):parseFloat(i.tax_pct||0),
         total:(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)).toFixed(3),
+        catalog_id: i.catalog_id||null,
       }));
       if(itemRows.length){ const {error:ie}=await sb.from('purchase_order_items').insert(itemRows); if(ie) throw ie; }
+
+      // مزامنة رصيد المخزون: نعيد بناء سجل الحركة الخاص بهذا الأمر بالكامل
+      await sb.from('stock_movements').delete().eq('po_id', poId);
+      const moveRows = itemRows.filter(r=>r.catalog_id && parseFloat(r.quantity)>0).map(r=>({
+        catalog_id: r.catalog_id, po_id: poId, po_number: poNumber||null,
+        supplier_name: form.supplier_name||null, quantity: r.quantity, unit: r.unit,
+        unit_price: r.unit_price, movement_date: form.date||today(), created_by: user?.id||null,
+      }));
+      if (moveRows.length) { const {error:me}=await sb.from('stock_movements').insert(moveRows); if(me) throw me; }
+
       toast(po?.id?'تم التعديل':'تم إنشاء أمر الشراء','success');
       onSave();
     } catch(err){ toast('خطأ: '+err.message,'error'); }
@@ -11167,6 +11361,7 @@ function POForm({ po, onSave, onClose }) {
 
   return (
     <div className="modal-overlay">
+      {catalogPicker !== null && <CatalogPicker onSelect={cat=>applyCatalogItem(catalogPicker, cat)} onClose={()=>setCatalogPicker(null)}/>}
       <div className="modal" style={{maxWidth:980}}>
         <div className="modal-header" style={{background:po?.id?'#EFF8FF':'#F0FFF4'}}>
           <span className="modal-title">📋 {po?.id?`تعديل ${po.number}`:'أمر شراء جديد'}</span>
@@ -11231,9 +11426,16 @@ function POForm({ po, onSave, onClose }) {
                     <tr key={i}>
                       <td>{i+1}</td>
                       <td>
-                        <textarea rows={1} value={item.item_name} onChange={e=>setItem(i,'item_name',e.target.value)}
-                          onKeyDown={e=>{if(e.key==='Enter')e.preventDefault();}}
-                          placeholder="اسم الصنف" style={{width:'100%',resize:'none'}}/>
+                        <div style={{display:'flex',gap:4,alignItems:'flex-start'}}>
+                          <textarea rows={1} value={item.item_name} onChange={e=>setItemName(i,e.target.value)}
+                            onKeyDown={e=>{if(e.key==='Enter')e.preventDefault();}}
+                            placeholder="اسم الصنف" style={{width:'100%',resize:'none'}}/>
+                          <button type="button" title="اختر من الكتالوج" onClick={()=>setCatalogPicker(i)}
+                            style={{background:item.catalog_id?'var(--primary)':'#94a3b8',color:'#fff',border:'none',borderRadius:5,padding:'3px 6px',fontSize:13,cursor:'pointer',flexShrink:0,marginTop:1}}>🗂️</button>
+                        </div>
+                        {!item.catalog_id && item.item_name?.trim() && (
+                          <div style={{fontSize:10,color:'#d97706',marginTop:2}}>⚠️ سيُضاف تلقائياً كصنف جديد بالكتالوج عند الحفظ</div>
+                        )}
                       </td>
                       <td><input value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} style={{width:'100%'}}/></td>
                       <td><input type="number" min="0" step="any" value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)} style={{width:'100%'}}/></td>
@@ -12154,7 +12356,7 @@ function ProcurementPage({ user }) {
 
       {/* Modals */}
       {showSupForm && <SupplierForm supplier={editingSup} onSave={()=>{setShowSupForm(false);load();}} onClose={()=>setShowSupForm(false)}/>}
-      {showPOForm && <POForm po={editingPO} onSave={()=>{setShowPOForm(false);load();}} onClose={()=>setShowPOForm(false)}/>}
+      {showPOForm && <POForm po={editingPO} user={user} onSave={()=>{setShowPOForm(false);load();}} onClose={()=>setShowPOForm(false)}/>}
       {viewingPO && <PODetail po={viewingPO} onClose={()=>setViewingPO(null)} onEdit={hasPerm(user,'suppliers_edit')?()=>{setEditingPO(viewingPO);setViewingPO(null);setShowPOForm(true);}:null}/>}
       {showInvForm && <SupplierInvoiceForm invoice={editingInv} suppliers={suppliers} onSave={()=>{setShowInvForm(false);load();}} onClose={()=>setShowInvForm(false)}/>}
       {showPayForm && <SupplierPaymentForm suppliers={suppliers} onSave={()=>{setShowPayForm(false);load();}} onClose={()=>setShowPayForm(false)}/>}
