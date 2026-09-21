@@ -584,6 +584,8 @@ th:last-child, td:last-child { border-left: none; }
 .erp-badge { display:inline-flex; align-items:center; font-size:10px; padding:2px 8px; border-radius:20px; font-weight:700; margin-right:6px; }
 .erp-badge-primary { background:#EBF5FB; color:#1C6A99; }
 .erp-badge-gray { background:#f3f4f6; color:#374151; }
+.erp-badge-warning { background:#FEF3E2; color:#B45309; }
+.erp-badge-danger { background:#FDECEC; color:#B91C1C; }
 
 /* CATALOG */
 .cat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; padding:20px; }
@@ -2753,15 +2755,17 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
     try {
       const { data: genCode, error: genErr } = await sb.rpc('generate_customer_number');
       if (genErr) throw genErr;
+      const approvalStatus = (user?.role === 'admin') ? 'approved' : 'pending';
       const payload = {
         name: name.trim(), phone: phone.trim()||null,
         contact1_name: contactName.trim()||null, contact1_phone: contactPhone.trim()||null,
         customer_code: genCode, created_by: user?.id||null,
+        approval_status: approvalStatus,
       };
-      const { data: inserted, error } = await sb.from('customers').insert(payload).select('id,name,phone,contact1_name,contact1_phone,customer_code').single();
+      const { data: inserted, error } = await sb.from('customers').insert(payload).select('id,name,phone,contact1_name,contact1_phone,customer_code,approval_status').single();
       if (error) throw error;
-      createLog(user, `أضاف عميلاً جديداً: ${name.trim()} (#${genCode})`, 'customer', inserted.id, name.trim());
-      toast(`تمت إضافة العميل — رقم العميل: ${genCode}`,'success');
+      createLog(user, `أضاف عميلاً جديداً: ${name.trim()} (#${genCode})${approvalStatus==='pending' ? ' — بانتظار موافقة المدير' : ''}`, 'customer', inserted.id, name.trim());
+      toast(approvalStatus==='pending' ? `تم إرسال العميل للمراجعة — رقم العميل: ${genCode} (سيُستخدم بهذا العرض لكنه بانتظار الموافقة)` : `تمت إضافة العميل — رقم العميل: ${genCode}`,'success');
       onSave(inserted);
     } catch(e) { toast('خطأ: '+e.message,'error'); }
     finally { setLoading(false); }
@@ -2845,7 +2849,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [requesterHistory, setRequesterHistory] = useState([]);
 
   useEffect(() => {
-    sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2,email,contact1_email').order('name').then(({data})=>setCustomers(data||[]));
+    sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2,email,contact1_email').eq('approval_status','approved').order('name').then(({data})=>setCustomers(data||[]));
     sb.from('reference_history').select('name').order('last_used_at',{ascending:false}).limit(200).then(({data})=>setReferenceHistory((data||[]).map(r=>r.name)));
     sb.from('requester_history').select('name,phone,phone2').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setRequesterHistory(data||[]));
   }, []);
@@ -7659,10 +7663,11 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         if (genErr) throw genErr;
         payload.customer_code = genCode;
         payload.created_by = user?.id || null;
-        const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name,customer_code').single();
+        payload.approval_status = (user?.role === 'admin') ? 'approved' : 'pending';
+        const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name,customer_code,approval_status').single();
         if(error) throw error;
-        createLog(user, `أضاف عميلاً جديداً: ${form.name} (#${genCode})`, 'customer', inserted.id, form.name);
-        toast(`تمت الإضافة — رقم العميل: ${genCode}`,'success');
+        createLog(user, `أضاف عميلاً جديداً: ${form.name} (#${genCode})${payload.approval_status==='pending' ? ' — بانتظار موافقة المدير' : ''}`, 'customer', inserted.id, form.name);
+        toast(payload.approval_status==='pending' ? `تم إرسال العميل للمراجعة — رقم العميل: ${genCode}` : `تمت الإضافة — رقم العميل: ${genCode}`, 'success');
         onSave(inserted);
       }
     } catch(e) { toast('خطأ: ' + e.message, 'error'); }
@@ -7765,7 +7770,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   );
 }
 
-function CustomerDetail({ customer, user, profiles, onBack }) {
+function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject }) {
   const [quotes, setQuotes] = useState([]);
   const [loadingQ, setLoadingQ] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -7909,6 +7914,13 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
       <div className="erp-toolbar">
         <button className="btn btn-ghost btn-sm" onClick={onBack}>← رجوع للقائمة</button>
         <div style={{flex:1}}/>
+        {user?.role === 'admin' && customer.approval_status === 'pending' && <>
+          <button className="btn btn-primary btn-sm" onClick={()=>onApprove(customer)}>✅ موافقة</button>
+          <button className="btn btn-danger btn-sm" onClick={()=>onReject(customer)}>❌ رفض</button>
+        </>}
+        {user?.role === 'admin' && customer.approval_status === 'rejected' && <>
+          <button className="btn btn-primary btn-sm" onClick={()=>onApprove(customer)}>✅ موافقة الآن</button>
+        </>}
         <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>
         <button className="btn btn-ghost btn-sm" onClick={printCustomerReport}>🖨️ طباعة</button>
       </div>
@@ -7921,12 +7933,17 @@ function CustomerDetail({ customer, user, profiles, onBack }) {
         <div style={{flex:1}}>
           <div style={{fontSize:20,fontWeight:900,color:'#1a2e3d',marginBottom:6}}>{customer.name}</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+            {customer.approval_status === 'pending' && <span className="erp-badge erp-badge-warning">⏳ قيد الموافقة</span>}
+            {customer.approval_status === 'rejected' && <span className="erp-badge erp-badge-danger">❌ مرفوض</span>}
             {customer.customer_code && <span className="erp-badge erp-badge-primary">#{customer.customer_code}</span>}
             {customer.category && <span className="erp-badge erp-badge-primary">{customer.category}</span>}
             {(customer.tags||'').split(',').filter(Boolean).map((t,i)=>(
               <span key={i} className="erp-badge erp-badge-gray">{t.trim()}</span>
             ))}
           </div>
+          {customer.approval_status === 'rejected' && customer.rejection_reason && (
+            <div style={{marginTop:6,fontSize:12,color:'#B91C1C'}}>سبب الرفض: {customer.rejection_reason}</div>
+          )}
         </div>
         <div style={{textAlign:'center',padding:'8px 18px',borderRight:'2px solid var(--primary-light)',marginRight:4}}>
           <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>عروض الأسعار</div>
@@ -10693,10 +10710,35 @@ function CustomersPage({ user }) {
     toast('تم الحذف','success'); load();
   };
 
-  const usedCities = [...new Set(customers.map(c=>c.city).filter(Boolean))].sort();
-  const usedCategories = [...new Set(customers.map(c=>c.category).filter(Boolean))].sort();
+  const approveCustomer = async (c) => {
+    const {error} = await sb.from('customers').update({
+      approval_status:'approved', reviewed_by:user.id, reviewed_at:new Date().toISOString(), rejection_reason:null
+    }).eq('id', c.id);
+    if(error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `وافق على العميل ${c.name}`, 'customer', c.id, c.name);
+    toast('تمت الموافقة على العميل','success'); load();
+  };
 
-  const filtered = customers.filter(c => {
+  const rejectCustomer = async (c) => {
+    const reason = prompt(`سبب رفض العميل "${c.name}" (اختياري):`);
+    if (reason === null) return;
+    const {error} = await sb.from('customers').update({
+      approval_status:'rejected', reviewed_by:user.id, reviewed_at:new Date().toISOString(), rejection_reason: reason || null
+    }).eq('id', c.id);
+    if(error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `رفض العميل ${c.name}${reason ? ' — السبب: ' + reason : ''}`, 'customer', c.id, c.name);
+    toast('تم رفض العميل','success'); load();
+  };
+
+  const [approvalsView, setApprovalsView] = useState('pending');
+  const pendingCustomers = customers.filter(c => c.approval_status === 'pending');
+  const rejectedCustomers = customers.filter(c => c.approval_status === 'rejected');
+  const visibleCustomers = customers.filter(c => c.approval_status !== 'rejected');
+
+  const usedCities = [...new Set(visibleCustomers.map(c=>c.city).filter(Boolean))].sort();
+  const usedCategories = [...new Set(visibleCustomers.map(c=>c.category).filter(Boolean))].sort();
+
+  const filtered = visibleCustomers.filter(c => {
     if (cityFilter !== 'all' && c.city !== cityFilter) return false;
     if (categoryFilter !== 'all' && c.category !== categoryFilter) return false;
     if (repFilter !== 'all' && (c.assigned_to||'') !== repFilter) return false;
@@ -10715,7 +10757,10 @@ function CustomersPage({ user }) {
 
   const assignedName = (c) => c.rep_name || profiles.find(p=>p.id===c.assigned_to)?.full_name || '—';
 
-  if (selected) return <CustomerDetail customer={selected} user={user} profiles={profiles} onBack={()=>{ setSelected(null); load(); }}/>;
+  if (selected) return <CustomerDetail customer={selected} user={user} profiles={profiles}
+    onApprove={async(c)=>{ await approveCustomer(c); setSelected(null); }}
+    onReject={async(c)=>{ await rejectCustomer(c); setSelected(null); }}
+    onBack={()=>{ setSelected(null); load(); }}/>;
 
   const tabStyle = (t) => ({
     padding:'8px 20px', border:'none', cursor:'pointer', fontWeight:700, fontSize:13,
@@ -10732,7 +10777,7 @@ function CustomersPage({ user }) {
           <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🏢</div>
           <div>
             <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>إدارة العملاء</div>
-            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{customers.length} عميل مسجّل</div>
+            <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{visibleCustomers.length} عميل مسجّل</div>
           </div>
         </div>
         <div style={{flex:1}}/>
@@ -10768,10 +10813,11 @@ function CustomersPage({ user }) {
 
       {/* Tabs */}
       <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5'}}>
-        <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({customers.length})</button>
+        <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({visibleCustomers.length})</button>
         <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>
         <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
         <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
+        {user?.role === 'admin' && <button style={tabStyle('approvals')} onClick={()=>setTab('approvals')}>⏳ بانتظار الموافقة {pendingCustomers.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{pendingCustomers.length}</span>}</button>}
       </div>
 
       {tab === 'customers' && <>
@@ -10787,7 +10833,10 @@ function CustomersPage({ user }) {
             <div style={ENTITY_GRID_STYLE}>
               {filtered.map(c=>(
                 <EntityCard key={c.id} onClick={()=>setSelected(c)} avatar="🏢" title={c.name} subtitle={c.customer_code||'—'}
-                  badge={c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10,whiteSpace:'nowrap'}}>{c.category}</span>}
+                  badge={<>
+                    {c.approval_status==='pending' && <span className="erp-badge erp-badge-warning" style={{fontSize:10,whiteSpace:'nowrap'}}>⏳ قيد الموافقة</span>}
+                    {c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10,whiteSpace:'nowrap'}}>{c.category}</span>}
+                  </>}
                   rows={[
                     {icon:'📞', text: c.phone||c.mobile||'—'},
                     {icon:'📍', text: c.city||'—'},
@@ -10811,6 +10860,47 @@ function CustomersPage({ user }) {
       {tab === 'online' && <OnlineCustomersTab user={user} onCountChange={setOnlineCount}/>}
 
       {tab === 'export' && <ExportCustomersTab user={user} profiles={profiles} onCountChange={setExportCount}/>}
+
+      {tab === 'approvals' && user?.role === 'admin' && (() => {
+        const list = approvalsView === 'pending' ? pendingCustomers : rejectedCustomers;
+        return <>
+          <div style={{display:'flex',gap:8,marginBottom:14}}>
+            <button className={`btn btn-sm ${approvalsView==='pending'?'btn-primary':'btn-ghost'}`} onClick={()=>setApprovalsView('pending')}>⏳ بانتظار الموافقة ({pendingCustomers.length})</button>
+            <button className={`btn btn-sm ${approvalsView==='rejected'?'btn-primary':'btn-ghost'}`} onClick={()=>setApprovalsView('rejected')}>❌ المرفوضون ({rejectedCustomers.length})</button>
+          </div>
+          {list.length === 0 ? (
+            <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+              <div style={{fontSize:48,marginBottom:12}}>{approvalsView==='pending' ? '✅' : '📭'}</div>
+              <p>{approvalsView==='pending' ? 'لا يوجد طلبات عملاء بانتظار الموافقة' : 'لا يوجد عملاء مرفوضون'}</p>
+            </div>
+          ) : (
+            <div style={ENTITY_GRID_STYLE}>
+              {list.map(c=>(
+                <EntityCard key={c.id} onClick={()=>setSelected(c)} avatar="🏢" title={c.name} subtitle={c.customer_code||'—'}
+                  badge={approvalsView==='pending'
+                    ? <span className="erp-badge erp-badge-warning" style={{fontSize:10,whiteSpace:'nowrap'}}>⏳ قيد الموافقة</span>
+                    : <span className="erp-badge erp-badge-danger" style={{fontSize:10,whiteSpace:'nowrap'}}>❌ مرفوض</span>}
+                  rows={[
+                    {icon:'📞', text: c.phone||c.mobile||'—'},
+                    {icon:'📍', text: c.city||'—'},
+                    {icon:'👤', text: assignedName(c)},
+                    {icon:'✍️', text: profiles.find(p=>p.id===c.created_by)?.full_name || 'أضافه موظف'},
+                    approvalsView==='rejected' && c.rejection_reason && {icon:'📝', text: c.rejection_reason},
+                  ]}
+                  actions={approvalsView==='pending' ? <>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض التفاصيل" style={{padding:'3px 8px'}}>👁</button>
+                    <button className="btn btn-primary btn-sm" onClick={()=>approveCustomer(c)} style={{padding:'3px 8px'}}>✅ موافقة</button>
+                    <button className="btn btn-danger btn-sm" onClick={()=>rejectCustomer(c)} style={{padding:'3px 8px'}}>❌ رفض</button>
+                  </> : <>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض التفاصيل" style={{padding:'3px 8px'}}>👁</button>
+                    <button className="btn btn-primary btn-sm" onClick={()=>approveCustomer(c)} style={{padding:'3px 8px'}}>✅ موافقة الآن</button>
+                  </>}
+                />
+              ))}
+            </div>
+          )}
+        </>;
+      })()}
 
       {showForm && <CustomerForm customer={editing} profiles={profiles} user={user} onSave={()=>{ setShowForm(false); load(); }} onClose={()=>setShowForm(false)}/>}
       {showListMgr && <CustomerListsManager user={user} onClose={()=>setShowListMgr(false)}/>}
