@@ -1859,6 +1859,44 @@ function itemsGroupMeta(items) {
   });
 }
 
+/* وصف صنف أطول من صفحة A4 وحدة (نسخ كامل من كتالوج مورد مثلاً) بينقسم لأجزاء
+   آمنة الحجم على حدود فقرة/جملة/كلمة (مو قص عشوائي بالنص) — كل جزء بيصير "صف
+   افتراضي" مستقل يدخل بنظام الترقيم الحقيقي فيتوزع فعلياً على الصفحات اللازمة
+   بالقياس الحقيقي، بدل ما ينقطع عند حافة الصفحة الأولى ويضيع. حجم الجزء متحفّظ
+   (أصغر بكتير من سعة صفحة كاملة) لضمان إنه يلحق بأي صفحة يوصلها القياس الفعلي */
+const SPLIT_CHUNK_CHARS = 800;
+function splitLongDescription(text) {
+  if (!text || text.length <= SPLIT_CHUNK_CHARS) return [text || ''];
+  const chunks = [];
+  let cur = '';
+  const pushChunk = () => { if (cur) { chunks.push(cur); cur = ''; } };
+  const addPiece = (piece, sep) => {
+    if (!piece) return;
+    if (piece.length > SPLIT_CHUNK_CHARS) {
+      pushChunk();
+      for (let p = 0; p < piece.length; p += SPLIT_CHUNK_CHARS) chunks.push(piece.slice(p, p + SPLIT_CHUNK_CHARS));
+      return;
+    }
+    const candidate = cur ? cur + sep + piece : piece;
+    if (candidate.length <= SPLIT_CHUNK_CHARS) cur = candidate;
+    else { pushChunk(); cur = piece; }
+  };
+  text.split('\n').forEach(para => {
+    if (para.length > SPLIT_CHUNK_CHARS) {
+      pushChunk();
+      const sentences = para.match(/[^.!؟?]+[.!؟?]+|[^.!؟?]+$/g) || [para];
+      sentences.forEach(sent => {
+        if (sent.length > SPLIT_CHUNK_CHARS) sent.trim().split(' ').forEach(w => addPiece(w, ' '));
+        else addPiece(sent.trim(), ' ');
+      });
+    } else {
+      addPiece(para, '\n');
+    }
+  });
+  pushChunk();
+  return chunks;
+}
+
 /* ===== نظام الترقيم الحقيقي للصفحات (True Pagination) =====
    بدل ترك المتصفح يقسم المحتوى على الصفحات (وهو مصدر كل مشاكل الطباعة:
    صفحات فارغة، فوتر يدخل على البنود، اختلاف المعاينة عن الطباعة)،
@@ -2083,24 +2121,36 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
     ? (docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'PRICE QUOTATION — OFFER')
     : (docType === 'invoice' ? 'فاتورة — TAX INVOICE' : docType === 'order' ? 'طلبية — PURCHASE ORDER' : 'عرض أسعار — OFFER');
 
+  /* الصفوف الفعلية للطباعة: كل بند بيتحول لصف وحد عادةً، إلا لو وصفه أطول من
+     صفحة كاملة (نسخ كتالوج مورد مثلاً) فبينقسم لعدة "صفوف افتراضية" متتالية
+     — الأول بكل بيانات البند (سعر/كمية/منشأ...) والباقي وصف فقط، وبعدين نظام
+     الترقيم الحقيقي بيوزعهم فعلياً حسب القياس بدل ما ينقطعوا عند حافة الصفحة */
+  const printRows = [];
+  items.forEach((it, idx) => {
+    const chunks = splitLongDescription(it.item_name);
+    if (chunks.length <= 1) { printRows.push({ idx, item: it, text: it.item_name, isCont: false }); return; }
+    chunks.forEach((c, ci) => printRows.push({ idx, item: it, text: c, isCont: ci > 0 }));
+  });
+
   /* صف بنود واحد — يُستخدم مرتين: في حاوية القياس وفي الصفحات النهائية */
-  const renderRow = (item, i) => {
+  const renderRow = (row, key) => {
+    const { idx, item, text, isCont } = row;
     const itemTax = (item.tax_pct ?? doc.tax_pct ?? 16);
     const taxRate = parseFloat(itemTax) || 0;
     const withTax = parseFloat(item.unit_price||0) * (1 + taxRate/100);
-    const m = printMeta[i];
+    const m = printMeta[idx];
     const grouped = m.groupSize > 1;
-    const counted = printCounted.has(i);
+    const counted = printCounted.has(idx);
     const unavail = isItemUnavailable(item);
     return (
-      <tr key={i} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
-        <td>{m.no ?? '↳'}</td>
+      <tr key={key} style={grouped ? {background: m.isAlt ? '#FFFDF6' : '#F7FCF9'} : {}}>
+        <td>{isCont ? '' : (m.no ?? '↳')}</td>
         <td className="item-name">
-          {grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'خيار بديل — '}</span>}
-          <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{item.item_name}</span>
-          {unavail && <span style={{color:'#dc2626',fontWeight:800,fontSize:11}}> — {isEn ? 'NOT AVAILABLE' : 'غير متوفر'}</span>}
-          {grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
-          {item.product_url && (
+          {!isCont && grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'خيار بديل — '}</span>}
+          <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{text}</span>
+          {!isCont && unavail && <span style={{color:'#dc2626',fontWeight:800,fontSize:11}}> — {isEn ? 'NOT AVAILABLE' : 'غير متوفر'}</span>}
+          {!isCont && grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
+          {!isCont && item.product_url && (
             <div>
               <a href={item.product_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10,fontWeight:700,color:'#fff',background:'#2563eb',textDecoration:'none',borderRadius:4,padding:'1px 7px',display:'inline-block',marginTop:2}}>
                 🔗 {isEn ? 'View Product' : 'رابط المنتج'}
@@ -2108,19 +2158,19 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             </div>
           )}
         </td>
-        <td className="unit-cell">{item.unit||'EACH'}</td>
-        <td>{item.quantity}</td>
+        <td className="unit-cell">{isCont ? '' : (item.unit||'EACH')}</td>
+        <td>{isCont ? '' : item.quantity}</td>
         {detailed ? <>
-          <td>{numFmt(item.unit_price)}</td>
-          <td>{taxRate}%</td>
-          <td>{numFmt(withTax)}</td>
-          <td><strong>{numFmt(parseFloat(item.quantity||0)*withTax)}</strong></td>
+          <td>{isCont ? '' : numFmt(item.unit_price)}</td>
+          <td>{isCont ? '' : `${taxRate}%`}</td>
+          <td>{isCont ? '' : numFmt(withTax)}</td>
+          <td>{isCont ? '' : <strong>{numFmt(parseFloat(item.quantity||0)*withTax)}</strong>}</td>
         </> : <>
-          <td>{numFmt(item.unit_price)}</td>
-          <td><strong>{numFmt(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0))}</strong></td>
+          <td>{isCont ? '' : numFmt(item.unit_price)}</td>
+          <td>{isCont ? '' : <strong>{numFmt(parseFloat(item.quantity||0)*parseFloat(item.unit_price||0))}</strong>}</td>
         </>}
-        <td>{item.origin||'CHINA'}</td>
-        <td>{item.delivery||'PROMPT'}</td>
+        <td>{isCont ? '' : (item.origin||'CHINA')}</td>
+        <td>{isCont ? '' : (item.delivery||'PROMPT')}</td>
       </tr>
     );
   };
@@ -2476,18 +2526,18 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
             <div className={`pq-measure-inner${altCompany ? ' alt-theme-'+altCompany.key : ''}`} dir={isEn ? 'ltr' : 'rtl'} style={{...(isEn ? {direction:'ltr'} : null), ...printVars}}>
               <div className="pqm-head">{firstHeader}</div>
               <div className="pqm-conthead"><PqContHeader docTitle={docTitle} number={doc.number} company={altCompany}/></div>
-              <div className="pqm-rows"><PqItemsTable detailed={detailed}>{items.map((it,i)=>renderRow(it,i))}</PqItemsTable></div>
+              <div className="pqm-rows"><PqItemsTable detailed={detailed}>{printRows.map((r,i)=>renderRow(r,i))}</PqItemsTable></div>
               <div className="pqm-tail">{tailBlock}</div>
               <div className="pqm-footer"><PqFooterBar company={altCompany}/></div>
             </div>
           </div>
 
           {/* الصفحات النهائية — ما تراه هنا هو ما يُطبع حرفياً */}
-          {(pages || [{rows: items.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
+          {(pages || [{rows: printRows.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
             <div className={`pq-page${altCompany ? ' alt-theme-'+altCompany.key : ''}`} key={pi} style={printVars}>
               <div className={`pq-page-inner${altCompany ? ' alt-theme-'+altCompany.key : ''}`} dir={isEn ? 'ltr' : 'rtl'} style={{...(isEn ? {direction:'ltr'} : null), ...printVars}}>
                 {pg.first ? firstHeader : <PqContHeader docTitle={docTitle} number={doc.number} company={altCompany}/>}
-                {pg.rows.length > 0 && <PqItemsTable detailed={detailed}>{pg.rows.map(i => renderRow(items[i], i))}</PqItemsTable>}
+                {pg.rows.length > 0 && <PqItemsTable detailed={detailed}>{pg.rows.map(i => renderRow(printRows[i], i))}</PqItemsTable>}
                 {pg.tail && tailBlock}
               </div>
               {showSig && (() => { const st = getStamp(pi); return (
@@ -4170,29 +4220,66 @@ function QuotesList({ user, quotes, onReload }) {
       // ضمن مجموعة بنفس الرقم المشترك، يُربط عبر option_group) — أو فاضي (صف تكميلي تابع
       // للبند السابق: إمّا نص مواصفات إضافي، أو مكوّن سعري يُجمع ضمن رأس مجموعة بلا سعر مباشر
       // مثل "28-a"، أو بند إضافي مستقل السعر تحت رقم مشترك بلا حرف مثل بند 25).
+      // تحديد مواقع الأعمدة من نص صف العناوين نفسه بدل الاعتماد على ترتيب ثابت —
+      // بعض عروض الموردين تضيف عمود سعر إضافي (قبل/بعد الضريبة) فيزيح ORIGIN/DELIVERY
+      // عن موضعهما المعتاد؛ القراءة بالاسم بتضل صحيحة أياً كان عدد أعمدة السعر
+      const headerCells = (data[headerRowIdx] || []).map(c => String(c || '').trim().toLowerCase());
+      const findCol = (keys, exclude, fallback) => {
+        for (let idx = 0; idx < headerCells.length; idx++) {
+          const h = headerCells[idx];
+          if (!h) continue;
+          if (exclude && exclude.some(x => h.includes(x))) continue;
+          if (keys.some(k => h.includes(k))) return idx;
+        }
+        return fallback;
+      };
+      const COL_ITEM       = findCol(['item', 'الصنف', 'المادة', 'البند', 'الوصف'], null, 1);
+      const COL_UNIT       = findCol(['unit'], ['price'], 2);
+      const COL_QTY        = findCol(['qty', 'quantity', 'كمية'], null, 3);
+      const COL_PRICE      = findCol(['unit price', 'excl. tax', 'excl tax', 'price'], ['total'], 4);
+      const COL_PRICE_INCL = findCol(['incl. tax', 'incl tax', 'with tax'], ['total'], null);
+      const COL_ORIGIN     = findCol(['origin', 'المنشأ'], null, 6);
+      const COL_DELIVERY   = findCol(['delivery', 'التسليم'], null, 7);
+      // نسبة الضريبة الفعلية تُشتق من نسبة عمود "شامل الضريبة" لسعر الوحدة إلى عمود
+      // "قبل الضريبة" لو الملف عنده العمودين (بدل ما نفترض 0% ونخسر جزء من المجموع
+      // الحقيقي) — ولو ما في عمود "شامل الضريبة" أصلاً منرجع للافتراضي العام بالنظام
+      const DEFAULT_TAX_PCT = 16;
+      const deriveTaxPct = (row, exclPrice) => {
+        if (COL_PRICE_INCL == null || !exclPrice) return DEFAULT_TAX_PCT;
+        const inclPrice = parseFloat(row[COL_PRICE_INCL]);
+        if (!isFinite(inclPrice) || inclPrice <= 0) return DEFAULT_TAX_PCT;
+        const pct = Math.round(((inclPrice / exclPrice) - 1) * 1000) / 10;
+        return (isFinite(pct) && pct >= 0) ? pct : DEFAULT_TAX_PCT;
+      };
+
       const items = [];
       let currentItem = null;
       let currentIsBundle = false; // آخر بند مُضاف بلا سعر خاص فيه — يجمع المكوّنات التالية ضمنه
       for (let i = headerRowIdx + 1; i < data.length; i++) {
         const row = data[i];
         const noStr = String(row[0] || '').trim();
-        const itemName = String(row[1] || '').trim();
-        const rawQty = row[3], rawPrice = row[4];
+        const itemName = String(row[COL_ITEM] || '').trim();
+        const rawQty = row[COL_QTY], rawPrice = row[COL_PRICE];
         const hasPriceData = rawPrice !== '' && rawPrice != null && rawPrice !== 'XX';
-        const altMatch = noStr.match(/^(\d+)\s*-\s*([a-zA-Z])$/);
-        const isPlainNo = noStr !== '' && /^\d+$/.test(noStr);
+        // رقم يبدأ برقم صحيح ثم أي لاحقة (حرف/نقطة/شرطة/كلمة "alt"...) يُعتبر بديلاً لنفس
+        // الرقم الأساسي أياً كانت صيغة اللاحقة، لأن كل مورد بيكتبها بشكل مختلف
+        // ("3-a"، "3-alt.1"، "3.alt2"، "6.alt."...) — المهم إنه الرقم الأساسي يجي أول شي
+        const numMatch = noStr.match(/^(\d+)(.*)$/);
+        const baseNo = numMatch ? numMatch[1] : null;
 
-        if (altMatch || isPlainNo) {
+        if (numMatch) {
           if (!itemName && !hasPriceData) continue;
-          const unit = (String(row[2] || 'EACH').trim().toUpperCase()) || 'EACH';
+          const unit = (String(row[COL_UNIT] || 'EACH').trim().toUpperCase()) || 'EACH';
           const qty = parseFloat(rawQty) || 1;
           const unitPrice = hasPriceData ? (parseFloat(rawPrice) || 0) : 0;
-          const origin = (String(row[6] || 'CHINA').trim().toUpperCase()) || 'CHINA';
-          const delivery = String(row[7] || '').trim() || 'PROMPT';
-          // عمود "Warranty" بالإكسل (index 8) لا يُستورد: لا يوجد له عمود بالنظام، وحقل notes
-          // مخصص حصراً كعلامة "غير متوفر" (UNAVAIL_FLAG) — لا يُعرض بأي مكان كنص حر.
-          const option_group = altMatch ? ('imp-' + altMatch[1]) : null;
-          currentItem = { sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, origin, delivery, notes: '', option_group };
+          const tax_pct = deriveTaxPct(row, unitPrice);
+          const origin = (String(row[COL_ORIGIN] || 'CHINA').trim().toUpperCase()) || 'CHINA';
+          const delivery = String(row[COL_DELIVERY] || '').trim() || 'PROMPT';
+          // كل الأصناف المشتركة بنفس الرقم الأساسي (البند نفسه وكل بدائله) تنضم لنفس
+          // option_group عشان يُحتسب بالمجموع الخيار الأعلى قيمة منها فقط — بند برقم
+          // منفرد بلا بدائل بتضل مجموعته بعضو وحيد فما بيتأثر مجموعه
+          const option_group = 'imp-' + baseNo;
+          currentItem = { sort_order: items.length, item_name: itemName, unit, quantity: qty, unit_price: unitPrice, tax_pct, origin, delivery, notes: '', option_group };
           currentIsBundle = !hasPriceData;
           items.push(currentItem);
           continue;
@@ -4212,10 +4299,10 @@ function QuotesList({ user, quotes, onReload }) {
             currentItem = {
               sort_order: items.length,
               item_name: itemName || currentItem.item_name,
-              unit: (String(row[2] || currentItem.unit).trim().toUpperCase()) || 'EACH',
-              quantity: subQty, unit_price: subPrice,
-              origin: (String(row[6] || currentItem.origin).trim().toUpperCase()) || 'CHINA',
-              delivery: String(row[7] || currentItem.delivery || '').trim() || 'PROMPT',
+              unit: (String(row[COL_UNIT] || currentItem.unit).trim().toUpperCase()) || 'EACH',
+              quantity: subQty, unit_price: subPrice, tax_pct: deriveTaxPct(row, subPrice),
+              origin: (String(row[COL_ORIGIN] || currentItem.origin).trim().toUpperCase()) || 'CHINA',
+              delivery: String(row[COL_DELIVERY] || currentItem.delivery || '').trim() || 'PROMPT',
               notes: '', option_group: null,
             };
             currentIsBundle = false;
@@ -4229,9 +4316,13 @@ function QuotesList({ user, quotes, onReload }) {
       if (!items.length) { toast('لم يتم العثور على أصناف في الملف', 'error'); return; }
 
       // المجموع يُحسب مثل بقية النظام: ضمن كل مجموعة خيارات بديلة (نفس option_group)
-      // يُحتسب الخيار الأعلى قيمة فقط — بقية البدائل تُستورد وتُعرض لكن لا تُضاف للمجموع
-      const counted = pickCountedIndices(items, 0);
+      // يُحتسب الخيار الأعلى قيمة فقط — بقية البدائل تُستورد وتُعرض لكن لا تُضاف للمجموع.
+      // الضريبة محسوبة فعلياً من نسبة كل صنف (مشتقة من الملف أو الافتراضي العام) —
+      // تجاهلها بالكامل زي ما كان قبل كان بيخلي مجموع النظام أقل من مجموع الملف الأصلي بمقدار الضريبة تماماً
+      const counted = pickCountedIndices(items, DEFAULT_TAX_PCT);
       const subtotal = items.reduce((s, it, idx) => counted.has(idx) ? s + it.quantity * it.unit_price : s, 0);
+      const taxAmt = items.reduce((s, it, idx) => counted.has(idx) ? s + it.quantity * it.unit_price * ((parseFloat(it.tax_pct) || 0) / 100) : s, 0);
+      const nettPrice = subtotal + taxAmt;
       const todayStr = today();
       // مدة الصلاحية: نقرأها من نص الملف لو منصوص عليها صراحة (مثال: "مدة صلاحية العرض 120 يوما"
       // أو "Validity: 120 days")، وإلا نرجع للافتراضي الثابت بالنظام
@@ -4254,8 +4345,8 @@ function QuotesList({ user, quotes, onReload }) {
         currency: 'JOD', delivery: 'PROMPT',
         subtotal: subtotal.toFixed(3),
         discount_pct: 0, discount_amt: (0).toFixed(3),
-        tax_pct: 0, tax_amt: (0).toFixed(3),
-        nett_price: subtotal.toFixed(3),
+        tax_pct: DEFAULT_TAX_PCT, tax_amt: taxAmt.toFixed(3),
+        nett_price: nettPrice.toFixed(3),
         status: 'draft', valid_until,
         quote_type: 'quote', detailed_layout: false, quote_lang: 'ar',
         notes: 'مستورد من Excel — بانتظار المراجعة',
@@ -4263,7 +4354,7 @@ function QuotesList({ user, quotes, onReload }) {
       }).select().single();
       if (qErr) throw qErr;
 
-      const { error: iErr } = await sb.from('quotation_items').insert(items.map(it => ({ ...it, quotation_id: q.id, tax_pct: 0 })));
+      const { error: iErr } = await sb.from('quotation_items').insert(items.map(it => ({ ...it, quotation_id: q.id })));
       if (iErr) throw iErr;
 
       upsertItemHistory(items.map(it => it.item_name));
