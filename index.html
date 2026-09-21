@@ -4639,6 +4639,18 @@ function QuotesList({ user, quotes, onReload }) {
     toast('تم الحذف النهائي','success'); onReload();
   };
 
+  const emptyDeletedQuotes = async () => {
+    if (deletedQuotes.length === 0) return;
+    if (!confirm(`حذف نهائي لكل العروض المحذوفة (${deletedQuotes.length})؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    const ids = deletedQuotes.map(q => q.id);
+    await sb.from('orders').update({ quotation_id: null }).in('quotation_id', ids);
+    await sb.from('quotation_items').delete().in('quotation_id', ids);
+    const {error} = await sb.from('quotations').delete().in('id', ids);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `تفريغ المحذوفات نهائياً (${ids.length} عرض)`, 'quote');
+    toast('تم تفريغ المحذوفات نهائياً','success'); onReload();
+  };
+
   const confirmDraft = async (q) => {
     if (!confirm(`اعتماد المسودة "${q.number}" كعرض رسمي؟\nسيتم تخصيص رقم رسمي جديد.`)) return;
     const { error } = await sb.from('quotations').update({ status: 'sent' }).eq('id', q.id);
@@ -5254,6 +5266,7 @@ function QuotesList({ user, quotes, onReload }) {
         ) : (<>
           <div className="filter-bar">
             <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={deletedSearch} onChange={e=>setDeletedSearch(e.target.value)}/>
+            {user?.role === 'admin' && <button className="btn btn-danger btn-sm" onClick={emptyDeletedQuotes} style={{whiteSpace:'nowrap'}}>🗑️ تفريغ المحذوفات نهائياً</button>}
           </div>
           <div className="table-wrap">
             <table>
