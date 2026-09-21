@@ -10814,10 +10814,10 @@ function CustomersPage({ user }) {
       {/* Tabs */}
       <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5'}}>
         <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({visibleCustomers.length})</button>
+        {user?.role === 'admin' && <button style={tabStyle('approvals')} onClick={()=>setTab('approvals')}>⏳ بانتظار الموافقة {pendingCustomers.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{pendingCustomers.length}</span>}</button>}
         <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>
         <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
         <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
-        {user?.role === 'admin' && <button style={tabStyle('approvals')} onClick={()=>setTab('approvals')}>⏳ بانتظار الموافقة {pendingCustomers.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{pendingCustomers.length}</span>}</button>}
       </div>
 
       {tab === 'customers' && <>
