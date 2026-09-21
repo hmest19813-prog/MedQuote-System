@@ -1849,6 +1849,20 @@ function pickQuoteItems(items, defaultTax) {
   const counted = pickCountedIndices(items, defaultTax);
   return items.filter((_, i) => counted.has(i));
 }
+/* مثل pickQuoteItems لكن بدل حذف البدائل غير المعتمدة، نُبقيها مرفقة بكل صف
+   (كخيار _altOptions) عشان تحويل العرض لطلب يقدر يعرضها للمستخدم يختار منها،
+   بدل ما يُفرض عليه تلقائياً الخيار الأعلى سعراً */
+function groupItemsWithAlternatives(items, defaultTax, normFn) {
+  const groups = {};
+  items.forEach((it, idx) => { const k = itemGroupKey(it, idx); (groups[k] = groups[k] || []).push(it); });
+  return Object.values(groups).map(alts => {
+    const normed = alts.map(a => normFn(a, defaultTax));
+    if (normed.length === 1) return normed[0];
+    let bestIdx = 0, bv = -Infinity;
+    alts.forEach((a,i) => { const v = itemValueWithTax(a, defaultTax); if (v > bv) { bv = v; bestIdx = i; } });
+    return { ...normed[bestIdx], _altOptions: normed, _altSelectedIdx: bestIdx };
+  });
+}
 function itemsGroupMeta(items) {
   const firstOf = {}, size = {};
   items.forEach((it, idx) => { const k = itemGroupKey(it, idx); if (firstOf[k] === undefined) firstOf[k] = idx; size[k] = (size[k] || 0) + 1; });
@@ -5418,8 +5432,9 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
           }
         } else {
           const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', quote.id).order('sort_order');
-          // من مجموعات "المصدر البديل" نأخذ الخيار المعتمد فقط — هو ما بُني عليه إجمالي العرض
-          list = pickQuoteItems(normQuoteItems(qits || []), defTax).map(it => normItem(it, defTax));
+          // من مجموعات "المصدر البديل" نبدأ بالخيار الأعلى سعراً (نفس ما هو محتسب بإجمالي العرض)
+          // لكن نُبقي بقية البدائل متاحة للاختيار — الزبون قد يكون اعتمد غيره فعلياً
+          list = groupItemsWithAlternatives(normQuoteItems(qits || []), defTax, normItem);
         }
         if (!alive) return;
         setSrcQuote(q);
@@ -5446,6 +5461,10 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
   const setItem = (idx, k, v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]: v } : it));
   const delItem = (idx) => setItems(list => list.filter((_,i) => i!==idx));
   const addItem = () => setItems(list => [...list, normItem({}, defaultTax)]);
+  const chooseAlt = (idx, altIdx) => setItems(list => list.map((it,i) => {
+    if (i !== idx || !it._altOptions) return it;
+    return { ...it._altOptions[altIdx], _altOptions: it._altOptions, _altSelectedIdx: altIdx };
+  }));
 
   const handleSubmit = async () => {
     if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
@@ -5602,7 +5621,17 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
                 {items.map((it,i) => (
                   <tr key={i}>
                     <td>{i+1}</td>
-                    <td><input className="form-control" style={{fontSize:12,padding:'4px 6px'}} value={it.item_name} onChange={e=>setItem(i,'item_name',e.target.value)}/></td>
+                    <td>
+                      <input className="form-control" style={{fontSize:12,padding:'4px 6px'}} value={it.item_name} onChange={e=>setItem(i,'item_name',e.target.value)}/>
+                      {it._altOptions?.length > 1 && (
+                        <select className="form-control" style={{fontSize:10,padding:'2px 4px',marginTop:3,color:'#b45309',borderColor:'#fcd9a6',background:'#fffaf0'}}
+                          value={it._altSelectedIdx} onChange={e=>chooseAlt(i, parseInt(e.target.value))} title="هذا الصنف له خيارات بديلة بالعرض — اختر الخيار الذي اعتمده الزبون">
+                          {it._altOptions.map((alt,ai)=>(
+                            <option key={ai} value={ai}>🔀 {alt.item_name || `خيار ${ai+1}`} — {numFmt(parseFloat(alt.quantity||0)*parseFloat(alt.unit_price||0))}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
                     <td><input className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.unit} onChange={e=>setItem(i,'unit',e.target.value)}/></td>
                     <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
                     <td><input type="number" min="0" step="any" className="form-control" style={{fontSize:12,padding:'4px 6px',textAlign:'center'}} value={it.unit_price} onChange={e=>setItem(i,'unit_price',e.target.value)}/></td>
