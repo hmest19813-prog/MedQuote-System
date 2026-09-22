@@ -1389,6 +1389,15 @@ function Toasts() {
 }
 const toast = (msg, type='info') => toastSetter && toastSetter(l => [...l, { msg, type }]);
 
+const SUPER_ADMIN_EMAIL = 'o.alawy.oa@gmail.com';
+// المستخدم الحالي — يُحدَّث تلقائياً من App()، متاح لأي مكان بالكود بدون تمرير prop
+let CURRENT_USER = null;
+// حساب واحد فقط (مش كل الأدمنية) بيتخطى أي حقل/شرط إلزامي بالنظام
+const isSuperAdmin = (user) => {
+  const u = user || CURRENT_USER;
+  return !!u && u.email === SUPER_ADMIN_EMAIL;
+};
+
 const hasPerm = (user, key) => {
   if (!user) return false;
   if (user.role === 'admin') return true;
@@ -1461,10 +1470,9 @@ function AuthPage({ onLogin }) {
       }
       clearTimeout(timer);
       const u = {
-        id: data.user.id,
-        email: data.user.email,
         ...(profile || {}),
         id: data.user.id,
+        email: data.user.email,
       };
       onLogin(u);
     } catch (err) {
@@ -2764,7 +2772,7 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
   const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
-    if (!name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    if (!name.trim() && !isSuperAdmin(user)) { toast('يجب إدخال اسم العميل','error'); return; }
     setLoading(true);
     try {
       const { data: genCode, error: genErr } = await sb.rpc('generate_customer_number');
@@ -3025,7 +3033,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   };
 
   const saveItemToCatalog = async (item) => {
-    if (!item.item_name?.trim()) { toast('أدخل اسم المنتج أولاً','error'); return; }
+    if (!item.item_name?.trim() && !isSuperAdmin(user)) { toast('أدخل اسم المنتج أولاً','error'); return; }
     const { data: existing } = await sb.from('catalog_items').select('id').ilike('name', item.item_name.trim()).maybeSingle();
     if (existing) { toast('هذا الصنف موجود في الكتالوج مسبقاً','info'); return; }
     // افتح CatalogForm مع بيانات المنتج معبّأة
@@ -3041,18 +3049,20 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   };
 
   const handleSave = async (status='draft') => {
-    if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
-    if (!editQuote?.id && !form.customer_id) { toast('يجب اختيار عميل موجود من القائمة — أو إضافته أولاً عبر زر "➕ عميل جديد"','error'); return; }
-    if (!form.reference?.trim()) { toast('يجب إدخال رقم المرجع','error'); return; }
-    if (!form.requester_name?.trim()) { toast('يجب إدخال اسم العميل للمتابعة','error'); return; }
-    if (!form.requester_phone?.trim()) { toast('يجب إدخال رقم هاتف المتابعة','error'); return; }
-    if (form.requester_phone.replace(/\D/g,'').length < 9) { toast('رقم هاتف المتابعة غير صحيح — يجب أن يكون 9 أرقام على الأقل','error'); return; }
-    if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
-    // مدة الصلاحية إلزامية لكل عرض — ومن لا يملك الصلاحية تُفرض عليه المدة الافتراضية
     const validUntil = canOverrideValidity ? form.valid_until : addDays(form.date || today(), QUOTE_VALIDITY_DAYS);
-    if (!validUntil) { toast('يجب تحديد مدة صلاحية العرض — حقل "صالح حتى"','error'); return; }
-    if (daysBetween(form.date, validUntil) <= 0) { toast('تاريخ "صالح حتى" يجب أن يكون بعد تاريخ العرض','error'); return; }
-    if (!form.email?.trim() && !confirm('ما أدخلت إيميل العميل — إيميل غير إلزامي، بس بيسهّل إرسال العرض لاحقاً.\n\nمتابعة الحفظ بدون إيميل؟')) return;
+    if (!isSuperAdmin(user)) {
+      if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+      if (!editQuote?.id && !form.customer_id) { toast('يجب اختيار عميل موجود من القائمة — أو إضافته أولاً عبر زر "➕ عميل جديد"','error'); return; }
+      if (!form.reference?.trim()) { toast('يجب إدخال رقم المرجع','error'); return; }
+      if (!form.requester_name?.trim()) { toast('يجب إدخال اسم العميل للمتابعة','error'); return; }
+      if (!form.requester_phone?.trim()) { toast('يجب إدخال رقم هاتف المتابعة','error'); return; }
+      if (form.requester_phone.replace(/\D/g,'').length < 9) { toast('رقم هاتف المتابعة غير صحيح — يجب أن يكون 9 أرقام على الأقل','error'); return; }
+      if (items.every(i=>!i.item_name.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
+      // مدة الصلاحية إلزامية لكل عرض — ومن لا يملك الصلاحية تُفرض عليه المدة الافتراضية
+      if (!validUntil) { toast('يجب تحديد مدة صلاحية العرض — حقل "صالح حتى"','error'); return; }
+      if (daysBetween(form.date, validUntil) <= 0) { toast('تاريخ "صالح حتى" يجب أن يكون بعد تاريخ العرض','error'); return; }
+      if (!form.email?.trim() && !confirm('ما أدخلت إيميل العميل — إيميل غير إلزامي، بس بيسهّل إرسال العرض لاحقاً.\n\nمتابعة الحفظ بدون إيميل؟')) return;
+    }
     setLoading(true);
     try {
       const payload = {
@@ -3176,7 +3186,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
         customers={customers}
         onSelect={pickCustomer}
         onCreateNew={openQuickAddCustomer}
-        onClose={()=>{ if (!form.customer_id) onClose(); else setShowCustomerPicker(false); }}
+        onClose={()=>{ if (!form.customer_id && !isSuperAdmin(user)) onClose(); else setShowCustomerPicker(false); }}
       />}
       {showSaveCustomer && <QuickCustomerForm
         prefillName={quickAddPrefill} prefillPhone=""
@@ -3743,7 +3753,7 @@ function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
 
   const handleConfirm = async () => {
     const trimmed = note.trim();
-    if (!trimmed) { toast('يجب إدخال سبب الأرشفة', 'error'); return; }
+    if (!trimmed && !isSuperAdmin()) { toast('يجب إدخال سبب الأرشفة', 'error'); return; }
     await sb.from('archive_reasons').upsert(
       { reason: trimmed, last_used_at: new Date().toISOString() },
       { onConflict: 'reason' }
@@ -3913,7 +3923,7 @@ function PricingRequestModal({ quote, user, onClose, onSaved }) {
   }, []);
 
   const submit = async () => {
-    if (!target) { toast('اختر المستخدم المطلوب منه التسعير', 'error'); return; }
+    if (!target && !isSuperAdmin(user)) { toast('اختر المستخدم المطلوب منه التسعير', 'error'); return; }
     setSaving(true);
     const { error } = await sb.from('quotations').update({
       needs_pricing: true,
@@ -4888,8 +4898,8 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
-                  <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
-                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
+                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
               </div>
             ))}
@@ -4937,8 +4947,8 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
-                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
-                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
+                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
+                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
                   </td>
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center',whiteSpace:'nowrap',padding:'8px 6px'}}>{profiles[q.created_by] || '—'}</td>}
@@ -4987,8 +4997,8 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
-                  <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
-                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
+                  <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
+                  {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
               </div>
             ))}
@@ -5036,8 +5046,8 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
-                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
-                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
+                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
+                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
                   </td>
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center',whiteSpace:'nowrap',padding:'8px 6px'}}>{profiles[q.created_by] || '—'}</td>}
@@ -5180,8 +5190,8 @@ function QuotesList({ user, quotes, onReload }) {
                     {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>setEditing(q)}>✏️ تعديل</button>}
                     {q.status==='draft' && <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>}
                     {q.status!=='converted'&&q.status!=='invoiced'&&q.status!=='draft'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
-                    <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
-                    {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
+                    {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                   </div>
                 </div>
               );
@@ -5210,8 +5220,8 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
                       { icon:'✅', label:'اعتماد', hidden:q.status!=='draft', onClick:()=>confirmDraft(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced'||q.status==='draft', onClick:()=>setOrderingQ(q) },
-                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
-                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent'){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
+                      { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
+                      { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
                   </td>
                   {canViewIssuer && <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[q.created_by] || '—'}</td>}
@@ -5467,9 +5477,11 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
   }));
 
   const handleSubmit = async () => {
-    if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
-    const clean = items.filter(i => i.item_name.trim());
-    if (!clean.length) { toast('الطلب يجب أن يحتوي صنفاً واحداً على الأقل','error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+      const clean = items.filter(i => i.item_name.trim());
+      if (!clean.length) { toast('الطلب يجب أن يحتوي صنفاً واحداً على الأقل','error'); return; }
+    }
     setSaving(true);
     try {
       const payload = {
@@ -6517,7 +6529,7 @@ function OrdersPage({ user, orders, onReload }) {
                           <button className="btn btn-ghost btn-sm" style={{color:'#0369a1'}} onClick={()=>openReceipt(o)} title="سند استلام">📦 سند</button>
                         )}
                         {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)}>✏️ تعديل</button>}
-                        <button className="btn btn-ghost btn-sm" onClick={()=>{if(!['delivered','cancelled'].includes(o.status)){toast('⚠️ لا يمكن الأرشفة إلا بعد التسليم أو الإلغاء','error');return;}setArchiveOrderTarget(o);}}>🗄️ أرشفة</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{if(!['delivered','cancelled'].includes(o.status) && !isSuperAdmin(user)){toast('⚠️ لا يمكن الأرشفة إلا بعد التسليم أو الإلغاء','error');return;}setArchiveOrderTarget(o);}}>🗄️ أرشفة</button>
                         {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(o)}>🗑️ حذف</button>}
                       </div>
                     </td>
@@ -7003,19 +7015,21 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
     setF('permissions', Object.keys(form.permissions).reduce((a, k) => ({ ...a, [k]: val }), {}));
 
   const handleSave = async () => {
-    if (!form.full_name.trim()) { toast('يجب إدخال الاسم الكامل', 'error'); return; }
+    if (!form.full_name.trim() && !isSuperAdmin(currentUser)) { toast('يجب إدخال الاسم الكامل', 'error'); return; }
     if (isNew) {
       const emailVal = form.email.trim();
-      if (!emailVal) { toast('يجب إدخال البريد الإلكتروني', 'error'); return; }
-      if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(emailVal)) {
-        toast('صيغة البريد الإلكتروني غير صحيحة — مثال: user@example.com', 'error'); return;
-      }
-      if (!form.username.trim()) { toast('يجب إدخال اسم المستخدم', 'error'); return; }
-      if (!/^[a-zA-Z0-9._-]{3,30}$/.test(form.username.trim())) {
-        toast('اسم المستخدم: أحرف إنجليزية وأرقام ونقاط فقط (3-30 حرف)', 'error'); return;
+      if (!isSuperAdmin(currentUser)) {
+        if (!emailVal) { toast('يجب إدخال البريد الإلكتروني', 'error'); return; }
+        if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(emailVal)) {
+          toast('صيغة البريد الإلكتروني غير صحيحة — مثال: user@example.com', 'error'); return;
+        }
+        if (!form.username.trim()) { toast('يجب إدخال اسم المستخدم', 'error'); return; }
+        if (!/^[a-zA-Z0-9._-]{3,30}$/.test(form.username.trim())) {
+          toast('اسم المستخدم: أحرف إنجليزية وأرقام ونقاط فقط (3-30 حرف)', 'error'); return;
+        }
       }
     }
-    if (isNew && form.password.length < 6) { toast('كلمة المرور 6 أحرف على الأقل', 'error'); return; }
+    if (isNew && form.password.length < 6 && !isSuperAdmin(currentUser)) { toast('كلمة المرور 6 أحرف على الأقل', 'error'); return; }
 
     const permsToSave = (form.role === 'employee') ? form.permissions : {};
     setLoading(true);
@@ -7249,8 +7263,10 @@ function UsersPage({ currentUser }) {
   const closeReset = () => { setResetTarget(null); setNewPassword(''); };
 
   const doResetPassword = async () => {
-    if (!newPassword) { toast('أدخل كلمة المرور الجديدة','error'); return; }
-    if (newPassword.length < 6) { toast('كلمة المرور 6 أحرف على الأقل','error'); return; }
+    if (!isSuperAdmin(currentUser)) {
+      if (!newPassword) { toast('أدخل كلمة المرور الجديدة','error'); return; }
+      if (newPassword.length < 6) { toast('كلمة المرور 6 أحرف على الأقل','error'); return; }
+    }
     setResetLoading(true);
     const { error } = await sb.rpc('reset_user_password', { p_user_id: resetTarget.id, p_new_password: newPassword });
     setResetLoading(false);
@@ -7669,7 +7685,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   }, []);
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    if (!form.name.trim() && !isSuperAdmin(user)) { toast('يجب إدخال اسم العميل','error'); return; }
     setLoading(true);
     try {
       const fullAddress = form.district ? `${form.district} - ${form.address||''}`.trim().replace(/\s*-\s*$/,'') : form.address||null;
@@ -8096,9 +8112,11 @@ function CatalogForm({ user, item: editItem, onSave, onClose, categories: propCa
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast('اسم الصنف مطلوب','error'); return; }
-    if (!form.category?.trim()) { toast('الفئة مطلوبة — اختر فئة للمنتج','error'); return; }
-    if (!(parseFloat(form.unit_price) > 0)) { toast('سعر الوحدة مطلوب — أدخل سعراً أكبر من صفر','error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.name.trim()) { toast('اسم الصنف مطلوب','error'); return; }
+      if (!form.category?.trim()) { toast('الفئة مطلوبة — اختر فئة للمنتج','error'); return; }
+      if (!(parseFloat(form.unit_price) > 0)) { toast('سعر الوحدة مطلوب — أدخل سعراً أكبر من صفر','error'); return; }
+    }
     setSaving(true);
     const payload = { name:form.name.trim(), description:form.description, unit:form.unit||'EACH',
       unit_price:parseFloat(form.unit_price)||0, origin:form.origin, delivery:form.delivery,
@@ -8481,7 +8499,7 @@ function ExportCustomerForm({ customer, profiles: profilesProp, user, onSave, on
   }, []);
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
+    if (!form.name.trim() && !isSuperAdmin(user)) { toast('يجب إدخال اسم العميل','error'); return; }
     setLoading(true);
     try {
       const payload = {
@@ -9102,7 +9120,7 @@ function ProspectForm({ prospect, profiles, user, onSave, onClose }) {
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast('اسم العميل المحتمل مطلوب', 'error'); return; }
+    if (!form.name.trim() && !isSuperAdmin(user)) { toast('اسم العميل المحتمل مطلوب', 'error'); return; }
     setLoading(true);
     const payload = {
       name: form.name.trim(), phone: form.phone||null, source: form.source||null,
@@ -9773,9 +9791,9 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
   });
 
   const handleSubmit = async () => {
-    if (!form.customer_name.trim()) { toast('يجب إدخال اسم الزبون', 'error'); return; }
+    if (!form.customer_name.trim() && !isSuperAdmin(user)) { toast('يجب إدخال اسم الزبون', 'error'); return; }
     const clean = items.filter(i => i.item_name.trim());
-    if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
+    if (!clean.length && !isSuperAdmin(user)) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
     setSaving(true);
     try {
       const region = regionGov && regionDistrict.trim()
@@ -10040,8 +10058,10 @@ function OnlineCustomerForm({ customer, onSave, onClose }) {
   }, []);
 
   const handleSave = async () => {
-    if (!name.trim()) { toast('اسم الزبون مطلوب', 'error'); return; }
-    if (!phone.trim()) { toast('رقم الهاتف مطلوب', 'error'); return; }
+    if (!isSuperAdmin()) {
+      if (!name.trim()) { toast('اسم الزبون مطلوب', 'error'); return; }
+      if (!phone.trim()) { toast('رقم الهاتف مطلوب', 'error'); return; }
+    }
     setSaving(true);
     const region = regionGov && regionDistrict.trim() ? `${regionGov} - ${regionDistrict.trim()}` : (regionGov || null);
     let error;
@@ -10592,7 +10612,7 @@ function DailyOrdersPrepView({ user }) {
   const markIssue = async (o) => {
     const reason = window.prompt('ليش تعذّر تجهيز هالطلبية؟', o.prep_issue_note || '');
     if (reason === null) return;
-    if (!reason.trim()) { toast('لازم تكتب السبب', 'error'); return; }
+    if (!reason.trim() && !isSuperAdmin(user)) { toast('لازم تكتب السبب', 'error'); return; }
     setBusyId(o.id);
     const { error } = await sb.from('daily_orders').update({ prep_issue_note: reason.trim() }).eq('id', o.id);
     setBusyId(null);
@@ -11378,7 +11398,7 @@ function SupplierForm({ supplier, onSave, onClose }) {
   }, []);
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast('اسم المورد مطلوب','error'); return; }
+    if (!form.name.trim() && !isSuperAdmin()) { toast('اسم المورد مطلوب','error'); return; }
     setLoading(true);
     const payload = { name:form.name.trim(), code:form.code||null, phone:form.phone||null, email:form.email||null, address:form.address||null, city:form.city||null, country:form.country||'الأردن', contact_name:form.contact_name||null, contact_phone:form.contact_phone||null, payment_terms:parseInt(form.payment_terms)||30, notes:form.notes||null };
     let error;
@@ -11518,8 +11538,10 @@ function POForm({ po, user, onSave, onClose }) {
   const total = subtotal + tax_amt;
 
   const handleSave = async () => {
-    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
-    if (items.every(i=>!i.item_name?.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+      if (items.every(i=>!i.item_name?.trim())) { toast('أضف صنفاً واحداً على الأقل','error'); return; }
+    }
     setLoading(true);
     try {
       const payload = { supplier_id:form.supplier_id, supplier_name:form.supplier_name, date:form.date, expected_delivery:form.expected_delivery||null, status:form.status||'draft', currency:form.currency||'JOD', tax_pct:parseFloat(form.tax_pct||0), subtotal:subtotal.toFixed(3), tax_amt:tax_amt.toFixed(3), total:total.toFixed(3), notes:form.notes||null };
@@ -11786,8 +11808,10 @@ function SupplierInvoiceForm({ invoice, suppliers, onSave, onClose }) {
   },[form.supplier_id]);
 
   const handleSave = async () => {
-    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
-    if (!parseFloat(form.total)>0) { toast('يجب إدخال المبلغ الإجمالي','error'); return; }
+    if (!isSuperAdmin()) {
+      if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+      if (!parseFloat(form.total)>0) { toast('يجب إدخال المبلغ الإجمالي','error'); return; }
+    }
     setLoading(true);
     const payload = {
       supplier_id:form.supplier_id, supplier_name:form.supplier_name,
@@ -11900,9 +11924,11 @@ function SupplierPaymentForm({ suppliers, onSave, onClose }) {
   const balance = selectedInv ? numFmt(parseFloat(selectedInv.total||0)-parseFloat(selectedInv.paid_amount||0)) : null;
 
   const handleSave = async () => {
-    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
-    if (!form.invoice_id)  { toast('يجب اختيار فاتورة','error'); return; }
-    if (!(parseFloat(form.amount)>0)) { toast('يجب إدخال مبلغ صحيح','error'); return; }
+    if (!isSuperAdmin()) {
+      if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+      if (!form.invoice_id)  { toast('يجب اختيار فاتورة','error'); return; }
+      if (!(parseFloat(form.amount)>0)) { toast('يجب إدخال مبلغ صحيح','error'); return; }
+    }
     setLoading(true);
     try {
       const {error:pe} = await sb.from('supplier_payments').insert({
@@ -12007,8 +12033,10 @@ function SupplyFileForm({ user, file, onSave, onClose }) {
   }, [form.supplier_id]);
 
   const handleSave = async () => {
-    if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
-    if (!form.description.trim()) { toast('أدخل وصف البضاعة / الصفقة','error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.supplier_id) { toast('يجب اختيار مورد','error'); return; }
+      if (!form.description.trim()) { toast('أدخل وصف البضاعة / الصفقة','error'); return; }
+    }
     setLoading(true);
     try {
       const sup = suppliers.find(s=>s.id===form.supplier_id);
@@ -13374,7 +13402,7 @@ function CRForm({ user, editing, onSave, onClose }) {
   const isEdit = !!editing;
 
   const submit = async () => {
-    if (!title.trim()) { toast('أدخل عنوان الطلب','error'); return; }
+    if (!title.trim() && !isSuperAdmin(user)) { toast('أدخل عنوان الطلب','error'); return; }
     setSaving(true);
     if (isEdit) {
       const {data,error} = await sb.from('change_requests')
@@ -13708,7 +13736,7 @@ function TaskForm({ user, profiles, initialStatus, onSave, onClose, task }) {
   const [saving, setSaving]   = useState(false);
 
   const submit=async()=>{
-    if(!title.trim()){toast('أدخل عنوان المهمة','error');return;}
+    if(!title.trim() && !isSuperAdmin(user)){toast('أدخل عنوان المهمة','error');return;}
     setSaving(true);
     const payload={title:title.trim(),description:desc.trim(),assigned_to:assigned||null,due_date:dueDate||null,priority,status,updated_at:new Date().toISOString()};
     let error, data;
@@ -14016,8 +14044,8 @@ function InboxForm({ user, profiles, onSave, onClose, item }) {
   const profileList=Object.entries(profiles).map(([id,name])=>({id,name}));
 
   const submit=async()=>{
-    if(!fromCompany.trim()){toast('أدخل اسم الشركة المرسلة','error');return;}
-    if(!title.trim()){toast('أدخل عنوان الوثيقة','error');return;}
+    if(!fromCompany.trim() && !isSuperAdmin(user)){toast('أدخل اسم الشركة المرسلة','error');return;}
+    if(!title.trim() && !isSuperAdmin(user)){toast('أدخل عنوان الوثيقة','error');return;}
     setSaving(true);
     const payload={from_company:fromCompany.trim(),type,title:title.trim(),reference:reference.trim()||null,received_at:receivedAt,description:description.trim(),assigned_to:assignedTo||null,notes:notes.trim(),updated_at:new Date().toISOString()};
     let error;
@@ -14357,7 +14385,7 @@ function ChangelogForm({ entry, user, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
-    if (!title.trim()) { toast('أدخل عنوان التحديث', 'error'); return; }
+    if (!title.trim() && !isSuperAdmin(user)) { toast('أدخل عنوان التحديث', 'error'); return; }
     setSaving(true);
     let error;
     if (entry) {
@@ -15022,7 +15050,7 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
 
   const deleteMainCategory = async () => {
     if (currentMainId === LETTER_CAT_OTHER_ID) { toast('هذا التصنيف الافتراضي ("أخرى") ما بينحذف','error'); return; }
-    if (catTree.length <= 1) { toast('لازم يبقى تصنيف رئيسي واحد على الأقل','error'); return; }
+    if (catTree.length <= 1 && !isSuperAdmin(user)) { toast('لازم يبقى تصنيف رئيسي واحد على الأقل','error'); return; }
     const idsToCheck = [currentMainId, ...currentSubs.map(s=>s.id)];
     const { data: used } = await sb.from('official_letters').select('id').in('category', idsToCheck).limit(1);
     if (used?.length) { toast('لا يمكن حذف هذا التصنيف — فيه كتب مرتبطة فيه، انقلها لتصنيف تاني أولاً','error'); return; }
@@ -15062,8 +15090,8 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
   };
 
   const handleSave = async () => {
-    if (!form.subject.trim()) { toast('يجب إدخال الموضوع','error'); return; }
-    if (!form.body.trim()) { toast('يجب إدخال نص الكتاب','error'); return; }
+    if (!form.subject.trim() && !isSuperAdmin(user)) { toast('يجب إدخال الموضوع','error'); return; }
+    if (!form.body.trim() && !isSuperAdmin(user)) { toast('يجب إدخال نص الكتاب','error'); return; }
     if (form.is_private && !form.access_code_hash && !pwd.trim()) { toast('أدخل كلمة سر للكتاب الخاص','error'); return; }
     if (form.is_private && pwd.trim() && pwd.trim().length < 4) { toast('كلمة السر لازم تكون 4 أحرف على الأقل','error'); return; }
     setLoading(true);
@@ -15810,7 +15838,7 @@ function PropertyForm({ user, editProp, onClose, onSave }) {
   const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
-    if (!form.name.trim()) { toast('اسم العقار مطلوب', 'error'); return; }
+    if (!form.name.trim() && !isSuperAdmin(user)) { toast('اسم العقار مطلوب', 'error'); return; }
     setSaving(true);
     const payload = { ...form, updated_at: new Date().toISOString() };
     let error;
@@ -16034,7 +16062,7 @@ function PropertyTenantForm({ editTenant, onClose, onSave }) {
   const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
-    if (!form.full_name.trim()) { toast('اسم المستأجر مطلوب', 'error'); return; }
+    if (!form.full_name.trim() && !isSuperAdmin()) { toast('اسم المستأجر مطلوب', 'error'); return; }
     setSaving(true);
     const payload = { ...form, updated_at: new Date().toISOString() };
     const { error } = isNew
@@ -16185,11 +16213,13 @@ function PropertyContractForm({ user, editContract, onClose, onSave }) {
   }, [propertyId]);
 
   const handleSave = async () => {
-    if (!form.unit_id) { toast('يجب اختيار الوحدة', 'error'); return; }
-    if (!form.tenant_id) { toast('يجب اختيار المستأجر', 'error'); return; }
-    if (!form.start_date || !form.end_date) { toast('يجب تحديد تاريخ البداية والنهاية', 'error'); return; }
-    if (form.end_date <= form.start_date) { toast('تاريخ النهاية لازم يكون بعد تاريخ البداية', 'error'); return; }
-    if (!form.rent_amount || Number(form.rent_amount) <= 0) { toast('يجب إدخال قيمة الإيجار', 'error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.unit_id) { toast('يجب اختيار الوحدة', 'error'); return; }
+      if (!form.tenant_id) { toast('يجب اختيار المستأجر', 'error'); return; }
+      if (!form.start_date || !form.end_date) { toast('يجب تحديد تاريخ البداية والنهاية', 'error'); return; }
+      if (form.end_date <= form.start_date) { toast('تاريخ النهاية لازم يكون بعد تاريخ البداية', 'error'); return; }
+      if (!form.rent_amount || Number(form.rent_amount) <= 0) { toast('يجب إدخال قيمة الإيجار', 'error'); return; }
+    }
     setSaving(true);
     const payload = {
       unit_id: form.unit_id, tenant_id: form.tenant_id,
@@ -16417,7 +16447,7 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
   const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
-    if (!form.full_name.trim()) { toast('الاسم الكامل مطلوب', 'error'); return; }
+    if (!form.full_name.trim() && !isSuperAdmin()) { toast('الاسم الكامل مطلوب', 'error'); return; }
     setSaving(true);
     const payload = { ...form, base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0, hire_date: form.hire_date || null, updated_at: new Date().toISOString() };
     const { error } = isNew
@@ -17060,8 +17090,10 @@ function HRLetterForm({ employees, user, onClose, onSave }) {
   }, [form.employee_id, form.letter_type]);
 
   const handleSave = async () => {
-    if (!form.title.trim()) { toast('العنوان مطلوب', 'error'); return; }
-    if (!form.employee_id)  { toast('يجب اختيار موظف', 'error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.title.trim()) { toast('العنوان مطلوب', 'error'); return; }
+      if (!form.employee_id)  { toast('يجب اختيار موظف', 'error'); return; }
+    }
     setSaving(true);
     const { error } = await sb.from('hr_letters').insert({ ...form, created_by: user.id });
     setSaving(false);
@@ -17358,9 +17390,11 @@ function VoucherFormModal({ type, voucher, vouchers, user, onSave, onClose }) {
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
   const handleSave = async () => {
-    if (!form.amount || isNaN(parseFloat(form.amount))) { toast('يجب إدخال مبلغ صحيح', 'error'); return; }
-    if (!form.party.trim())       { toast(`يجب إدخال ${partyLabel}`, 'error'); return; }
-    if (!form.description.trim()) { toast('يجب إدخال البيان', 'error'); return; }
+    if (!isSuperAdmin(user)) {
+      if (!form.amount || isNaN(parseFloat(form.amount))) { toast('يجب إدخال مبلغ صحيح', 'error'); return; }
+      if (!form.party.trim())       { toast(`يجب إدخال ${partyLabel}`, 'error'); return; }
+      if (!form.description.trim()) { toast('يجب إدخال البيان', 'error'); return; }
+    }
     setSaving(true);
     const payload = { ...form, amount: parseFloat(form.amount), type, created_by: user?.id };
     const { error } = isEdit
@@ -17800,6 +17834,7 @@ function App() {
   // ref يحفظ المستخدم الحالي — يمنع إعادة تعيين الـ role عند تجديد الـ token
   const userRef = React.useRef(null);
   const setUserSafe = (u) => { userRef.current = u; setUser(u); };
+  useEffect(() => { CURRENT_USER = user; }, [user]);
 
   // موظف بدون صلاحية "لوحة التحكم" (مثلاً موظف مقتصر على الطلبات اليومية فقط) —
   // ما تخلّيه واقف عالافتراضي "dashboard" اللي ما يقدر يشوفه، وجّهه لأول صفحة إله صلاحية عليها
@@ -17826,7 +17861,7 @@ function App() {
           } catch(pe) {
             console.warn('Profile fetch timeout on restore:', pe.message);
           }
-          const u = { id: session.user.id, email: session.user.email, ...(profile || {}), id: session.user.id };
+          const u = { ...(profile || {}), id: session.user.id, email: session.user.email };
           setUserSafe(u);
           loadData(session.user.id, u.role || 'employee');
         }
@@ -17856,7 +17891,7 @@ function App() {
           } catch(pe) {}
           // إذا فشل الجلب نحتفظ بالـ role الموجود لنفس المستخدم
           const fallback = existing?.id === session.user.id ? existing : {};
-          const u = { id: session.user.id, email: session.user.email, ...fallback, ...(profile || {}), id: session.user.id };
+          const u = { ...fallback, ...(profile || {}), id: session.user.id, email: session.user.email };
           setUserSafe(u);
           loadData(session.user.id, u.role || 'employee');
         } catch(e) { console.warn('Auth change error:', e); }
