@@ -2068,7 +2068,7 @@ function PqItemsTable({ detailed, children }) {
 const DEFAULT_STAMP = { bottom: 20, right: 120, w: 500 };
 
 /* ===================== QUOTE / INVOICE PREVIEW ===================== */
-function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
+function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft, onConfirmDraftAsTender }) {
   const title = docType === 'invoice' ? 'فاتورة' : docType === 'order' ? 'طلبية' : 'عرض أسعار';
   const titleEn = docType === 'invoice' ? 'TAX INVOICE' : docType === 'order' ? 'PURCHASE ORDER' : 'Offer - عرض أسعار';
   // ترويسة شركة بديلة — فقط لعروض الأسعار الصادرة باسم شركة أخرى (quotes only)
@@ -2525,6 +2525,7 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft }) {
               {showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}
             </button>
             {onConfirmDraft && <button className="btn btn-success btn-sm" onClick={onConfirmDraft}>✅ اعتماد العرض</button>}
+            {onConfirmDraftAsTender && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={onConfirmDraftAsTender}>📑 اعتماد كعطاء</button>}
             <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={exportToExcel} title="تصدير بيانات المستند إلى ملف Excel">📊 Excel</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
@@ -2769,18 +2770,29 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
   const [phone, setPhone] = useState(prefillPhone||'');
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [category, setCategory] = useState('');
+  const [city, setCity] = useState('');
+  const [dbCats, setDbCats] = useState(CUST_CATS);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    sb.from('customer_categories').select('name').order('sort_order').order('name')
+      .then(({data})=>{ if(data?.length) setDbCats(data.map(c=>c.name)); });
+  }, []);
+
+  const missingRequired = !name.trim() || !phone.trim() || !contactName.trim() || !contactPhone.trim() || !category.trim() || !city.trim();
+
   const handleSave = async () => {
-    if (!name.trim() && !isSuperAdmin(user)) { toast('يجب إدخال اسم العميل','error'); return; }
+    if (missingRequired && !isSuperAdmin(user)) { toast('كل الحقول إلزامية — رجاءً عبّي جميع الخانات', 'error'); return; }
     setLoading(true);
     try {
       const { data: genCode, error: genErr } = await sb.rpc('generate_customer_number');
       if (genErr) throw genErr;
-      const approvalStatus = (user?.role === 'admin') ? 'approved' : 'pending';
+      const approvalStatus = 'pending'; // كل عميل جديد يروح لقيد الموافقة، حتى لو أضافه مدير النظام
       const payload = {
         name: name.trim(), phone: phone.trim()||null,
         contact1_name: contactName.trim()||null, contact1_phone: contactPhone.trim()||null,
+        category: category.trim()||null, city: city.trim()||null,
         customer_code: genCode, created_by: user?.id||null,
         approval_status: approvalStatus,
       };
@@ -2806,21 +2818,33 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
             <input className="form-control" autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="اسم الجهة / الشركة"/>
           </div>
           <div className="form-group mb-3">
-            <label className="form-label">رقم الهاتف</label>
+            <label className="form-label">رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" dir="ltr" value={phone} onChange={e=>setPhone(e.target.value)}/>
           </div>
           <div className="form-group mb-3">
-            <label className="form-label">اسم عميل المتابعة</label>
+            <label className="form-label">المحافظة <span style={{color:'var(--danger)'}}>*</span></label>
+            <select className="form-control" value={city} onChange={e=>setCity(e.target.value)}>
+              <option value="">اختر المحافظة</option>
+              {CUST_GOVS.map(g=><option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <div className="form-group mb-3">
+            <label className="form-label">التصنيف <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" list="quick-cust-cats" value={category} onChange={e=>setCategory(e.target.value)} placeholder="اختر أو اكتب التصنيف"/>
+            <datalist id="quick-cust-cats">{dbCats.map(c=><option key={c} value={c}/>)}</datalist>
+          </div>
+          <div className="form-group mb-3">
+            <label className="form-label">اسم عميل المتابعة <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" value={contactName} onChange={e=>setContactName(e.target.value)} placeholder="الشخص المسؤول للمتابعة معه"/>
           </div>
           <div className="form-group">
-            <label className="form-label">رقم هاتف عميل المتابعة</label>
+            <label className="form-label">رقم هاتف عميل المتابعة <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" dir="ltr" value={contactPhone} onChange={e=>setContactPhone(e.target.value)}/>
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!name.trim()}>{loading?'...':'💾 حفظ العميل'}</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(missingRequired && !isSuperAdmin(user))}>{loading?'...':'💾 حفظ العميل'}</button>
         </div>
       </div>
     </div>
@@ -4685,6 +4709,16 @@ function QuotesList({ user, quotes, onReload }) {
     onReload();
   };
 
+  const confirmDraftAsTender = async (q) => {
+    if (!confirm(`اعتماد المسودة "${q.number}" كعطاء رسمي مباشرة؟\nسيتم تخصيص رقم رسمي جديد وتصنيفها كعطاء.`)) return;
+    const { error } = await sb.from('quotations').update({ status: 'sent', quote_type: 'tender' }).eq('id', q.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    createLog(user, `اعتمد المسودة ${q.number} كعطاء رسمي`, 'quote', q.id, q.number);
+    toast('تم الاعتماد كعطاء وتخصيص رقم رسمي ✓', 'success');
+    setPreviewQ(null);
+    onReload();
+  };
+
   const markPriced = async (q) => {
     if (!confirm(`تأكيد أن العرض "${q.number}" أصبح مسعّراً بالكامل؟`)) return;
     const { error } = await sb.from('quotations').update({ needs_pricing: false }).eq('id', q.id);
@@ -5097,6 +5131,7 @@ function QuotesList({ user, quotes, onReload }) {
                     {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&!q.needs_pricing&&<button className="btn btn-ghost btn-sm" onClick={()=>setPricingTarget(q)}>🏷️ طلب تسعير</button>}
                     {q.needs_pricing&&(q.pricing_requested_to===user?.id||q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>markPriced(q)}>✅ تم التسعير</button>}
                     <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>
+                    <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>confirmDraftAsTender(q)}>📑 اعتماد كعطاء</button>
                     {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
                   </div>
                 </div>
@@ -5147,6 +5182,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'🏢', label:'نسخ باسم شركة أخرى', hidden:!hasPerm(user,'quotes_clone_other_company'), onClick:()=>setAltCloneTarget(q) },
                       { icon:'✅', label:'اعتماد', onClick:()=>confirmDraft(q) },
+                      { icon:'📑', label:'اعتماد كعطاء', onClick:()=>confirmDraftAsTender(q) },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
                     ]}/>
                   </td>
@@ -5345,7 +5381,7 @@ function QuotesList({ user, quotes, onReload }) {
       {editing && editing._convertToInvoice && (
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
-      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null}/>}
+      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null} onConfirmDraftAsTender={previewing?.status==='draft' ? ()=>confirmDraftAsTender(previewing) : null}/>}
       {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={(orderNo)=>{ const q=orderingQ; setOrderingQ(null); setArchiveConvertedQ({...q, _orderNo: orderNo||''}); onReload(); }} onClose={()=>setOrderingQ(null)}/>}
       {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote={`تم تحويل العرض إلى طلب${archiveConvertedQ._orderNo ? ` رقم ${archiveConvertedQ._orderNo}` : ''}`} onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
@@ -7721,7 +7757,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         if (genErr) throw genErr;
         payload.customer_code = genCode;
         payload.created_by = user?.id || null;
-        payload.approval_status = (user?.role === 'admin') ? 'approved' : 'pending';
+        payload.approval_status = 'pending'; // كل عميل جديد يروح لقيد الموافقة، حتى لو أضافه مدير النظام
         const {data: inserted, error} = await sb.from('customers').insert(payload).select('id,name,customer_code,approval_status').single();
         if(error) throw error;
         createLog(user, `أضاف عميلاً جديداً: ${form.name} (#${genCode})${payload.approval_status==='pending' ? ' — بانتظار موافقة المدير' : ''}`, 'customer', inserted.id, form.name);
@@ -13319,10 +13355,20 @@ function ChangeRequestsPage({ user }) {
     load();
   }, []);
 
+  const isAdmin = user?.role === 'admin';
+
   const load = async () => {
     setLoading(true);
     const {data} = await sb.from('change_requests').select('*').order('created_at',{ascending:false});
     setRequests(data||[]); setLoading(false);
+  };
+
+  const changeStatusInline = async (id, newStatus) => {
+    const {data,error} = await sb.from('change_requests')
+      .update({status:newStatus,updated_at:new Date().toISOString()})
+      .eq('id',id).select().single();
+    if (!error) { setRequests(prev=>prev.map(r=>r.id===id?data:r)); toast('تم تحديث الحالة','success'); }
+    else toast('خطأ في التحديث','error');
   };
 
   if (selected) return (
@@ -13374,7 +13420,15 @@ function ChangeRequestsPage({ user }) {
                     <tr key={r.id} style={{cursor:'pointer'}} onClick={()=>setSelected(r)}>
                       <td className="font-bold">{r.title}</td>
                       <td><span className={`badge cr-priority-${r.priority}`}>{CR_PRIORITY[r.priority]||r.priority}</span></td>
-                      <td><span className={`badge cr-status-${r.status}`}>{CR_STATUS[r.status]||r.status}</span></td>
+                      <td>
+                        {isAdmin ? (
+                          <select className={`badge cr-status-${r.status}`} style={{border:'1px solid var(--gray-200)',cursor:'pointer',fontFamily:'inherit'}}
+                            value={r.status} onClick={e=>e.stopPropagation()}
+                            onChange={e=>{e.stopPropagation();changeStatusInline(r.id,e.target.value);}}>
+                            {Object.entries(CR_STATUS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                        ) : <span className={`badge cr-status-${r.status}`}>{CR_STATUS[r.status]||r.status}</span>}
+                      </td>
                       <td className="text-sm text-muted">{profiles[r.user_id]||'—'}</td>
                       <td className="text-sm text-muted">{new Date(r.created_at).toLocaleDateString('ar-JO')}</td>
                       <td style={{whiteSpace:'nowrap'}}>
