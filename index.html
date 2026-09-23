@@ -5514,9 +5514,9 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
   }));
 
   const handleSubmit = async () => {
+    const clean = items.filter(i => i.item_name.trim());
     if (!isSuperAdmin(user)) {
       if (!form.customer_name.trim()) { toast('يجب إدخال اسم العميل','error'); return; }
-      const clean = items.filter(i => i.item_name.trim());
       if (!clean.length) { toast('الطلب يجب أن يحتوي صنفاً واحداً على الأقل','error'); return; }
     }
     setSaving(true);
