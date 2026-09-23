@@ -1537,6 +1537,7 @@ const NAV = [
   { id: 'letters',   label: 'الكتب الرسمية الصادرة', icon: '📝', perm: 'letters_access' },
   { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
   { id: 'catalog',   label: 'إدارة الأصناف',       icon: '🗂️', perm: 'catalog_access' },
+  { id: 'chemicals', label: 'إدارة الكيماويات', icon: '🧪', perm: 'chemicals_access' },
   { id: 'properties', label: 'إدارة الأصول', icon: '🏘️', visible: isPropertiesUser },
   { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
@@ -6975,6 +6976,19 @@ const PERM_GROUPS = [
     { key: 'catalog_edit',   label: 'إضافة وتعديل الأصناف' },
     { key: 'catalog_delete', label: 'حذف الأصناف وإدارة الفئات' },
   ]},
+  { label: 'إدارة الكيماويات', icon: '🧪', perms: [
+    { key: 'chemicals_access',     label: 'الوصول لإدارة الكيماويات' },
+    { key: 'chemicals_edit',       label: 'إضافة وتعديل المواد والوصفات والوثائق' },
+    { key: 'chemicals_delete',     label: 'حذف المواد والوثائق' },
+    { key: 'chem_recipes_approve', label: 'اعتماد الوصفات (مسؤول المختبر)' },
+    { key: 'chem_stock_receive',   label: 'استلام الكيماويات (bulk) من المورد' },
+    { key: 'chem_production',      label: 'إنشاء تشغيلات تعبئة/تحضير وإلغاؤها' },
+    { key: 'chem_stock_adjust',    label: 'تسويات مخزون الكيماويات' },
+    { key: 'chem_coa_issue',       label: 'إدخال نتائج الفحص وإصدار COA' },
+    { key: 'chem_coa_approve',     label: 'اعتماد/رفض شهادات التحليل (مسؤول المختبر)' },
+    { key: 'chem_orders_create',   label: 'إنشاء طلبات تجهيز وإسنادها (المدير / مسؤول الطلبيات)' },
+    { key: 'chem_orders_prepare',  label: 'تجهيز الطلبات والصرف من المخزون (الكيميائي)' },
+  ]},
   { label: 'الكتب والنماذج', icon: '📝', perms: [
     { key: 'letters_access',  label: 'الوصول للكتب الرسمية والنماذج' },
     { key: 'letters_manage',  label: 'حذف الكتب وإدارة تصنيفاتها' },
@@ -7014,6 +7028,9 @@ const DEFAULT_EMPLOYEE_PERMS = {
   customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
   export_customers_create: true, export_customers_edit: false, export_customers_delete: false,
   catalog_access: true, catalog_edit: false,    catalog_delete: false,
+  chemicals_access: false, chemicals_edit: false, chemicals_delete: false, chem_recipes_approve: false,
+  chem_stock_receive: false, chem_production: false, chem_stock_adjust: false, chem_coa_issue: false, chem_coa_approve: false,
+  chem_orders_create: false, chem_orders_prepare: false,
   letters_access: true, letters_manage: false,
   archive_access: true, activity_access: false,
   accounting_access: true,
@@ -12653,6 +12670,2984 @@ function ProcurementPage({ user }) {
   );
 }
 
+/* ===================== إدارة الكيماويات ===================== */
+/* سجل المواد (CAS/GHS/تخزين/عبوات/مواصفات COA) + وثائق MSDS كروابط Drive + الوصفات للمحاليل المحضّرة.
+   المخزون والتشغيلات وطلبات التجهيز وإصدار الـCOA = مراحل لاحقة (جداول منفصلة تماماً عن مخزون الكتالوج). */
+const CHEM_CATEGORIES = {
+  chemical:  { label:'مواد كيميائية',      icon:'⚗️' },
+  reagent:   { label:'محاليل وكواشف',      icon:'🧪' },
+  stain:     { label:'صبغات',              icon:'🎨' },
+  indicator: { label:'أدلة (Indicators)',  icon:'🌈' },
+  media:     { label:'أوساط زرعية',        icon:'🧫' },
+  natural:   { label:'زيوت ومواد طبيعية',  icon:'🌿' },
+  bio:       { label:'مواد حيوية',         icon:'🧬' },
+};
+const CHEM_PROD_TYPES = { repack:'إعادة تعبئة', prepare:'تحضير (وصفة)' };
+const CHEM_STATES = { solid:'صلب', liquid:'سائل', gas:'غاز' };
+const GHS_PICTOGRAMS = [
+  { code:'GHS01', label:'متفجّر',        icon:'💥' },
+  { code:'GHS02', label:'قابل للاشتعال', icon:'🔥' },
+  { code:'GHS03', label:'مؤكسد',         icon:'⭕' },
+  { code:'GHS04', label:'غاز مضغوط',     icon:'🛢️' },
+  { code:'GHS05', label:'أكّال',          icon:'🧪' },
+  { code:'GHS06', label:'سام',           icon:'☠️' },
+  { code:'GHS07', label:'مهيّج / ضار',    icon:'❗' },
+  { code:'GHS08', label:'خطر صحي',       icon:'⚕️' },
+  { code:'GHS09', label:'خطر بيئي',      icon:'🐟' },
+];
+const CHEM_SIGNAL_WORDS = { danger:'Danger — خطر', warning:'Warning — تحذير' };
+const CHEM_DOC_TYPES = { msds:'MSDS / SDS', supplier_coa:'COA المورد', tds:'بيانات فنية (TDS)', other:'أخرى' };
+const CHEM_PACK_UNITS = ['g','kg','mL','L','pcs','kit'];
+const CHEM_RECIPE_UNITS = ['mL','L','g','kg','kit'];
+const CHEM_SPEC_TYPES = { min:'≥ حد أدنى', max:'≤ حد أعلى', range:'بين قيمتين', text:'نص (مطابق)' };
+const CHEM_MSDS_WARN_DAYS = 60;
+
+// رقم CAS: خانة التحقق = مجموع (كل رقم × ترتيبه من اليمين) mod 10
+const isValidCAS = (cas) => {
+  const m = /^(\d{2,7})-(\d{2})-(\d)$/.exec((cas||'').trim());
+  if (!m) return false;
+  const sum = (m[1]+m[2]).split('').reverse().reduce((s,d,i)=>s+Number(d)*(i+1),0);
+  return sum % 10 === Number(m[3]);
+};
+const chemNum = (v) => (v===null || v===undefined || v==='') ? '' : String(Math.round(Number(v)*10000)/10000);
+const formatChemSpec = (s) => {
+  const u = s.unit ? ' '+s.unit : '';
+  if (s.spec_type==='min')   return `≥ ${chemNum(s.min_value)}${u}`;
+  if (s.spec_type==='max')   return `≤ ${chemNum(s.max_value)}${u}`;
+  if (s.spec_type==='range') return `${chemNum(s.min_value)} – ${chemNum(s.max_value)}${u}`;
+  return s.text_value || '—';
+};
+const formatChemPack = (p) => `${chemNum(p.size)} ${p.unit}${p.container?` (${p.container})`:''}`;
+const chemTableMissing = (err) => !!err && (err.code==='42P01' || err.code==='PGRST205');
+
+// حالة الـMSDS الحالية لمادة: none | expired | due | ok
+const chemMsdsStatus = (docs) => {
+  const cur = (docs||[]).filter(d=>d.doc_type==='msds' && d.is_current);
+  if (!cur.length) return 'none';
+  const dates = cur.map(d=>d.review_date).filter(Boolean).map(d=>new Date(d+'T00:00:00'));
+  if (!dates.length) return 'ok';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days = (Math.min(...dates) - today) / 86400000;
+  if (days < 0) return 'expired';
+  if (days <= CHEM_MSDS_WARN_DAYS) return 'due';
+  return 'ok';
+};
+const CHEM_MSDS_META = {
+  none:    { label:'بدون MSDS',           color:'#92400e', bg:'#fef3c7' },
+  expired: { label:'MSDS فات موعد مراجعتها', color:'#b91c1c', bg:'#fee2e2' },
+  due:     { label:'MSDS تقترب مراجعتها', color:'#92400e', bg:'#fef3c7' },
+  ok:      { label:'MSDS سارية',          color:'#166534', bg:'#dcfce7' },
+};
+const CHEM_RECIPE_META = {
+  none:     { label:'بدون وصفة',  color:'#92400e', bg:'#fef3c7' },
+  draft:    { label:'مسودة — بانتظار الاعتماد', color:'#1e40af', bg:'#dbeafe' },
+  approved: { label:'معتمدة',     color:'#166534', bg:'#dcfce7' },
+};
+
+function ChemPill({ color, bg, children, title }) {
+  return <span title={title} style={{display:'inline-block',fontSize:11,fontWeight:700,color,background:bg,borderRadius:20,padding:'2px 9px',whiteSpace:'nowrap'}}>{children}</span>;
+}
+
+// رموز GHS كمعيّنات حمراء الإطار (نفس شكل الملصقات الرسمية)
+function GhsIcons({ codes, size=24 }) {
+  const list = GHS_PICTOGRAMS.filter(g => (codes||[]).includes(g.code));
+  if (!list.length) return null;
+  return (
+    <div style={{display:'flex',gap:size*0.35,flexWrap:'wrap',alignItems:'center',padding:size*0.15}}>
+      {list.map(g=>(
+        <div key={g.code} title={`${g.code} — ${g.label}`}
+          style={{width:size,height:size,border:'2px solid #dc2626',background:'#fff',transform:'rotate(45deg)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <span style={{transform:'rotate(-45deg)',fontSize:size*0.5,lineHeight:1}}>{g.icon}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChemSection({ title, children, action }) {
+  return (
+    <div style={{border:'1.5px solid #e2edf5',borderRadius:12,padding:14,marginBottom:14}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+        <div style={{fontWeight:800,color:'#1a2e3d',fontSize:13}}>{title}</div>
+        <div style={{flex:1}}/>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/* ---- المرحلة 2: وحدات، أرصدة، تشغيلات، شهادات ---- */
+const CHEM_LOT_STATUS = {
+  quarantine: { label:'حجر — بانتظار COA', color:'#92400e', bg:'#fef3c7' },
+  approved:   { label:'معتمدة — متاحة',   color:'#166534', bg:'#dcfce7' },
+  rejected:   { label:'مرفوضة',           color:'#b91c1c', bg:'#fee2e2' },
+};
+const CHEM_COA_STATUS = {
+  draft:    { label:'COA مسودة',  color:'#1e40af', bg:'#dbeafe' },
+  approved: { label:'COA معتمدة', color:'#166534', bg:'#dcfce7' },
+  rejected: { label:'COA مرفوضة', color:'#b91c1c', bg:'#fee2e2' },
+};
+const CHEM_ADJ_REASONS = ['تالف / كسر','منتهي الصلاحية','فرق جرد','عيّنة فحص','أخرى'];
+const CHEM_EXPIRY_WARN_DAYS = 90;
+
+// التحويل للوحدة الأساسية: الكتلة → g ، الحجم → mL ، العدد → pcs
+const CHEM_UNIT_INFO = { mg:{base:'g',f:0.001}, g:{base:'g',f:1}, kg:{base:'g',f:1000}, mL:{base:'mL',f:1}, L:{base:'mL',f:1000}, pcs:{base:'pcs',f:1}, kit:{base:'pcs',f:1} };
+const chemToBase = (qty, unit) => { const u = CHEM_UNIT_INFO[unit]; return u ? { qty: Number(qty)*u.f, base: u.base } : null; };
+const chemMaterialBase = (m) => m?.physical_state==='liquid' ? 'mL' : (m?.category==='stain' && m?.production_type==='prepare' && /kit/i.test(m?.name_en||'')) ? 'pcs' : 'g';
+const fmtChemQty = (qty, base) => {
+  const n = Number(qty)||0;
+  if (base==='g'  && Math.abs(n) >= 1000) return `${chemNum(n/1000)} kg`;
+  if (base==='mL' && Math.abs(n) >= 1000) return `${chemNum(n/1000)} L`;
+  return `${chemNum(n)} ${base||''}`;
+};
+const chemDaysTo = (d) => { if (!d) return null; const t = new Date(); t.setHours(0,0,0,0); return Math.round((new Date(d+'T00:00:00') - t)/86400000); };
+const chemExpiryPill = (d) => {
+  const days = chemDaysTo(d);
+  if (days===null) return null;
+  if (days < 0) return <ChemPill color="#b91c1c" bg="#fee2e2">منتهية {d}</ChemPill>;
+  if (days <= CHEM_EXPIRY_WARN_DAYS) return <ChemPill color="#92400e" bg="#fef3c7">تنتهي {d}</ChemPill>;
+  return <ChemPill color="#374151" bg="#f3f4f6">صلاحية {d}</ChemPill>;
+};
+const chemAddMonths = (dateStr, months) => { const d = new Date(dateStr+'T00:00:00'); d.setMonth(d.getMonth()+Number(months)); return d.toISOString().slice(0,10); };
+const chemMinDate = (...ds) => ds.filter(Boolean).sort()[0] || '';
+
+// قراءة نتيجة فحص نصية: "99.4" ، "< 0.01 %" ، "Less than 0.005%" ، "NMT 0.1"
+const parseChemResult = (s) => {
+  const t = String(s||'').trim().replace(',', '.');
+  if (!t) return null;
+  let op = '=';
+  if (/^(<|≤|less than|nmt|not more than|below)/i.test(t)) op = '<';
+  else if (/^(>|≥|more than|nlt|not less than|above)/i.test(t)) op = '>';
+  const m = t.match(/-?\d+(\.\d+)?/);
+  return m ? { op, val: parseFloat(m[0]) } : null;
+};
+// مطابقة تلقائية: true/false، أو null لو ما بتنحسب تلقائياً (نص/صيغة غير مفهومة)
+const autoChemPass = (spec, result) => {
+  if (!String(result||'').trim()) return null;
+  if (spec.spec_type==='text') return null;
+  const r = parseChemResult(result);
+  if (!r) return null;
+  const min = spec.min_value==null||spec.min_value==='' ? null : Number(spec.min_value);
+  const max = spec.max_value==null||spec.max_value==='' ? null : Number(spec.max_value);
+  if (spec.spec_type==='min')   return r.op==='<' ? false : r.val >= min;
+  if (spec.spec_type==='max')   return r.op==='>' ? false : r.val <= max;
+  if (spec.spec_type==='range') return r.op==='=' ? (r.val >= min && r.val <= max) : null;
+  return null;
+};
+const chemRpcError = (err) => {
+  const msg = err?.message || '';
+  if (err?.code==='23503') return 'العنصر مستخدم بسجلات أخرى (تشغيلات/حركات) — لا يمكن حذفه';
+  return msg.replace(/^.*?ERROR:\s*/,'');
+};
+
+function ChemicalsPage({ user }) {
+  // الكيميائي اللي شغلته التجهيز بس بيفتح الصفحة على طلباته مباشرة
+  const [tab, setTab] = useState(() => hasPerm(user,'chem_orders_prepare') && !hasPerm(user,'chemicals_edit') ? 'orders' : 'materials');
+  const [materials, setMaterials] = useState([]);
+  const [packs, setPacks] = useState([]);
+  const [specs, setSpecs] = useState([]);
+  const [docs, setDocs] = useState([]);
+  const [recipes, setRecipes] = useState([]);
+  const [receipts, setReceipts] = useState([]);
+  const [lots, setLots] = useState([]);
+  const [coas, setCoas] = useState([]);
+  const [receiptBal, setReceiptBal] = useState({});
+  const [packBal, setPackBal] = useState({});
+  const [suppliers, setSuppliers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [phase2Error, setPhase2Error] = useState(null);
+  const [prepOrders, setPrepOrders] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [phase3Error, setPhase3Error] = useState(null);
+
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [msdsFilter, setMsdsFilter] = useState('all');
+  const [hazFilter, setHazFilter] = useState('all');
+  const [recipeFilter, setRecipeFilter] = useState('all');
+  const [recFilter, setRecFilter] = useState('available');
+  const [lotFilter, setLotFilter] = useState('all');
+  const [stockFilter, setStockFilter] = useState('all');
+  const [prepFilter, setPrepFilter] = useState(() => hasPerm(user,'chem_orders_prepare') && !hasPerm(user,'chem_orders_create') ? 'mine' : 'open');
+  const [prepForm, setPrepForm] = useState(null);         // null | 'new' | order
+  const [prepView, setPrepView] = useState(null);         // order id
+  const [ledgerMat, setLedgerMat] = useState('');
+  const [specsFilter, setSpecsFilter] = useState('all');
+
+  const [editingMat, setEditingMat] = useState(null);
+  const [viewingId, setViewingId] = useState(null);
+  const [recipeView, setRecipeView] = useState(null);
+  const [recipeEdit, setRecipeEdit] = useState(null);
+  const [receiptForm, setReceiptForm] = useState(null);   // null | 'new' | receipt
+  const [lotForm, setLotForm] = useState(null);           // null | { materialId? }
+  const [lotView, setLotView] = useState(null);           // lot id
+  const [adjustFor, setAdjustFor] = useState(null);       // material id
+
+  const canEdit = hasPerm(user,'chemicals_edit');
+  const canDelete = hasPerm(user,'chemicals_delete');
+  const canReceive = hasPerm(user,'chem_stock_receive');
+  const canProduce = hasPerm(user,'chem_production');
+  const canAdjust = hasPerm(user,'chem_stock_adjust');
+
+  const load = async () => {
+    setLoading(true);
+    const res = await Promise.all([
+      sb.from('chem_materials').select('*').order('name_en'),
+      sb.from('chem_pack_sizes').select('*').order('size'),
+      sb.from('chem_specs').select('*').order('seq'),
+      sb.from('chem_documents').select('*').order('created_at',{ascending:false}),
+      sb.from('chem_recipes').select('*, chem_recipe_items(*)'),
+    ]);
+    const err = res.find(r=>r.error)?.error;
+    if (err) { setLoadError(err); setLoading(false); return; }
+    setLoadError(null);
+    setMaterials(res[0].data||[]); setPacks(res[1].data||[]); setSpecs(res[2].data||[]);
+    setDocs(res[3].data||[]); setRecipes(res[4].data||[]);
+
+    const r2 = await Promise.all([
+      sb.from('chem_receipts').select('*').order('received_date',{ascending:false}),
+      sb.from('chem_lots').select('*, chem_lot_packs(*), chem_lot_inputs!chem_lot_inputs_lot_id_fkey(*)').order('created_at',{ascending:false}),
+      sb.from('chem_coas').select('*'),
+      sb.from('chem_receipt_balances').select('*'),
+      sb.from('chem_pack_balances').select('*'),
+      sb.from('suppliers').select('id,name').eq('is_active',true).order('name'),
+    ]);
+    const err2 = r2.slice(0,5).find(r=>r.error)?.error;
+    if (err2) { setPhase2Error(err2); }
+    else {
+      setPhase2Error(null);
+      setReceipts(r2[0].data||[]); setLots(r2[1].data||[]); setCoas(r2[2].data||[]);
+      setReceiptBal(Object.fromEntries((r2[3].data||[]).map(b=>[b.receipt_id, Number(b.balance)])));
+      setPackBal(Object.fromEntries((r2[4].data||[]).map(b=>[b.lot_id+'|'+b.pack_size_id, Number(b.balance)])));
+    }
+    setSuppliers(r2[5].data||[]);
+
+    const r3 = await Promise.all([
+      sb.from('chem_prep_orders').select('*, chem_prep_order_items!chem_prep_order_items_order_id_fkey(*), chem_prep_order_picks!chem_prep_order_picks_order_id_fkey(*)').order('created_at',{ascending:false}),
+      sb.from('profiles').select('id,full_name,role,is_active,permissions').order('full_name'),
+      sb.from('customers').select('id,name').order('name'),
+    ]);
+    if (r3[0].error) setPhase3Error(r3[0].error);
+    else { setPhase3Error(null); setPrepOrders(r3[0].data||[]); }
+    setProfiles(r3[1].data||[]); setCustomers(r3[2].data||[]);
+    setLoading(false);
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const group = (rows) => rows.reduce((m,r)=>{ (m[r.material_id] = m[r.material_id] || []).push(r); return m; },{});
+  const packsBy = React.useMemo(()=>group(packs),[packs]);
+  const specsBy = React.useMemo(()=>group(specs),[specs]);
+  const docsBy  = React.useMemo(()=>group(docs),[docs]);
+  const recipeBy = React.useMemo(()=>recipes.reduce((m,r)=>{ m[r.material_id]=r; return m; },{}),[recipes]);
+  const matById = React.useMemo(()=>materials.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[materials]);
+  const packById = React.useMemo(()=>packs.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[packs]);
+  const receiptById = React.useMemo(()=>receipts.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[receipts]);
+  const lotById = React.useMemo(()=>lots.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[lots]);
+  const coaByLot = React.useMemo(()=>coas.reduce((m,x)=>{ m[x.lot_id]=x; return m; },{}),[coas]);
+  const profilesById = React.useMemo(()=>profiles.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[profiles]);
+  const prepById = React.useMemo(()=>prepOrders.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[prepOrders]);
+
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (m) => !q || [m?.name_en,m?.name_ar,m?.code,m?.cas_no,m?.formula].some(v=>(v||'').toLowerCase().includes(q));
+
+  const filteredMats = materials.filter(m =>
+    matchesSearch(m) &&
+    (catFilter==='all' || m.category===catFilter) &&
+    (typeFilter==='all' || m.production_type===typeFilter) &&
+    (msdsFilter==='all' || chemMsdsStatus(docsBy[m.id])===msdsFilter || (msdsFilter==='attention' && chemMsdsStatus(docsBy[m.id])!=='ok')) &&
+    (hazFilter==='all' || (hazFilter==='hazard' ? (m.ghs_pictograms||[]).length>0 : !(m.ghs_pictograms||[]).length)) &&
+    (specsFilter==='all' || (specsFilter==='pending' ? m.specs_reviewed===false : m.specs_reviewed!==false))
+  );
+  const prepMats = materials.filter(m => m.production_type==='prepare');
+  const filteredPrep = prepMats.filter(m => {
+    const st = recipeBy[m.id]?.status || 'none';
+    return matchesSearch(m) && (recipeFilter==='all' || st===recipeFilter);
+  });
+  const filteredReceipts = receipts.filter(r => {
+    const bal = receiptBal[r.id] || 0, days = chemDaysTo(r.expiry_date);
+    const okF = recFilter==='all' || (recFilter==='available' && bal>0) || (recFilter==='empty' && bal<=0)
+      || (recFilter==='expiring' && bal>0 && days!==null && days<=CHEM_EXPIRY_WARN_DAYS);
+    return okF && (matchesSearch(matById[r.material_id]) || (r.receipt_no||'').toLowerCase().includes(q) || (r.manufacturer_lot||'').toLowerCase().includes(q));
+  });
+  const filteredLots = lots.filter(l =>
+    (lotFilter==='all' || l.status===lotFilter) &&
+    (matchesSearch(matById[l.material_id]) || (l.lot_no||'').toLowerCase().includes(q))
+  );
+
+  // المخزون مجمّع لكل مادة: bulk (من الاستلامات) + عبوات (من التشغيلات) مفصولة حسب الحالة
+  const stockRows = React.useMemo(() => {
+    const out = {};
+    const get = (mid) => out[mid] || (out[mid] = { bulk:0, bulkBase:null, bulkExpiring:0, packs:{} });
+    receipts.forEach(r => {
+      const bal = receiptBal[r.id] || 0; if (bal <= 0) return;
+      const row = get(r.material_id); row.bulk += bal; row.bulkBase = r.base_unit;
+      const d = chemDaysTo(r.expiry_date); if (d!==null && d<=CHEM_EXPIRY_WARN_DAYS) row.bulkExpiring += bal;
+    });
+    lots.forEach(l => (l.chem_lot_packs||[]).forEach(lp => {
+      const bal = packBal[l.id+'|'+lp.pack_size_id] || 0; if (bal <= 0) return;
+      const row = get(l.material_id);
+      const p = row.packs[lp.pack_size_id] || (row.packs[lp.pack_size_id] = { approved:0, quarantine:0, rejected:0, expiring:0 });
+      p[l.status] += bal;
+      const d = chemDaysTo(l.expiry_date); if (l.status==='approved' && d!==null && d<=CHEM_EXPIRY_WARN_DAYS) p.expiring += bal;
+    }));
+    return out;
+  }, [receipts, lots, receiptBal, packBal]);
+  const stockMats = materials.filter(m => stockRows[m.id] && matchesSearch(m) && (
+    stockFilter==='all' ||
+    (stockFilter==='expiring' && (stockRows[m.id].bulkExpiring>0 || Object.values(stockRows[m.id].packs).some(p=>p.expiring>0))) ||
+    (stockFilter==='quarantine' && Object.values(stockRows[m.id].packs).some(p=>p.quarantine>0))
+  ));
+
+  const filteredPrepOrders = prepOrders.filter(o =>
+    (prepFilter==='all' || (prepFilter==='open' && ['new','in_progress','ready'].includes(o.status))
+      || (prepFilter==='mine' && o.assigned_to===user.id && ['new','in_progress','ready'].includes(o.status)) || o.status===prepFilter) &&
+    (!q || (o.order_no||'').toLowerCase().includes(q) || (o.customer_name||'').toLowerCase().includes(q)
+      || (o.chem_prep_order_items||[]).some(i=>matchesSearch(matById[i.material_id])))
+  ).sort((a,b)=>(b.priority==='urgent')-(a.priority==='urgent'));
+  const openPrep = prepOrders.filter(o=>['new','in_progress'].includes(o.status)).length;
+  const noMsds = materials.filter(m=>chemMsdsStatus(docsBy[m.id])!=='ok').length;
+  const quarantineLots = lots.filter(l=>l.status==='quarantine').length;
+  const matFilterActive = catFilter!=='all' || typeFilter!=='all' || msdsFilter!=='all' || hazFilter!=='all' || specsFilter!=='all';
+  const pendingSpecs = materials.filter(m=>m.specs_reviewed===false).length;
+
+  const deleteMat = async (m) => {
+    if (!confirm(`حذف المادة "${m.name_en}" مع عبواتها ومواصفاتها ووثائقها ووصفتها؟`)) return;
+    const { error } = await sb.from('chem_materials').delete().eq('id', m.id);
+    if (error) { toast(error.code==='23503' ? 'المادة عليها استلامات أو تشغيلات — عطّلها بدل الحذف' : 'خطأ: '+error.message,'error'); return; }
+    createLog(user, `حذف المادة الكيميائية ${m.name_en}`, 'chem_material', m.id, m.code);
+    toast('تم الحذف','success'); setViewingId(null); load();
+  };
+  const deleteReceipt = async (r) => {
+    if (!confirm(`حذف الاستلام ${r.receipt_no}؟`)) return;
+    const { error } = await sb.from('chem_receipts').delete().eq('id', r.id);
+    if (error) { toast(error.code==='23503' ? 'انصرف من هذا الاستلام بتشغيلات — لا يمكن حذفه (استخدم تسوية)' : 'خطأ: '+error.message,'error'); return; }
+    createLog(user, `حذف استلام كيماويات ${r.receipt_no}`, 'chem_receipt', r.id, r.receipt_no);
+    toast('تم الحذف','success'); load();
+  };
+
+  const tabStyle = (t) => ({
+    padding:'8px 18px', border:'none', cursor:'pointer', fontWeight:700, fontSize:13,
+    borderBottom: tab===t ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+    color: tab===t ? 'var(--primary)' : 'var(--gray-500)', background:'transparent', whiteSpace:'nowrap',
+  });
+  const viewing = viewingId ? matById[viewingId] : null;
+  const phase2Tab = ['receipts','lots','stock','ledger','trace'].includes(tab);
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',padding:'14px 20px',background:'#fff',borderRadius:'12px 12px 0 0',border:'1.5px solid #e2edf5',borderBottom:'none',boxShadow:'0 2px 8px rgba(43,143,196,.06)'}}>
+        <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🧪</div>
+        <div>
+          <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>إدارة الكيماويات</div>
+          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{materials.length} مادة · {recipes.length} وصفة · {noMsds} تحتاج MSDS · {quarantineLots} تشغيلة بانتظار COA · {openPrep} طلب تجهيز مفتوح{pendingSpecs?` · ${pendingSpecs} مواصفات مسودة`:''}</div>
+        </div>
+        <div style={{flex:1}}/>
+        <input className="search-input" placeholder="بحث بالاسم، الرمز، CAS، رقم التشغيلة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:220,flex:'0 1 300px'}}/>
+        {tab==='materials' && <>
+          <FilterPopover active={matFilterActive} onClear={()=>{setCatFilter('all');setTypeFilter('all');setMsdsFilter('all');setHazFilter('all');setSpecsFilter('all');}}>
+            <label className="form-label">مواصفات الفحص</label>
+            <select className="form-control" value={specsFilter} onChange={e=>setSpecsFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              <option value="pending">مسودة — بانتظار المراجعة ({pendingSpecs})</option>
+              <option value="reviewed">تمت مراجعتها</option>
+            </select>
+            <label className="form-label">التصنيف</label>
+            <select className="form-control" value={catFilter} onChange={e=>setCatFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              {Object.entries(CHEM_CATEGORIES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+            </select>
+            <label className="form-label">طريقة الإنتاج</label>
+            <select className="form-control" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              {Object.entries(CHEM_PROD_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+            </select>
+            <label className="form-label">حالة MSDS</label>
+            <select className="form-control" value={msdsFilter} onChange={e=>setMsdsFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              <option value="attention">تحتاج متابعة</option>
+              {Object.entries(CHEM_MSDS_META).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            </select>
+            <label className="form-label">الخطورة</label>
+            <select className="form-control" value={hazFilter} onChange={e=>setHazFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              <option value="hazard">عليها رموز GHS</option>
+              <option value="none">بدون رموز GHS</option>
+            </select>
+          </FilterPopover>
+          {canEdit && <button className="btn btn-primary" onClick={()=>setEditingMat('new')}>➕ مادة جديدة</button>}
+        </>}
+        {tab==='recipes' && (
+          <FilterPopover active={recipeFilter!=='all'} onClear={()=>setRecipeFilter('all')}>
+            <label className="form-label">حالة الوصفة</label>
+            <select className="form-control" value={recipeFilter} onChange={e=>setRecipeFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              {Object.entries(CHEM_RECIPE_META).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </FilterPopover>
+        )}
+        {tab==='receipts' && <>
+          <FilterPopover active={recFilter!=='available'} onClear={()=>setRecFilter('available')}>
+            <label className="form-label">الرصيد</label>
+            <select className="form-control" value={recFilter} onChange={e=>setRecFilter(e.target.value)}>
+              <option value="available">فيها رصيد</option>
+              <option value="expiring">رصيد يقترب انتهاؤه</option>
+              <option value="empty">مستهلكة بالكامل</option>
+              <option value="all">الكل</option>
+            </select>
+          </FilterPopover>
+          {canReceive && <button className="btn btn-primary" onClick={()=>setReceiptForm('new')}>➕ استلام جديد</button>}
+        </>}
+        {tab==='lots' && <>
+          <FilterPopover active={lotFilter!=='all'} onClear={()=>setLotFilter('all')}>
+            <label className="form-label">حالة التشغيلة</label>
+            <select className="form-control" value={lotFilter} onChange={e=>setLotFilter(e.target.value)}>
+              <option value="all">الكل</option>
+              {Object.entries(CHEM_LOT_STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </FilterPopover>
+          {canProduce && <button className="btn btn-primary" onClick={()=>setLotForm({})}>➕ تشغيلة جديدة</button>}
+        </>}
+        {tab==='orders' && <>
+          <FilterPopover active={prepFilter!=='open'} onClear={()=>setPrepFilter('open')}>
+            <label className="form-label">عرض</label>
+            <select className="form-control" value={prepFilter} onChange={e=>setPrepFilter(e.target.value)}>
+              <option value="open">الطلبات المفتوحة</option>
+              <option value="mine">المسندة إلي</option>
+              {Object.entries(CHEM_PREP_STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+              <option value="all">الكل</option>
+            </select>
+          </FilterPopover>
+          {hasPerm(user,'chem_orders_create') && <button className="btn btn-primary" onClick={()=>setPrepForm('new')}>➕ طلب تجهيز</button>}
+        </>}
+        {tab==='stock' && (
+          <FilterPopover active={stockFilter!=='all'} onClear={()=>setStockFilter('all')}>
+            <label className="form-label">عرض</label>
+            <select className="form-control" value={stockFilter} onChange={e=>setStockFilter(e.target.value)}>
+              <option value="all">كل المواد اللي عليها رصيد</option>
+              <option value="expiring">رصيد يقترب انتهاؤه ({CHEM_EXPIRY_WARN_DAYS} يوم)</option>
+              <option value="quarantine">عبوات بالحجر (بانتظار COA)</option>
+            </select>
+          </FilterPopover>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',marginBottom:16,borderBottom:'1.5px solid #e2edf5',overflowX:'auto'}}>
+        <button style={tabStyle('materials')} onClick={()=>setTab('materials')}>⚗️ المواد ({materials.length})</button>
+        <button style={tabStyle('recipes')} onClick={()=>setTab('recipes')}>📖 الوصفات ({prepMats.length})</button>
+        <button style={tabStyle('receipts')} onClick={()=>setTab('receipts')}>📥 الاستلام ({receipts.length})</button>
+        <button style={tabStyle('lots')} onClick={()=>setTab('lots')}>🏭 التشغيلات ({lots.length})</button>
+        <button style={tabStyle('stock')} onClick={()=>setTab('stock')}>📊 المخزون</button>
+        <button style={tabStyle('ledger')} onClick={()=>setTab('ledger')}>📜 سجل الحركات</button>
+        <button style={tabStyle('trace')} onClick={()=>setTab('trace')}>🔎 التتبّع</button>
+        <button style={tabStyle('orders')} onClick={()=>setTab('orders')}>📋 طلبات التجهيز{openPrep?` (${openPrep})`:''}</button>
+      </div>
+
+      {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div>
+      : loadError ? (
+        <div className="empty-state" style={{padding:'50px 20px'}}>
+          <div style={{fontSize:44}}>🧪</div>
+          {chemTableMissing(loadError)
+            ? <p>جداول إدارة الكيماويات غير موجودة بعد — شغّل <b>chemicals_module_migration.sql</b> ثم <b>chemicals_seed.sql</b> في Supabase SQL Editor.</p>
+            : <p>تعذّر التحميل: {loadError.message}</p>}
+          <button className="btn btn-ghost" onClick={load}>🔄 إعادة المحاولة</button>
+        </div>
+      ) : (tab==='orders' && (phase2Error || phase3Error)) ? (
+        <div className="empty-state" style={{padding:'50px 20px'}}>
+          <div style={{fontSize:44}}>📋</div>
+          {chemTableMissing(phase3Error || phase2Error)
+            ? <p>جداول طلبات التجهيز غير موجودة بعد — شغّل <b>chemicals_phase3_migration.sql</b> في Supabase SQL Editor.</p>
+            : <p>تعذّر التحميل: {(phase3Error || phase2Error).message}</p>}
+          <button className="btn btn-ghost" onClick={load}>🔄 إعادة المحاولة</button>
+        </div>
+      ) : (phase2Tab && phase2Error) ? (
+        <div className="empty-state" style={{padding:'50px 20px'}}>
+          <div style={{fontSize:44}}>🏭</div>
+          {chemTableMissing(phase2Error)
+            ? <p>جداول الاستلام والتشغيلات غير موجودة بعد — شغّل <b>chemicals_phase2_migration.sql</b> في Supabase SQL Editor.</p>
+            : <p>تعذّر التحميل: {phase2Error.message}</p>}
+          <button className="btn btn-ghost" onClick={load}>🔄 إعادة المحاولة</button>
+        </div>
+      ) : (<>
+
+        {/* ===== المواد ===== */}
+        {tab==='materials' && (filteredMats.length===0 ? (
+          <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>⚗️</div><p>{materials.length===0?'لا توجد مواد بعد — أضف أول مادة':'لا توجد نتائج'}</p></div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filteredMats.map(m => {
+              const cat = CHEM_CATEGORIES[m.category] || CHEM_CATEGORIES.chemical;
+              const ms = CHEM_MSDS_META[chemMsdsStatus(docsBy[m.id])];
+              const mp = packsBy[m.id] || [];
+              const rs = m.production_type==='prepare' ? CHEM_RECIPE_META[recipeBy[m.id]?.status || 'none'] : null;
+              return (
+                <EntityCard key={m.id} onClick={()=>setViewingId(m.id)}
+                  avatar={cat.icon}
+                  title={m.name_en}
+                  subtitle={[m.code, m.cas_no && `CAS ${m.cas_no}`].filter(Boolean).join(' · ')}
+                  badge={<div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                    <ChemPill color="#1C6A99" bg="#e0f0fa">{CHEM_PROD_TYPES[m.production_type]}</ChemPill>
+                    <ChemPill color={ms.color} bg={ms.bg}>{ms.label}</ChemPill>
+                    {rs && <ChemPill color={rs.color} bg={rs.bg}>{rs.label}</ChemPill>}
+                    {m.specs_reviewed===false && <ChemPill color="#6b21a8" bg="#f3e8ff">مواصفات مسودة</ChemPill>}
+                    <GhsIcons codes={m.ghs_pictograms} size={16}/>
+                  </div>}
+                  rows={[
+                    m.formula && { icon:'🧬', text:m.formula },
+                    { icon:'📦', text: mp.length ? mp.map(formatChemPack).join('، ') : 'لم تُحدَّد أحجام العبوات' },
+                    { icon:'📋', text: `${(specsBy[m.id]||[]).length} بند مواصفات` },
+                    m.notes && { icon:'📝', text:m.notes },
+                  ]}
+                  actions={<>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setViewingId(m.id)}>👁 عرض</button>
+                    {canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingMat(m)}>✏️ تعديل</button>}
+                    {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>deleteMat(m)}>🗑</button>}
+                  </>}
+                />
+              );
+            })}
+          </div>
+        ))}
+
+        {/* ===== الوصفات ===== */}
+        {tab==='recipes' && (filteredPrep.length===0 ? (
+          <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>📖</div><p>{prepMats.length===0?'لا توجد مواد محضّرة — غيّر طريقة إنتاج مادة إلى "تحضير" لتظهر هنا':'لا توجد نتائج'}</p></div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filteredPrep.map(m => {
+              const r = recipeBy[m.id];
+              const rs = CHEM_RECIPE_META[r?.status || 'none'];
+              const items = (r?.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq);
+              return (
+                <EntityCard key={m.id} onClick={()=> r ? setRecipeView(m.id) : (canEdit && setRecipeEdit(m.id))}
+                  avatar={(CHEM_CATEGORIES[m.category]||CHEM_CATEGORIES.reagent).icon}
+                  title={m.name_en}
+                  subtitle={r ? `دفعة ${chemNum(r.batch_size)} ${r.batch_unit} · ${items.length} مكوّن` : m.code}
+                  badge={<ChemPill color={rs.color} bg={rs.bg}>{rs.label}</ChemPill>}
+                  rows={r ? [
+                    { icon:'⚗️', text: items.map(i=>matById[i.material_id]?.name_en || i.item_name).join('، ') },
+                    r.source && { icon:'📚', text: r.source },
+                  ] : [{ icon:'✍️', text:'أضف الوصفة لتتمكّن من التحضير' }]}
+                  actions={<>
+                    {r && <button className="btn btn-ghost btn-sm" onClick={()=>setRecipeView(m.id)}>👁 عرض</button>}
+                    {canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setRecipeEdit(m.id)}>{r?'✏️ تعديل':'➕ إضافة وصفة'}</button>}
+                    {r?.status==='approved' && canProduce && <button className="btn btn-ghost btn-sm" onClick={()=>setLotForm({ materialId:m.id })}>🏭 تحضير</button>}
+                  </>}
+                />
+              );
+            })}
+          </div>
+        ))}
+
+        {/* ===== الاستلام ===== */}
+        {tab==='receipts' && (filteredReceipts.length===0 ? (
+          <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>📥</div><p>{receipts.length===0?'لا توجد استلامات بعد — سجّل أول شحنة bulk من المورد':'لا توجد نتائج'}</p></div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filteredReceipts.map(r => {
+              const m = matById[r.material_id];
+              const bal = receiptBal[r.id] || 0;
+              const pct = Math.max(0, Math.min(100, Math.round(bal / r.qty_received * 100)));
+              return (
+                <EntityCard key={r.id}
+                  avatar="📥"
+                  title={m?.name_en || '—'}
+                  subtitle={`${r.receipt_no} · ${r.received_date}`}
+                  badge={<div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      <ChemPill color={bal>0?'#166534':'#6b7280'} bg={bal>0?'#dcfce7':'#f3f4f6'}>متبقي {fmtChemQty(bal, r.base_unit)} من {fmtChemQty(r.qty_received, r.base_unit)}</ChemPill>
+                      {chemExpiryPill(r.expiry_date)}
+                    </div>
+                    <div style={{height:5,background:'#f1f5f9',borderRadius:99,overflow:'hidden'}}><div style={{height:'100%',width:pct+'%',background:'#16a34a'}}/></div>
+                  </div>}
+                  rows={[
+                    { icon:'🏷️', text:`تشغيلة المصنّع: ${r.manufacturer_lot || '—'}${r.manufacturer?` (${r.manufacturer})`:''}` },
+                    (r.supplier_name) && { icon:'🏭', text:`المورد: ${r.supplier_name}` },
+                    { icon:'📄', text: r.supplier_coa_url ? 'COA المورد مرفقة' : 'بدون COA المورد' },
+                  ]}
+                  actions={<>
+                    {r.supplier_coa_url && <a className="btn btn-ghost btn-sm" href={r.supplier_coa_url} target="_blank" rel="noopener noreferrer">🔗 COA</a>}
+                    {canReceive && <button className="btn btn-ghost btn-sm" onClick={()=>setReceiptForm(r)}>✏️</button>}
+                    {canAdjust && bal>0 && <button className="btn btn-ghost btn-sm" onClick={()=>setAdjustFor(r.material_id)}>⚖️ تسوية</button>}
+                    {canReceive && <button className="btn btn-danger btn-sm" onClick={()=>deleteReceipt(r)}>🗑</button>}
+                  </>}
+                />
+              );
+            })}
+          </div>
+        ))}
+
+        {/* ===== التشغيلات ===== */}
+        {tab==='lots' && (filteredLots.length===0 ? (
+          <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>🏭</div><p>{lots.length===0?'لا توجد تشغيلات بعد — أنشئ أول تشغيلة تعبئة أو تحضير':'لا توجد نتائج'}</p></div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filteredLots.map(l => {
+              const m = matById[l.material_id];
+              const st = CHEM_LOT_STATUS[l.status];
+              const coa = coaByLot[l.id];
+              const cs = coa ? CHEM_COA_STATUS[coa.status] : null;
+              return (
+                <EntityCard key={l.id} onClick={()=>setLotView(l.id)}
+                  avatar={l.lot_type==='prepare' ? '⚗️' : '📦'}
+                  title={`${l.lot_no} — ${m?.name_en || ''}`}
+                  subtitle={`${CHEM_PROD_TYPES[l.lot_type]} · ${l.prod_date}`}
+                  badge={<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    <ChemPill color={st.color} bg={st.bg}>{st.label}</ChemPill>
+                    {cs ? <ChemPill color={cs.color} bg={cs.bg}>{coa.coa_no}</ChemPill> : <ChemPill color="#92400e" bg="#fef3c7">بدون COA</ChemPill>}
+                    {chemExpiryPill(l.expiry_date)}
+                  </div>}
+                  rows={(l.chem_lot_packs||[]).map(lp => {
+                    const p = packById[lp.pack_size_id];
+                    return { icon:'📦', text:`${lp.count} × ${p?formatChemPack(p):'—'} · متبقي ${packBal[l.id+'|'+lp.pack_size_id] || 0}` };
+                  })}
+                  actions={<button className="btn btn-ghost btn-sm" onClick={()=>setLotView(l.id)}>👁 التفاصيل والشهادة</button>}
+                />
+              );
+            })}
+          </div>
+        ))}
+
+        {/* ===== المخزون ===== */}
+        {tab==='stock' && (stockMats.length===0 ? (
+          <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>📊</div><p>لا يوجد رصيد {stockFilter!=='all'?'بهذا الفلتر':'بعد — ابدأ باستلام شحنة'}</p></div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {stockMats.map(m => {
+              const s = stockRows[m.id];
+              const rows = [];
+              if (s.bulk > 0) rows.push({ icon:'🛢️', text:`Bulk: ${fmtChemQty(s.bulk, s.bulkBase)}${s.bulkExpiring>0?` (⚠️ ${fmtChemQty(s.bulkExpiring, s.bulkBase)} قريبة الانتهاء)`:''}` });
+              Object.entries(s.packs).forEach(([pid, p]) => {
+                const ps = packById[pid];
+                const parts = [`${p.approved} متاحة`];
+                if (p.quarantine) parts.push(`${p.quarantine} بالحجر`);
+                if (p.rejected) parts.push(`${p.rejected} مرفوضة`);
+                if (p.expiring) parts.push(`⚠️ ${p.expiring} قريبة الانتهاء`);
+                rows.push({ icon:'📦', text:`${ps?formatChemPack(ps):'—'}: ${parts.join(' · ')}` });
+              });
+              return (
+                <EntityCard key={m.id}
+                  avatar={(CHEM_CATEGORIES[m.category]||CHEM_CATEGORIES.chemical).icon}
+                  title={m.name_en} subtitle={m.code}
+                  rows={rows}
+                  actions={<>
+                    {canProduce && s.bulk > 0 && m.production_type==='repack' && <button className="btn btn-ghost btn-sm" onClick={()=>setLotForm({ materialId:m.id })}>📦 تعبئة</button>}
+                    {canAdjust && <button className="btn btn-ghost btn-sm" onClick={()=>setAdjustFor(m.id)}>⚖️ تسوية</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{ setLedgerMat(m.id); setTab('ledger'); }}>📜 الحركات</button>
+                  </>}
+                />
+              );
+            })}
+          </div>
+        ))}
+        {/* ===== سجل الحركات ===== */}
+        {tab==='ledger' && (
+          <ChemLedgerPanel materials={materials} matById={matById} receiptById={receiptById} lotById={lotById} packById={packById}
+            prepById={prepById} profilesById={profilesById} initialMaterialId={ledgerMat} onOpenLot={setLotView}/>
+        )}
+
+        {/* ===== التتبّع ===== */}
+        {tab==='trace' && (
+          <ChemTracePanel lots={lots} receipts={receipts} prepOrders={prepOrders} matById={matById} packById={packById}
+            coaByLot={coaByLot} lotById={lotById} receiptById={receiptById} packBal={packBal} onOpenLot={setLotView}/>
+        )}
+
+        {/* ===== طلبات التجهيز ===== */}
+        {tab==='orders' && (filteredPrepOrders.length===0 ? (
+          <div className="empty-state" style={{padding:'60px 20px'}}><div style={{fontSize:48}}>📋</div><p>{prepOrders.length===0?'لا توجد طلبات تجهيز بعد':'لا توجد طلبات بهذا الفلتر'}</p></div>
+        ) : (
+          <div style={ENTITY_GRID_STYLE}>
+            {filteredPrepOrders.map(o => {
+              const st = CHEM_PREP_STATUS[o.status];
+              const its = (o.chem_prep_order_items||[]).slice().sort((a,b)=>a.seq-b.seq);
+              const overdue = o.due_date && ['new','in_progress'].includes(o.status) && chemDaysTo(o.due_date) < 0;
+              return (
+                <EntityCard key={o.id} onClick={()=>setPrepView(o.id)}
+                  avatar={o.priority==='urgent' ? '🔴' : '📋'}
+                  title={`${o.order_no} — ${o.customer_name}`}
+                  subtitle={`الكيميائي: ${profilesById[o.assigned_to]?.full_name || '—'}`}
+                  badge={<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    <ChemPill color={st.color} bg={st.bg}>{st.label}</ChemPill>
+                    {o.due_date && <ChemPill color={overdue?'#b91c1c':'#374151'} bg={overdue?'#fee2e2':'#f3f4f6'}>{overdue?'متأخر — ':''}مطلوب {o.due_date}</ChemPill>}
+                  </div>}
+                  rows={its.slice(0,4).map(i=>({ icon:'🧪', text:`${matById[i.material_id]?.name_en||''} · ${packById[i.pack_size_id]?formatChemPack(packById[i.pack_size_id]):''} × ${i.qty}` }))
+                    .concat(its.length>4 ? [{ icon:'➕', text:`و ${its.length-4} أصناف أخرى` }] : [])}
+                  actions={<button className="btn btn-ghost btn-sm" onClick={()=>setPrepView(o.id)}>👁 فتح الطلب</button>}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </>)}
+
+      {/* Modals */}
+      {editingMat && (
+        <ChemMaterialForm user={user}
+          material={editingMat==='new' ? null : editingMat}
+          packs={editingMat==='new' ? [] : (packsBy[editingMat.id]||[])}
+          specs={editingMat==='new' ? [] : (specsBy[editingMat.id]||[])}
+          onClose={()=>setEditingMat(null)}
+          onSave={()=>{ setEditingMat(null); load(); }}/>
+      )}
+      {viewing && !editingMat && (
+        <ChemMaterialDetail user={user} material={viewing}
+          packs={packsBy[viewing.id]||[]} specs={specsBy[viewing.id]||[]} docs={docsBy[viewing.id]||[]}
+          recipe={recipeBy[viewing.id]} matById={matById}
+          onClose={()=>setViewingId(null)}
+          onEdit={canEdit ? ()=>setEditingMat(viewing) : null}
+          onDelete={canDelete ? ()=>deleteMat(viewing) : null}
+          onOpenRecipe={()=>{ setViewingId(null); recipeBy[viewing.id] ? setRecipeView(viewing.id) : setRecipeEdit(viewing.id); }}
+          onChanged={load}/>
+      )}
+      {recipeView && matById[recipeView] && recipeBy[recipeView] && !recipeEdit && (
+        <ChemRecipeView user={user} material={matById[recipeView]} recipe={recipeBy[recipeView]} matById={matById}
+          onClose={()=>setRecipeView(null)}
+          onEdit={canEdit ? ()=>setRecipeEdit(recipeView) : null}
+          onChanged={load}/>
+      )}
+      {recipeEdit && matById[recipeEdit] && (
+        <ChemRecipeForm user={user} material={matById[recipeEdit]} recipe={recipeBy[recipeEdit]||null} materials={materials} matById={matById}
+          onClose={()=>setRecipeEdit(null)}
+          onSave={()=>{ setRecipeEdit(null); load(); }}/>
+      )}
+      {receiptForm && (
+        <ChemReceiptForm user={user} receipt={receiptForm==='new'?null:receiptForm} materials={materials} suppliers={suppliers}
+          onClose={()=>setReceiptForm(null)} onSave={()=>{ setReceiptForm(null); load(); }}/>
+      )}
+      {lotForm && (
+        <ChemLotForm user={user} initialMaterialId={lotForm.materialId} materials={materials} matById={matById}
+          packsBy={packsBy} recipeBy={recipeBy} receipts={receipts} receiptBal={receiptBal} lots={lots} packBal={packBal} packById={packById}
+          onPacksChanged={load}
+          onClose={()=>setLotForm(null)} onSave={(lot)=>{ setLotForm(null); load(); if (lot?.id) setLotView(lot.id); }}/>
+      )}
+      {lotView && lotById[lotView] && (
+        <ChemLotDetail user={user} lot={lotById[lotView]} material={matById[lotById[lotView].material_id]}
+          specs={specsBy[lotById[lotView].material_id]||[]} coa={coaByLot[lotView]}
+          packById={packById} receiptById={receiptById} lotById={lotById} matById={matById} packBal={packBal}
+          onClose={()=>setLotView(null)} onChanged={load}/>
+      )}
+      {prepForm && (
+        <ChemPrepOrderForm user={user} order={prepForm==='new'?null:prepForm} materials={materials} packsBy={packsBy}
+          lots={lots} packBal={packBal} profiles={profiles} customers={customers}
+          onPacksChanged={load}
+          onClose={()=>setPrepForm(null)} onSave={(o)=>{ setPrepForm(null); load(); if (o?.id) setPrepView(o.id); }}/>
+      )}
+      {prepView && prepById[prepView] && !prepForm && !lotForm && (
+        <ChemPrepOrderDetail key={prepById[prepView].status} user={user} order={prepById[prepView]} matById={matById} packById={packById}
+          lots={lots} lotById={lotById} packBal={packBal} coaByLot={coaByLot} receiptById={receiptById} profilesById={profilesById}
+          onClose={()=>setPrepView(null)} onChanged={load}
+          onEdit={()=>setPrepForm(prepById[prepView])}
+          onNewLot={(mid)=>setLotForm({ materialId: mid })}/>
+      )}
+      {adjustFor && matById[adjustFor] && (
+        <ChemAdjustForm user={user} material={matById[adjustFor]}
+          receipts={receipts.filter(r=>r.material_id===adjustFor)} receiptBal={receiptBal}
+          lots={lots.filter(l=>l.material_id===adjustFor)} packBal={packBal} packById={packById}
+          onClose={()=>setAdjustFor(null)} onSave={()=>{ setAdjustFor(null); load(); }}/>
+      )}
+    </div>
+  );
+}
+
+/* قائمة اختيار مادة قابلة للبحث (الاسم الإنجليزي/العربي، الرمز، CAS) — تعرض كل المواد الفعّالة بالسجل */
+function ChemMaterialPicker({ materials, value, onChange, disabled, placeholder='ابحث عن مادة من السجل...', style }) {
+  const selected = materials.find(m=>m.id===value);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  const s = q.trim().toLowerCase();
+  const list = materials
+    .filter(m => m.is_active!==false && (!s || [m.name_en,m.name_ar,m.code,m.cas_no].some(v=>(v||'').toLowerCase().includes(s))))
+    .sort((a,b) => {
+      const as = s && a.name_en.toLowerCase().startsWith(s) ? 0 : 1, bs = s && b.name_en.toLowerCase().startsWith(s) ? 0 : 1;
+      return as - bs || a.name_en.localeCompare(b.name_en);
+    }).slice(0, 500);
+  const pick = (m) => { onChange(m.id); setQ(''); setOpen(false); };
+  const onKey = (e) => {
+    if (!open && (e.key==='ArrowDown' || e.key==='Enter')) { e.preventDefault(); setOpen(true); return; }
+    if (e.key==='ArrowDown') { e.preventDefault(); setHi(x=>Math.min(x+1, list.length-1)); }
+    else if (e.key==='ArrowUp') { e.preventDefault(); setHi(x=>Math.max(x-1, 0)); }
+    else if (e.key==='Enter') { e.preventDefault(); if (list[hi]) pick(list[hi]); }
+    else if (e.key==='Escape') setOpen(false);
+  };
+  return (
+    <div ref={ref} style={{position:'relative', ...style}}>
+      <input className="form-control" dir="auto" disabled={disabled}
+        value={open ? q : (selected ? selected.name_en : '')}
+        placeholder={selected ? selected.name_en : placeholder}
+        onFocus={()=>{ setOpen(true); setQ(''); setHi(0); }}
+        onChange={e=>{ setQ(e.target.value); setOpen(true); setHi(0); }}
+        onKeyDown={onKey}
+        style={selected && !open ? {fontWeight:700} : undefined}/>
+      {open && !disabled && (
+        <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:1300,background:'#fff',border:'1.5px solid var(--primary)',borderRadius:8,marginTop:4,maxHeight:260,overflowY:'auto',boxShadow:'0 6px 18px rgba(0,0,0,.14)'}}>
+          {list.length===0 ? <div style={{padding:10,fontSize:12,color:'var(--gray-400)'}}>لا توجد مادة بهذا الاسم</div>
+            : list.map((m,i)=>(
+              <div key={m.id} className="chem-pick-opt" onMouseDown={e=>{ e.preventDefault(); pick(m); }} onMouseEnter={()=>setHi(i)}
+                style={{padding:'7px 10px',cursor:'pointer',background: i===hi ? '#e0f0fa' : m.id===value ? '#f0f7fc' : '#fff',borderBottom:'1px solid #f1f5f9'}}>
+                <div dir="ltr" style={{fontWeight:700,fontSize:13,textAlign:'left'}}>{m.name_en}</div>
+                <div style={{fontSize:11,color:'var(--gray-500)'}}>{[m.code, m.name_ar, m.cas_no && `CAS ${m.cas_no}`, CHEM_PROD_TYPES[m.production_type]].filter(Boolean).join(' · ')}</div>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* إضافة حجم عبوة سريعة من داخل النماذج (بصلاحية تعديل المواد) */
+function ChemPackQuickAdd({ user, material, onAdded, onCancel }) {
+  const [size, setSize] = useState('');
+  const [unit, setUnit] = useState(material.physical_state==='liquid' ? 'mL' : 'g');
+  const [busy, setBusy] = useState(false);
+  if (!hasPerm(user,'chemicals_edit')) return <span style={{fontSize:11,color:'#b45309'}}>المادة بدون أحجام عبوات — اطلب إضافتها من مسؤول الكيماويات</span>;
+  const add = async () => {
+    const s = parseFloat(size);
+    if (!(s>0)) { toast('أدخل حجم العبوة','error'); return; }
+    setBusy(true);
+    const { data, error } = await sb.from('chem_pack_sizes').insert({ material_id: material.id, size: s, unit }).select().single();
+    setBusy(false);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `أضاف حجم عبوة ${formatChemPack(data)} للمادة ${material.name_en}`, 'chem_material', material.id, material.code);
+    toast(`أُضيف الحجم ${formatChemPack(data)} ✓`,'success');
+    setSize(''); onAdded(data);
+  };
+  return (
+    <span style={{display:'inline-flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+      <input type="number" min="0" step="any" className="form-control" style={{width:95}} placeholder="حجم جديد" value={size}
+        onChange={e=>setSize(e.target.value)} onKeyDown={e=>{ if (e.key==='Enter') { e.preventDefault(); add(); } }}/>
+      <select className="form-control" style={{width:75}} value={unit} onChange={e=>setUnit(e.target.value)}>
+        {CHEM_PACK_UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+      </select>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={add}>➕ إضافة الحجم</button>
+      {onCancel && <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>✕</button>}
+    </span>
+  );
+}
+
+function ChemReceiptForm({ user, receipt, materials, suppliers, onSave, onClose }) {
+  const isEdit = !!receipt;
+  const [form, setForm] = useState({
+    material_id: receipt?.material_id || '',
+    supplier_id: receipt?.supplier_id || '', manufacturer: receipt?.manufacturer || '', manufacturer_lot: receipt?.manufacturer_lot || '',
+    mfg_date: receipt?.mfg_date || '', expiry_date: receipt?.expiry_date || '', received_date: receipt?.received_date || new Date().toISOString().slice(0,10),
+    qty: '', unit: 'kg', supplier_coa_url: receipt?.supplier_coa_url || '', notes: receipt?.notes || '',
+  });
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const mat = materials.find(m=>m.id===form.material_id);
+  const unitsFor = (m) => chemMaterialBase(m)==='mL' ? ['L','mL'] : chemMaterialBase(m)==='pcs' ? ['pcs'] : ['kg','g'];
+  useEffect(()=>{ if (mat && !isEdit && !unitsFor(mat).includes(form.unit)) setF('unit', unitsFor(mat)[0]); }, [mat?.id]);
+  const urlOk = !form.supplier_coa_url.trim() || /^https?:\/\/\S+$/i.test(form.supplier_coa_url.trim());
+
+  const handleSave = async () => {
+    if (!isSuperAdmin(user)) {
+      if (!mat) { toast('اختر المادة من القائمة','error'); return; }
+      if (!form.manufacturer_lot.trim()) { toast('أدخل رقم تشغيلة المصنّع','error'); return; }
+      if (!form.expiry_date) { toast('أدخل تاريخ انتهاء الصلاحية','error'); return; }
+      if (!isEdit && !(parseFloat(form.qty)>0)) { toast('أدخل الكمية المستلمة','error'); return; }
+      if (!urlOk) { toast('رابط COA المورد غير صحيح','error'); return; }
+    }
+    setLoading(true);
+    try {
+      const sup = suppliers.find(s=>s.id===form.supplier_id);
+      const meta = {
+        supplier_id: form.supplier_id || null, supplier_name: sup?.name || null,
+        manufacturer: form.manufacturer.trim()||null, manufacturer_lot: form.manufacturer_lot.trim()||null,
+        mfg_date: form.mfg_date||null, expiry_date: form.expiry_date||null, received_date: form.received_date,
+        supplier_coa_url: form.supplier_coa_url.trim()||null, notes: form.notes.trim()||null,
+      };
+      if (isEdit) {
+        const { error } = await sb.from('chem_receipts').update(meta).eq('id', receipt.id);
+        if (error) throw error;
+        createLog(user, `عدّل استلام كيماويات ${receipt.receipt_no}`, 'chem_receipt', receipt.id, receipt.receipt_no);
+      } else {
+        const b = chemToBase(form.qty, form.unit);
+        const { data, error } = await sb.from('chem_receipts').insert({ ...meta, material_id: mat.id, qty_received: b.qty, base_unit: b.base, created_by: user.id }).select().single();
+        if (error) throw error;
+        createLog(user, `استلم ${fmtChemQty(b.qty,b.base)} من ${mat.name_en} (${data.receipt_no})`, 'chem_receipt', data.id, data.receipt_no);
+      }
+      toast(isEdit?'تم التحديث ✓':'تم تسجيل الاستلام ✓','success');
+      onSave();
+    } catch(err) { toast('خطأ: '+chemRpcError(err),'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:620}}>
+        <div className="modal-header">
+          <span className="modal-title">📥 {isEdit ? `تعديل الاستلام ${receipt.receipt_no}` : 'استلام bulk من المورد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div className="form-group">
+            <label className="form-label">المادة <span style={{color:'var(--danger)'}}>*</span></label>
+            <ChemMaterialPicker materials={materials} value={form.material_id} disabled={isEdit} onChange={id=>setF('material_id',id)}/>
+          </div>
+          {!isEdit && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">الكمية المستلمة <span style={{color:'var(--danger)'}}>*</span></label>
+                <input type="number" min="0" step="any" className="form-control" value={form.qty} onChange={e=>setF('qty',e.target.value)}/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الوحدة</label>
+                <select className="form-control" value={form.unit} onChange={e=>setF('unit',e.target.value)}>
+                  {(mat ? unitsFor(mat) : ['kg','g','L','mL','pcs']).map(u=><option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+          {isEdit && <div style={{fontSize:12,color:'var(--gray-500)'}}>الكمية المستلمة ({fmtChemQty(receipt.qty_received, receipt.base_unit)}) ما بتتعدّل — لأي فرق استخدم "تسوية".</div>}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">رقم تشغيلة المصنّع <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-control" dir="ltr" value={form.manufacturer_lot} onChange={e=>setF('manufacturer_lot',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الشركة المصنّعة</label>
+              <input className="form-control" dir="ltr" value={form.manufacturer} onChange={e=>setF('manufacturer',e.target.value)} placeholder={mat?.manufacturer||''}/>
+            </div>
+          </div>
+          <div className="form-row-3">
+            <div className="form-group">
+              <label className="form-label">تاريخ الإنتاج</label>
+              <input type="date" className="form-control" value={form.mfg_date} onChange={e=>setF('mfg_date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ الانتهاء <span style={{color:'var(--danger)'}}>*</span></label>
+              <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setF('expiry_date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ الاستلام</label>
+              <input type="date" className="form-control" value={form.received_date} onChange={e=>setF('received_date',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">المورد</label>
+            <select className="form-control" value={form.supplier_id} onChange={e=>setF('supplier_id',e.target.value)}>
+              <option value="">— بدون —</option>
+              {suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">رابط COA المورد (Google Drive)</label>
+            <input className="form-control" dir="ltr" value={form.supplier_coa_url} onChange={e=>setF('supplier_coa_url',e.target.value)} placeholder="https://drive.google.com/..."
+              style={!urlOk?{borderColor:'#dc2626'}:undefined}/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <input className="form-control" value={form.notes} onChange={e=>setF('notes',e.target.value)}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>{loading?'...':isEdit?'حفظ':'تسجيل الاستلام'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- إنشاء تشغيلة: تعبئة من bulk واحد، أو تحضير من وصفة معتمدة ---- */
+function ChemLotForm({ user, initialMaterialId, materials, matById, packsBy, recipeBy, receipts, receiptBal, lots, packBal, packById, onPacksChanged, onSave, onClose }) {
+  const today = new Date().toISOString().slice(0,10);
+  const [materialId, setMaterialId] = useState(initialMaterialId || '');
+  const mat = matById[materialId];
+  const lotType = mat?.production_type || 'repack';
+  const recipe = mat ? recipeBy[mat.id] : null;
+  const matPacks = mat ? (packsBy[mat.id]||[]).filter(p=>p.is_active) : [];
+  const [prodDate, setProdDate] = useState(today);
+  const [expiry, setExpiry] = useState('');
+  const [expiryTouched, setExpiryTouched] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [counts, setCounts] = useState({});          // pack_size_id → count
+  const [receiptId, setReceiptId] = useState('');    // repack source
+  const [consumed, setConsumed] = useState('');      // repack consumed (base)
+  const [consumedTouched, setConsumedTouched] = useState(false);
+  const [batch, setBatch] = useState('');            // prepare batch size
+  const [sources, setSources] = useState([]);        // prepare: [{itemIdx, source:'r:<id>'|'l:<lot>|<ps>'|'none', qty}]
+  const [loading, setLoading] = useState(false);
+
+  // مصادر متاحة لمادة: استلامات فيها رصيد وغير منتهية (الأقرب انتهاءً أولاً — FEFO)
+  const availReceipts = (mid) => receipts.filter(r=>r.material_id===mid && (receiptBal[r.id]||0)>0 && !(r.expiry_date && r.expiry_date < prodDate))
+    .sort((a,b)=>(a.expiry_date||'9999').localeCompare(b.expiry_date||'9999'));
+  const availLotPacks = (mid) => lots.filter(l=>l.material_id===mid && l.status==='approved' && !(l.expiry_date && l.expiry_date < prodDate))
+    .flatMap(l=>(l.chem_lot_packs||[]).map(lp=>({ lot:l, ps:packById[lp.pack_size_id], bal: packBal[l.id+'|'+lp.pack_size_id]||0 }))).filter(x=>x.bal>0 && x.ps)
+    .sort((a,b)=>(a.lot.expiry_date||'9999').localeCompare(b.lot.expiry_date||'9999'));
+
+  // تهيئة عند تغيير المادة
+  useEffect(() => {
+    setCounts({}); setConsumedTouched(false); setExpiryTouched(false);
+    if (!mat) return;
+    if (lotType==='repack') setReceiptId(availReceipts(mat.id)[0]?.id || '');
+    if (lotType==='prepare' && recipe) setBatch(chemNum(recipe.batch_size));
+  }, [mat?.id]);
+
+  const factor = recipe && parseFloat(batch)>0 && parseFloat(recipe.batch_size)>0 ? parseFloat(batch)/parseFloat(recipe.batch_size) : 1;
+  const recipeItems = (recipe?.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq);
+
+  // تحضير: اقتراح مصدر وكمية لكل مكوّن (FEFO + تحويل الوحدة)
+  useEffect(() => {
+    if (lotType!=='prepare' || !recipe) { setSources([]); return; }
+    setSources(recipeItems.map((it, idx) => {
+      if (!it.material_id) return { idx, source:'none', qty:'' };
+      const rs = availReceipts(it.material_id);
+      const lp = availLotPacks(it.material_id);
+      const q = it.quantity==null ? null : Number(it.quantity)*factor;
+      const isPackUnit = /عبوة|pack/i.test(it.unit||'');
+      if (isPackUnit && lp.length) return { idx, source:`l:${lp[0].lot.id}|${lp[0].ps.id}`, qty: q==null?'':chemNum(Math.ceil(q)) };
+      if (rs.length) {
+        const b = q==null ? null : chemToBase(q, it.unit);
+        return { idx, source:`r:${rs[0].id}`, qty: (b && b.base===rs[0].base_unit) ? chemNum(b.qty) : '' };
+      }
+      if (lp.length) return { idx, source:`l:${lp[0].lot.id}|${lp[0].ps.id}`, qty: q==null?'':chemNum(Math.ceil(q)) };
+      return { idx, source:'none', qty:'' };
+    }));
+  }, [mat?.id, recipe?.id, factor, prodDate]);
+
+  // حجم العبوات الناتجة بالوحدة الأساسية
+  const packsBaseTotal = matPacks.reduce((s,p)=>{ const b = chemToBase(p.size, p.unit); return s + (b ? b.qty*(parseInt(counts[p.id])||0) : 0); },0);
+  const srcReceipt = receipts.find(r=>r.id===receiptId);
+  const packsBaseOk = srcReceipt && matPacks.every(p => !(parseInt(counts[p.id])>0) || chemToBase(p.size,p.unit)?.base===srcReceipt.base_unit);
+  useEffect(() => { if (lotType==='repack' && !consumedTouched && packsBaseOk) setConsumed(packsBaseTotal ? chemNum(packsBaseTotal) : ''); }, [packsBaseTotal, receiptId]);
+
+  // الصلاحية الافتراضية = الأقرب بين (تاريخ الإنتاج + صلاحية المادة) وانتهاء المصادر
+  const sourceExpiries = lotType==='repack'
+    ? [srcReceipt?.expiry_date]
+    : sources.map(s => s.source.startsWith('r:') ? receipts.find(r=>r.id===s.source.slice(2))?.expiry_date
+                     : s.source.startsWith('l:') ? lots.find(l=>l.id===s.source.slice(2).split('|')[0])?.expiry_date : null);
+  const maxExpiry = chemMinDate(...sourceExpiries);
+  const defaultExpiry = chemMinDate(mat?.shelf_life_months ? chemAddMonths(prodDate, mat.shelf_life_months) : '', maxExpiry);
+  useEffect(() => { if (!expiryTouched) setExpiry(defaultExpiry); }, [defaultExpiry]);
+
+  const handleSave = async () => {
+    if (!mat) { toast('اختر المادة','error'); return; }
+    const packsPayload = matPacks.filter(p=>parseInt(counts[p.id])>0).map(p=>({ pack_size_id:p.id, count:parseInt(counts[p.id]) }));
+    if (!packsPayload.length) { toast('أدخل عدد العبوات الناتجة','error'); return; }
+    if (expiry && maxExpiry && expiry > maxExpiry) { toast(`تاريخ الانتهاء ما بيصير بعد انتهاء المصدر (${maxExpiry})`,'error'); return; }
+    let inputs = [];
+    if (lotType==='repack') {
+      if (!srcReceipt) { toast('اختر الاستلام (bulk) المصدر','error'); return; }
+      const c = parseFloat(consumed);
+      if (!(c>0)) { toast('أدخل الكمية المستهلكة من الـbulk','error'); return; }
+      if (c > (receiptBal[srcReceipt.id]||0)) { toast('الكمية المستهلكة أكبر من الرصيد المتاح','error'); return; }
+      if (packsBaseOk && c < packsBaseTotal && !confirm('الكمية المستهلكة أقل من مجموع حجم العبوات — متأكد؟')) return;
+      inputs = [{ receipt_id: srcReceipt.id, qty: c }];
+    } else {
+      if (!recipe) { toast('المادة بدون وصفة — أضف الوصفة أولاً','error'); return; }
+      if (recipe.status!=='approved' && !isSuperAdmin(user)) { toast('الوصفة لسا مسودة — لازم تنعتمد قبل التحضير','error'); return; }
+      for (const s of sources) {
+        if (s.source==='none') continue;
+        const qn = parseFloat(s.qty);
+        if (!(qn>0)) { toast(`أدخل الكمية المسحوبة للمكوّن "${matById[recipeItems[s.idx].material_id]?.name_en}"`,'error'); return; }
+        if (s.source.startsWith('r:')) inputs.push({ receipt_id: s.source.slice(2), qty: qn });
+        else { const [lotId, psId] = s.source.slice(2).split('|'); inputs.push({ source_lot_id: lotId, source_pack_size_id: psId, qty: qn }); }
+      }
+    }
+    setLoading(true);
+    try {
+      const { data, error } = await sb.rpc('chem_produce_lot', { p: {
+        material_id: mat.id, lot_type: lotType, prod_date: prodDate, expiry_date: expiry || null,
+        batch_qty: lotType==='prepare' ? parseFloat(batch)||null : null, batch_unit: lotType==='prepare' ? recipe?.batch_unit : null,
+        recipe_id: lotType==='prepare' ? recipe?.id : null, notes: notes.trim()||null, inputs, packs: packsPayload,
+      }});
+      if (error) throw error;
+      createLog(user, `أنشأ تشغيلة ${data.lot_no} (${mat.name_en})`, 'chem_lot', data.id, data.lot_no);
+      toast(`تم إنشاء التشغيلة ${data.lot_no} ✓ — بانتظار شهادة التحليل`,'success');
+      onSave(data);
+    } catch(err) { toast('خطأ: '+chemRpcError(err),'error'); }
+    finally { setLoading(false); }
+  };
+
+  const rowBox = {display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderBottom:'1px dashed #e2edf5'};
+  const waste = lotType==='repack' && packsBaseOk && parseFloat(consumed)>0 ? parseFloat(consumed) - packsBaseTotal : null;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:820}}>
+        <div className="modal-header">
+          <span className="modal-title">🏭 تشغيلة جديدة {mat ? `— ${CHEM_PROD_TYPES[lotType]}` : ''}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المادة الناتجة <span style={{color:'var(--danger)'}}>*</span></label>
+              <ChemMaterialPicker materials={materials} value={materialId} onChange={setMaterialId}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ التعبئة / التحضير</label>
+              <input type="date" className="form-control" value={prodDate} onChange={e=>setProdDate(e.target.value)}/>
+            </div>
+          </div>
+
+          {mat && matPacks.length===0 && (
+            <div style={{background:'#fef3c7',color:'#92400e',borderRadius:8,padding:'10px 12px',fontSize:13,marginBottom:12,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+              <span>المادة بدون أحجام عبوات — أضف الحجم اللي رح تعبّي فيه:</span>
+              <ChemPackQuickAdd user={user} material={mat} onAdded={()=>onPacksChanged && onPacksChanged()}/>
+            </div>
+          )}
+
+          {mat && lotType==='repack' && (
+            <ChemSection title="🛢️ المصدر (bulk)">
+              {availReceipts(mat.id).length===0
+                ? <div style={{fontSize:12,color:'#b45309'}}>لا يوجد رصيد bulk صالح لهذه المادة — سجّل استلام أولاً.</div>
+                : <>
+                  <select className="form-control" value={receiptId} onChange={e=>{ setReceiptId(e.target.value); setConsumedTouched(false); }}>
+                    {availReceipts(mat.id).map(r=><option key={r.id} value={r.id}>{r.receipt_no} · Lot {r.manufacturer_lot||'—'} · متاح {fmtChemQty(receiptBal[r.id], r.base_unit)} · ينتهي {r.expiry_date||'—'}</option>)}
+                  </select>
+                  <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginTop:10}}>
+                    <label className="form-label" style={{margin:0}}>الكمية المستهلكة فعلياً ({srcReceipt?.base_unit})</label>
+                    <input type="number" min="0" step="any" className="form-control" style={{width:140}} value={consumed} onChange={e=>{ setConsumed(e.target.value); setConsumedTouched(true); }}/>
+                    {waste!==null && <span style={{fontSize:12,color: waste<0?'#b91c1c':'var(--gray-500)'}}>الهدر: {fmtChemQty(waste, srcReceipt.base_unit)}</span>}
+                    {srcReceipt && !packsBaseOk && <span style={{fontSize:11,color:'#b45309'}}>وحدة العبوة مختلفة عن وحدة الـbulk — أدخل الكمية يدوياً</span>}
+                  </div>
+                </>}
+            </ChemSection>
+          )}
+
+          {mat && lotType==='prepare' && (!recipe ? (
+            <div style={{background:'#fef3c7',color:'#92400e',borderRadius:8,padding:'10px 12px',fontSize:13,marginBottom:12}}>المادة بدون وصفة — أضف الوصفة من تبويب "الوصفات" أولاً.</div>
+          ) : (
+            <ChemSection title={`⚗️ المكوّنات — وصفة ${recipe.status==='approved'?'معتمدة':'مسودة ⚠️'}`}>
+              <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:8}}>
+                <label className="form-label" style={{margin:0}}>حجم التحضير</label>
+                <input type="number" min="0" step="any" className="form-control" style={{width:120}} value={batch} onChange={e=>setBatch(e.target.value)}/>
+                <b>{recipe.batch_unit}</b>
+                <span style={{fontSize:11,color:'var(--gray-500)'}}>الأساس {chemNum(recipe.batch_size)} {recipe.batch_unit} · ×{chemNum(factor)}</span>
+              </div>
+              {recipeItems.map((it, idx) => {
+                const s = sources[idx]; if (!s) return null;
+                const im = matById[it.material_id];
+                const rs = it.material_id ? availReceipts(it.material_id) : [];
+                const lp = it.material_id ? availLotPacks(it.material_id) : [];
+                const selUnit = s.source.startsWith('r:') ? receipts.find(r=>r.id===s.source.slice(2))?.base_unit : s.source.startsWith('l:') ? 'عبوة' : '';
+                const setS = (k,v) => setSources(arr=>arr.map((x,i)=>i===idx?{...x,[k]:v}:x));
+                return (
+                  <div key={it.id} style={rowBox}>
+                    <div style={{flex:'1 1 200px',minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:13}} dir="ltr">{im?.name_en || it.item_name}</div>
+                      <div style={{fontSize:11,color:'var(--gray-500)'}}>الوصفة: {it.quantity==null?'—':`${chemNum(it.quantity*factor)} ${it.unit||''}`}</div>
+                    </div>
+                    <select className="form-control" style={{flex:'1 1 230px'}} value={s.source} onChange={e=>setS('source',e.target.value)}>
+                      <option value="none">بدون خصم من المخزون</option>
+                      {rs.map(r=><option key={r.id} value={`r:${r.id}`}>{r.receipt_no} · متاح {fmtChemQty(receiptBal[r.id], r.base_unit)} · ينتهي {r.expiry_date||'—'}</option>)}
+                      {lp.map(x=><option key={x.lot.id+x.ps.id} value={`l:${x.lot.id}|${x.ps.id}`}>{x.lot.lot_no} · {formatChemPack(x.ps)} · متاح {x.bal} عبوة</option>)}
+                    </select>
+                    {s.source!=='none' && <>
+                      <input type="number" min="0" step="any" className="form-control" style={{width:110}} value={s.qty} onChange={e=>setS('qty',e.target.value)}/>
+                      <span style={{fontSize:12,fontWeight:700}}>{selUnit}</span>
+                    </>}
+                    {it.material_id && !rs.length && !lp.length && <span style={{fontSize:11,color:'#b45309'}}>لا يوجد رصيد</span>}
+                  </div>
+                );
+              })}
+            </ChemSection>
+          ))}
+
+          {mat && matPacks.length>0 && (
+            <ChemSection title="📦 العبوات الناتجة">
+              <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                {matPacks.map(p=>(
+                  <div key={p.id} style={{display:'flex',alignItems:'center',gap:6,border:'1.5px solid #e2edf5',borderRadius:8,padding:'6px 10px'}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{formatChemPack(p)} ×</span>
+                    <input type="number" min="0" step="1" className="form-control" style={{width:80}} value={counts[p.id]||''} onChange={e=>setCounts(c=>({...c,[p.id]:e.target.value}))}/>
+                  </div>
+                ))}
+              </div>
+              {packsBaseTotal>0 && <div style={{fontSize:12,color:'var(--gray-500)',marginTop:8}}>مجموع الناتج: {fmtChemQty(packsBaseTotal, chemToBase(matPacks[0].size, matPacks[0].unit)?.base)}</div>}
+            </ChemSection>
+          )}
+
+          {mat && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">تاريخ انتهاء التشغيلة</label>
+                <input type="date" className="form-control" value={expiry} max={maxExpiry||undefined} onChange={e=>{ setExpiry(e.target.value); setExpiryTouched(true); }}/>
+                <div style={{fontSize:11,color:'var(--gray-500)',marginTop:3}}>{maxExpiry ? `أقصى تاريخ مسموح: ${maxExpiry} (انتهاء المصدر)` : 'حدّد صلاحية المادة بسجلها ليُحسب تلقائياً'}</div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">ملاحظات</label>
+                <input className="form-control" value={notes} onChange={e=>setNotes(e.target.value)}/>
+              </div>
+            </div>
+          )}
+          {mat && <div style={{fontSize:12,color:'#1e40af',background:'#eff6ff',borderRadius:8,padding:'8px 12px'}}>ℹ️ التشغيلة بتنحفظ "بالحجر" — ما بتصير متاحة إلا بعد إصدار شهادة التحليل واعتمادها.</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!mat||!matPacks.length}>{loading?'...':'إنشاء التشغيلة'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChemLotDetail({ user, lot:l, material:m, specs, coa, packById, receiptById, lotById, matById, packBal, onClose, onChanged }) {
+  const [coaForm, setCoaForm] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const st = CHEM_LOT_STATUS[l.status];
+  const cs = coa ? CHEM_COA_STATUS[coa.status] : null;
+  const canIssue = hasPerm(user,'chem_coa_issue');
+  const canApprove = hasPerm(user,'chem_coa_approve');
+  const canProduce = hasPerm(user,'chem_production');
+
+  const voidLot = async () => {
+    if (!confirm(`إلغاء التشغيلة ${l.lot_no}؟ المدخلات بترجع للمخزون والتشغيلة بتنحذف.`)) return;
+    setBusy(true);
+    const { error } = await sb.rpc('chem_void_lot', { p_lot: l.id });
+    setBusy(false);
+    if (error) { toast('خطأ: '+chemRpcError(error),'error'); return; }
+    createLog(user, `ألغى التشغيلة ${l.lot_no}`, 'chem_lot', l.id, l.lot_no);
+    toast('تم إلغاء التشغيلة','success'); onClose(); onChanged();
+  };
+  const decide = async (decision) => {
+    const msg = { approved:'اعتماد الشهادة؟ التشغيلة بتصير متاحة للصرف.', rejected:'رفض الشهادة؟ التشغيلة بتصير مرفوضة.', draft:'إرجاع الشهادة لمسودة؟ التشغيلة بترجع للحجر.' }[decision];
+    if (!confirm(msg)) return;
+    setBusy(true);
+    const { error } = await sb.rpc('chem_decide_coa', { p_coa: coa.id, p_decision: decision });
+    setBusy(false);
+    if (error) { toast('خطأ: '+chemRpcError(error),'error'); return; }
+    createLog(user, `${decision==='approved'?'اعتمد':decision==='rejected'?'رفض':'أرجع لمسودة'} شهادة ${coa.coa_no} للتشغيلة ${l.lot_no}`, 'chem_coa', coa.id, coa.coa_no);
+    toast('تم ✓','success'); onChanged();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:760}}>
+        <div className="modal-header">
+          <span className="modal-title">🏭 {l.lot_no} — {m?.name_en}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+            <ChemPill color={st.color} bg={st.bg}>{st.label}</ChemPill>
+            <ChemPill color="#1C6A99" bg="#e0f0fa">{CHEM_PROD_TYPES[l.lot_type]}</ChemPill>
+            <ChemPill color="#374151" bg="#f3f4f6">إنتاج {l.prod_date}</ChemPill>
+            {chemExpiryPill(l.expiry_date)}
+            {l.batch_qty && <ChemPill color="#374151" bg="#f3f4f6">دفعة {chemNum(l.batch_qty)} {l.batch_unit}</ChemPill>}
+          </div>
+
+          <ChemSection title="📦 العبوات">
+            {(l.chem_lot_packs||[]).map(lp=>{
+              const p = packById[lp.pack_size_id];
+              return <div key={lp.id} style={{fontSize:13,padding:'4px 0'}}>{lp.count} × {p?formatChemPack(p):'—'} — <b>متبقي {packBal[l.id+'|'+lp.pack_size_id]||0}</b></div>;
+            })}
+          </ChemSection>
+
+          <ChemSection title="⚗️ المدخلات">
+            {(l.chem_lot_inputs||[]).length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>بدون مدخلات مخزنية</div>
+              : (l.chem_lot_inputs||[]).map(inp=>{
+                const r = inp.receipt_id ? receiptById[inp.receipt_id] : null;
+                const sl = inp.source_lot_id ? lotById[inp.source_lot_id] : null;
+                return (
+                  <div key={inp.id} style={{fontSize:13,padding:'4px 0',display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <b dir="ltr">{matById[inp.material_id]?.name_en}</b>
+                    <span>{r ? fmtChemQty(inp.qty, inp.unit) : `${chemNum(inp.qty)} عبوة ${packById[inp.source_pack_size_id]?formatChemPack(packById[inp.source_pack_size_id]):''}`}</span>
+                    <span style={{color:'var(--gray-500)'}}>{r ? `من ${r.receipt_no} (Lot المصنّع ${r.manufacturer_lot||'—'})` : sl ? `من التشغيلة ${sl.lot_no}` : ''}</span>
+                  </div>
+                );
+              })}
+            {l.notes && <div style={{fontSize:12,color:'var(--gray-500)',marginTop:6}}>📝 {l.notes}</div>}
+          </ChemSection>
+
+          <ChemSection title="🧾 شهادة التحليل (COA)">
+            {!coa ? (
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                <span style={{fontSize:13,color:'#92400e'}}>لم تُصدر شهادة بعد — التشغيلة بالحجر.</span>
+                {canIssue && <button className="btn btn-primary btn-sm" onClick={()=>setCoaForm(true)}>🧾 إدخال نتائج الفحص</button>}
+              </div>
+            ) : (
+              <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                <b>{coa.coa_no}</b>
+                <ChemPill color={cs.color} bg={cs.bg}>{cs.label}</ChemPill>
+                <span style={{fontSize:12,color:'var(--gray-500)'}}>{coa.issue_date}{coa.approved_name?` · ${coa.approved_name}`:''}</span>
+                <div style={{flex:1}}/>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setPrinting(true)}>🖨️ عرض / طباعة</button>
+                {coa.status==='draft' && canIssue && <button className="btn btn-ghost btn-sm" onClick={()=>setCoaForm(true)}>✏️ تعديل النتائج</button>}
+                {coa.status==='draft' && canApprove && <>
+                  <button className="btn btn-primary btn-sm" disabled={busy} style={{background:'#16a34a'}} onClick={()=>decide('approved')}>✅ اعتماد</button>
+                  <button className="btn btn-danger btn-sm" disabled={busy} onClick={()=>decide('rejected')}>✕ رفض</button>
+                </>}
+                {coa.status!=='draft' && canApprove && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={()=>decide('draft')}>↩️ إرجاع لمسودة</button>}
+              </div>
+            )}
+          </ChemSection>
+        </div>
+        <div className="modal-footer">
+          {canProduce && l.status!=='approved' && <button className="btn btn-danger" disabled={busy} onClick={voidLot} style={{marginInlineEnd:'auto'}}>🗑 إلغاء التشغيلة</button>}
+          <button className="btn btn-ghost" onClick={onClose}>إغلاق</button>
+        </div>
+      </div>
+      {coaForm && <ChemCoaForm user={user} lot={l} material={m} specs={specs} coa={coa}
+        onClose={()=>setCoaForm(false)} onSave={()=>{ setCoaForm(false); onChanged(); }}/>}
+      {printing && coa && <ChemCoaPrint docs={[{ lot:l, material:m, coa }]} packById={packById} receiptById={receiptById}
+        onClose={()=>setPrinting(false)}/>}
+    </div>
+  );
+}
+
+function ChemCoaForm({ user, lot, material:m, specs, coa, onSave, onClose }) {
+  const isEdit = !!coa;
+  const [rows, setRows] = useState(null);
+  const [form, setForm] = useState({
+    issue_date: coa?.issue_date || new Date().toISOString().slice(0,10),
+    analyst_name: coa?.analyst_name || user.full_name || '', conclusion: coa?.conclusion || '', remarks: coa?.remarks || '',
+  });
+  const [conclTouched, setConclTouched] = useState(!!coa?.conclusion);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  useEffect(() => {
+    const init = async () => {
+      if (isEdit) {
+        const { data } = await sb.from('chem_coa_results').select('*').eq('coa_id', coa.id).order('seq');
+        setRows((data||[]).map(r=>({ ...r, min_value:chemNum(r.min_value), max_value:chemNum(r.max_value), result:r.result||'', override: null })));
+      } else {
+        setRows(specs.slice().sort((a,b)=>a.seq-b.seq).map(s=>({
+          parameter:s.parameter, spec_type:s.spec_type, min_value:chemNum(s.min_value), max_value:chemNum(s.max_value),
+          text_value:s.text_value||'', unit:s.unit||'', method:s.method||'', result:'', override:null })));
+      }
+    };
+    init();
+  }, []);
+
+  // المطابقة النهائية: يدوي لو محدّد، وإلا تلقائي، والنصوص الافتراضي "مطابق" لما تنكتب النتيجة
+  const passOf = (r) => {
+    if (r.override !== null && r.override !== undefined) return r.override;
+    const a = autoChemPass(r, r.result);
+    if (a !== null) return a;
+    if (isEdit && r.pass !== undefined && r.pass !== null && r.result) return r.pass;
+    return r.result.trim() ? (r.spec_type==='text' ? true : null) : null;
+  };
+  const allFilled = rows && rows.length>0 && rows.every(r=>r.result.trim());
+  const allPass = rows && rows.every(r=>passOf(r)===true);
+  useEffect(() => {
+    if (conclTouched || !rows) return;
+    setF('conclusion', !allFilled ? '' : allPass ? 'The lot complies with the specification.' : 'The lot does NOT comply with the specification.');
+  }, [allFilled, allPass]);
+
+  const setRow = (i,k,v) => setRows(rs=>rs.map((r,idx)=>idx===i?{...r,[k]:v}:r));
+
+  const handleSave = async () => {
+    if (!rows.length) { toast('المادة بدون بنود مواصفات — أضفها من سجل المادة أولاً','error'); return; }
+    setLoading(true);
+    try {
+      let coaId = coa?.id;
+      const payload = { issue_date: form.issue_date, analyst_name: form.analyst_name.trim()||null, conclusion: form.conclusion.trim()||null,
+        remarks: form.remarks.trim()||null, updated_at: new Date().toISOString() };
+      if (isEdit) {
+        const { error } = await sb.from('chem_coas').update(payload).eq('id', coaId); if (error) throw error;
+        const { error: de } = await sb.from('chem_coa_results').delete().eq('coa_id', coaId); if (de) throw de;
+      } else {
+        const { data, error } = await sb.from('chem_coas').insert({ ...payload, lot_id: lot.id, analyst_id: user.id, status:'draft' }).select().single();
+        if (error) throw error; coaId = data.id;
+        createLog(user, `أصدر شهادة تحليل ${data.coa_no} للتشغيلة ${lot.lot_no}`, 'chem_coa', data.id, data.coa_no);
+      }
+      const num = (v) => v===''||v==null ? null : parseFloat(v);
+      const { error: ie } = await sb.from('chem_coa_results').insert(rows.map((r,i)=>({
+        coa_id: coaId, seq:i, parameter:r.parameter, spec_type:r.spec_type, min_value:num(r.min_value), max_value:num(r.max_value),
+        text_value:r.text_value||null, unit:r.unit||null, method:r.method||null, result:r.result.trim()||null, pass: passOf(r),
+      })));
+      if (ie) throw ie;
+      toast('تم حفظ الشهادة ✓ (مسودة — بانتظار الاعتماد)','success');
+      onSave();
+    } catch(err) { toast('خطأ: '+chemRpcError(err),'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay" style={{zIndex:1100}}>
+      <div className="modal" style={{maxWidth:900}}>
+        <div className="modal-header">
+          <span className="modal-title">🧾 نتائج الفحص — {lot.lot_no} · {m?.name_en}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {m?.specs_reviewed===false && !isEdit && <div style={{fontSize:12,color:'#6b21a8',background:'#f3e8ff',borderRadius:8,padding:'8px 12px',marginBottom:12}}>⚠️ مواصفات هذه المادة لسا مسودة ما انراجعت — تأكد من الحدود قبل إصدار الشهادة.</div>}
+          {!rows ? <div style={{textAlign:'center',padding:30}}><div className="spinner" style={{margin:'auto'}}/></div>
+          : rows.length===0 ? <div style={{background:'#fef3c7',color:'#92400e',borderRadius:8,padding:'10px 12px',fontSize:13}}>المادة بدون بنود مواصفات — أضفها من "تعديل المادة" ثم ارجع هون.</div>
+          : (
+            <div style={{overflowX:'auto',marginBottom:14}}>
+              <table dir="ltr" style={{width:'100%',borderCollapse:'collapse',fontSize:13,minWidth:620}}>
+                <thead><tr style={{background:'#f1f5f9'}}>
+                  <th style={{textAlign:'left',padding:'7px 8px'}}>Parameter</th>
+                  <th style={{textAlign:'left',padding:'7px 8px'}}>Specification</th>
+                  <th style={{textAlign:'left',padding:'7px 8px',width:170}}>Result</th>
+                  <th style={{textAlign:'left',padding:'7px 8px',width:150}}>Pass</th>
+                </tr></thead>
+                <tbody>{rows.map((r,i)=>{
+                  const p = passOf(r), auto = autoChemPass(r, r.result);
+                  return (
+                    <tr key={i} style={{borderTop:'1px solid #e2edf5',background: p===false?'#fef2f2':undefined}}>
+                      <td style={{padding:'6px 8px',fontWeight:700}}>{r.parameter}{r.method && <div style={{fontSize:10,color:'var(--gray-400)',fontWeight:400}}>{r.method}</div>}</td>
+                      <td style={{padding:'6px 8px'}}>{formatChemSpec(r)}</td>
+                      <td style={{padding:'6px 8px'}}>
+                        <input className="form-control" value={r.result} onChange={e=>setRow(i,'result',e.target.value)}
+                          placeholder={r.spec_type==='text' ? (r.text_value||'Conforms') : r.spec_type==='max' ? `< ${chemNum(r.max_value)}` : ''}/>
+                      </td>
+                      <td style={{padding:'6px 8px'}}>
+                        <select className="form-control" value={r.override===null||r.override===undefined ? 'auto' : r.override ? 'y' : 'n'}
+                          onChange={e=>setRow(i,'override', e.target.value==='auto' ? null : e.target.value==='y')}
+                          style={{color: p===true?'#166534':p===false?'#b91c1c':undefined, fontWeight:700}}>
+                          <option value="auto">{auto===null ? (p===true?'✔ Complies':'— auto') : auto ? '✔ auto' : '✘ auto'}</option>
+                          <option value="y">✔ Complies</option>
+                          <option value="n">✘ Fails</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            </div>
+          )}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">تاريخ الشهادة</label>
+              <input type="date" className="form-control" value={form.issue_date} onChange={e=>setF('issue_date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">أُجري الفحص بواسطة</label>
+              <input className="form-control" value={form.analyst_name} onChange={e=>setF('analyst_name',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">الخلاصة (تظهر على الشهادة)</label>
+            <input className="form-control" dir="ltr" value={form.conclusion} onChange={e=>{ setF('conclusion',e.target.value); setConclTouched(true); }}/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات على الشهادة</label>
+            <input className="form-control" dir="ltr" value={form.remarks} onChange={e=>setF('remarks',e.target.value)}/>
+          </div>
+          {allFilled && !allPass && <div style={{fontSize:12,color:'#b91c1c',background:'#fef2f2',borderRadius:8,padding:'8px 12px'}}>⚠️ في بنود غير مطابقة — الشهادة ما بتنعتمد، وبتقدر ترفضها (التشغيلة بتصير مرفوضة).</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!rows||!rows.length}>{loading?'...':'حفظ الشهادة'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- طباعة الـCOA: صفحة A4 لكل شهادة بترويسة وفوتر عروض الأسعار + ختم قابل للسحب.
+   docs = [{ lot, material, coa }] — شهادة وحدة من شاشة التشغيلة، أو كل شهادات طلب تجهيز دفعة وحدة ---- */
+const CHEM_DEFAULT_STAMP = { bottom: 34, right: 18, w: 190 };
+function ChemCoaPrint({ docs, packById, receiptById, title, onClose }) {
+  const [resultsBy, setResultsBy] = useState(null);
+  const [showSig, setShowSig] = useState(docs.every(d=>d.coa.status==='approved'));
+  const [stampBy, setStampBy] = useState({});
+  const getStamp = (i) => stampBy[i] || CHEM_DEFAULT_STAMP;
+  useEffect(() => {
+    sb.from('chem_coa_results').select('*').in('coa_id', docs.map(d=>d.coa.id)).order('seq').then(({data})=>{
+      const by = {}; (data||[]).forEach(r=>{ (by[r.coa_id] = by[r.coa_id] || []).push(r); });
+      Object.values(by).forEach(a=>a.sort((x,y)=>x.seq-y.seq));
+      setResultsBy(by);
+    });
+  }, [docs.map(d=>d.coa.id).join()]);
+
+  const onStampDown = (e, i) => {
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, st = getStamp(i);
+    const mv = (ev) => setStampBy(prev=>({ ...prev, [i]: { ...st,
+      right:  Math.min(200, Math.max(0, Math.round(st.right  + (sx - ev.clientX)/PQ_MM))),
+      bottom: Math.min(280, Math.max(0, Math.round(st.bottom + (sy - ev.clientY)/PQ_MM))) } }));
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  };
+  const onResizeDown = (e, i) => {
+    e.preventDefault(); e.stopPropagation();
+    const sx = e.clientX, st = getStamp(i);
+    const mv = (ev) => setStampBy(prev=>({ ...prev, [i]: { ...st, w: Math.min(500, Math.max(80, Math.round(st.w + (sx - ev.clientX)))) } }));
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  };
+
+  const fmtD = (d) => { if (!d) return '—'; const x = new Date(d+'T00:00:00'); return x.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); };
+  const fmtM = (d) => { if (!d) return '—'; const x = new Date(d+'T00:00:00'); return x.toLocaleDateString('en-GB',{month:'short',year:'numeric'}); };
+  const cell = { border:'1px solid #b9cfe0', padding:'5px 8px', fontSize:11.5, verticalAlign:'top' };
+  const anyUnapproved = docs.some(d=>d.coa.status!=='approved');
+  const printTitle = title || (docs.length===1 ? `COA ${docs[0].coa.coa_no} - ${docs[0].material?.name_en} - ${docs[0].lot.lot_no}` : `COA (${docs.length})`);
+
+  const renderPage = ({ lot:l, material:m, coa }, i) => {
+    const results = (resultsBy && resultsBy[coa.id]) || [];
+    const packsTxt = (l.chem_lot_packs||[]).map(lp=>{ const p = packById[lp.pack_size_id]; return p ? `${lp.count} × ${chemNum(p.size)} ${p.unit}` : ''; }).filter(Boolean).join(' + ');
+    const srcReceipts = (l.chem_lot_inputs||[]).filter(x=>x.receipt_id && x.material_id===l.material_id).map(x=>receiptById[x.receipt_id]).filter(Boolean);
+    const mfr = [...new Set(srcReceipts.map(r=>r.manufacturer).filter(Boolean))].join(', ') || m?.manufacturer;
+    const mfrLots = [...new Set(srcReceipts.map(r=>r.manufacturer_lot).filter(Boolean))].join(', ');
+    const watermark = coa.status==='draft' ? 'DRAFT' : coa.status==='rejected' ? 'REJECTED' : null;
+    const info = [
+      ['Product', m?.name_en], ['Grade', m?.grade],
+      ['CAS No.', m?.cas_no], ['Formula', [m?.formula, m?.mol_weight && `MW ${chemNum(m.mol_weight)}`].filter(Boolean).join(' · ')],
+      ['Batch / Lot No.', l.lot_no], ['Total Quantity', packsTxt],
+      [l.lot_type==='prepare' ? 'Preparation Date' : 'Packing Date', fmtM(l.prod_date)], ['Expiry Date', fmtM(l.expiry_date)],
+      l.lot_type==='repack' && ['Manufacturer', mfr], l.lot_type==='repack' && ['Manufacturer Lot', mfrLots],
+      ['Origin', l.lot_type==='prepare' ? 'Prepared by HAYAT — Jordan' : 'Packed by HAYAT — Jordan'],
+    ].filter(Boolean).filter(r=>r[1]);
+    const st = getStamp(i);
+    return (
+      <div className="pq-page" key={coa.id}>
+        <div className="pq-page-inner" dir="rtl">
+          <PqDocHeader/>
+          <div dir="ltr" style={{fontFamily:'Arial, sans-serif',color:'#1a2e3d'}}>
+            <div style={{textAlign:'center',margin:'4mm 0 1mm',fontSize:20,fontWeight:900,letterSpacing:1,color:'#1C6A99'}}>CERTIFICATE OF ANALYSIS</div>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11.5,margin:'0 0 3mm'}}>
+              <span><b>Certificate No.:</b> {coa.coa_no}</span>
+              <span><b>Date:</b> {fmtD(coa.issue_date)}</span>
+            </div>
+            <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',marginBottom:'4mm'}}>
+              <colgroup><col style={{width:'19%'}}/><col style={{width:'31%'}}/><col style={{width:'19%'}}/><col style={{width:'31%'}}/></colgroup>
+              <tbody>
+                {Array.from({length:Math.ceil(info.length/2)}).map((_,ri)=>(
+                  <tr key={ri}>
+                    {[info[ri*2], info[ri*2+1]].map((it,ci)=> it ? (
+                      <React.Fragment key={ci}>
+                        <td style={{...cell,background:'#eef6fb',fontWeight:700}}>{it[0]}</td>
+                        <td style={cell}>{it[1]}</td>
+                      </React.Fragment>
+                    ) : <React.Fragment key={ci}><td style={cell}/><td style={cell}/></React.Fragment>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
+              <colgroup><col style={{width:'30%'}}/><col style={{width:'24%'}}/><col style={{width:'20%'}}/><col style={{width:'16%'}}/><col style={{width:'10%'}}/></colgroup>
+              <thead><tr>
+                {['Parameter','Specification','Result','Method',''].map((h,hi)=>(
+                  <th key={hi} style={{...cell,background:'#1C6A99',color:'#fff',textAlign:'left',fontSize:11.5}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>{results.map(r=>(
+                <tr key={r.id}>
+                  <td style={{...cell,fontWeight:700}}>{r.parameter}</td>
+                  <td style={cell}>{formatChemSpec(r)}</td>
+                  <td style={cell}>{r.result||'—'}</td>
+                  <td style={cell}>{r.method||'—'}</td>
+                  <td style={{...cell,textAlign:'center',fontWeight:900,color:r.pass?'#15803d':'#b91c1c'}}>{r.pass ? '✓' : r.pass===false ? '✗' : ''}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+            {coa.conclusion && <div style={{marginTop:'4mm',padding:'6px 10px',border:'1.5px solid #1C6A99',borderRadius:6,fontSize:12,fontWeight:700}}>Conclusion: {coa.conclusion}</div>}
+            {m?.storage_conditions && <div style={{marginTop:'3mm',fontSize:11}}><b>Storage:</b> {m.storage_conditions}</div>}
+            {coa.remarks && <div style={{marginTop:'2mm',fontSize:11}}><b>Remarks:</b> {coa.remarks}</div>}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10mm',marginTop:'8mm',fontSize:11.5}}>
+              <div><div style={{color:'#5b6b7a'}}>Analysed by</div><div style={{fontWeight:700,marginTop:2}}>{coa.analyst_name||'—'}</div></div>
+              <div><div style={{color:'#5b6b7a'}}>Approved by (Quality / Lab Manager)</div><div style={{fontWeight:700,marginTop:2}}>{coa.approved_name||'—'}</div>
+                {coa.approved_at && <div style={{color:'#5b6b7a',fontSize:10.5}}>{fmtD(coa.approved_at.slice(0,10))}</div>}</div>
+            </div>
+            <div style={{marginTop:'5mm',fontSize:9.5,color:'#7a8b99'}}>This certificate relates only to the lot stated above. Results were obtained using the methods indicated.</div>
+          </div>
+        </div>
+        {watermark && <div style={{position:'absolute',top:'45%',left:0,right:0,textAlign:'center',transform:'rotate(-30deg)',fontSize:110,fontWeight:900,color:'rgba(220,38,38,.12)',pointerEvents:'none',zIndex:40}}>{watermark}</div>}
+        {showSig && (
+          <div className="pq-stamp" style={{bottom: st.bottom+'mm', right: st.right+'mm'}} onPointerDown={e=>onStampDown(e,i)} title="اسحب لتغيير مكان الختم">
+            <div className="pq-stamp-resize" onPointerDown={e=>onResizeDown(e,i)} title="اسحب للتكبير/التصغير"></div>
+            <img src={SIG_DATA_URL} alt="" className="print-sign-img" draggable={false} style={{width: st.w+'px'}}/>
+          </div>
+        )}
+        <PqFooterBar/>
+        {docs.length>1 && <div className="pq-pageno">{`${i+1} / ${docs.length}`}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="modal-overlay" style={{zIndex:1200}}>
+      <div className="modal" style={{maxWidth:900}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">🧾 {docs.length===1 ? `${docs[0].coa.coa_no} — ${docs[0].lot.lot_no}` : `شهادات التحليل (${docs.length})`}</span>
+          <div className="flex gap-2">
+            <button className={`sig-toggle-btn${showSig?' active':''}`} onClick={()=>setShowSig(s=>!s)}>{showSig ? '✅ ختم وتوقيع' : '🔏 إضافة ختم وتوقيع'}</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>printDoc('chem-coa-print', printTitle)} disabled={!resultsBy}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        {anyUnapproved && <div className="no-print" style={{padding:'8px 16px',background:'#fef3c7',color:'#92400e',fontSize:12}}>⚠️ في شهادة غير معتمدة — بتنطبع عليها علامة DRAFT / REJECTED.</div>}
+        <div className="modal-body pq-preview-body" id="chem-coa-print">
+          {!resultsBy ? <div style={{textAlign:'center',padding:40}}><div className="spinner" style={{margin:'auto'}}/></div> : docs.map(renderPage)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- المرحلة 3: طلبات التجهيز (مدير/مسؤول طلبيات → الكيميائي) ---- */
+const CHEM_PREP_STATUS = {
+  new:         { label:'جديد',            color:'#1e40af', bg:'#dbeafe' },
+  in_progress: { label:'قيد التجهيز',     color:'#92400e', bg:'#fef3c7' },
+  ready:       { label:'جاهز للتسليم',    color:'#166534', bg:'#dcfce7' },
+  delivered:   { label:'مُسلَّم',          color:'#374151', bg:'#f3f4f6' },
+  cancelled:   { label:'ملغى',            color:'#b91c1c', bg:'#fee2e2' },
+};
+
+// التشغيلات المتاحة لبند (مادة + حجم عبوة): معتمدة، غير منتهية، فيها رصيد — الأقرب انتهاءً أولاً (FEFO)
+const chemAvailableLots = (lots, packBal, materialId, packSizeId) => {
+  const today = new Date().toISOString().slice(0,10);
+  return lots.filter(l => l.material_id===materialId && l.status==='approved' && !(l.expiry_date && l.expiry_date < today))
+    .map(l => ({ lot:l, bal: packBal[l.id+'|'+packSizeId] || 0 })).filter(x => x.bal > 0)
+    .sort((a,b)=>(a.lot.expiry_date||'9999').localeCompare(b.lot.expiry_date||'9999'));
+};
+
+function ChemPrepOrderForm({ user, order, materials, packsBy, lots, packBal, profiles, customers, onPacksChanged, onSave, onClose }) {
+  const isEdit = !!order;
+  const matById = React.useMemo(()=>materials.reduce((m,x)=>{ m[x.id]=x; return m; },{}),[materials]);
+  const [form, setForm] = useState({
+    customer_name: order?.customer_name || '', assigned_to: order?.assigned_to || '',
+    priority: order?.priority || 'normal', due_date: order?.due_date || '', notes: order?.notes || '',
+  });
+  const [items, setItems] = useState(order
+    ? (order.chem_prep_order_items||[]).slice().sort((a,b)=>a.seq-b.seq).map(i=>({ material_id:i.material_id, pack_size_id:i.pack_size_id, qty:String(i.qty), notes:i.notes||'' }))
+    : [{ material_id:'', pack_size_id:'', qty:'', notes:'' }]);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const setItem = (i,k,v) => setItems(rows=>rows.map((x,idx)=>idx===i?{...x,[k]:v}:x));
+  const activePacks = (mid) => (packsBy[mid]||[]).filter(p=>p.is_active);
+  // اختيار مادة: لو إلها حجم عبوة واحد بينختار تلقائياً
+  const pickMaterial = (i, id) => setItems(rows=>rows.map((x,idx)=>idx!==i ? x
+    : { ...x, material_id:id, pack_size_id: activePacks(id).length===1 ? activePacks(id)[0].id : '', adding:false }));
+  const chemists = profiles.filter(p=>p.is_active!==false).sort((a,b)=>(hasPerm(b,'chem_orders_prepare')?1:0)-(hasPerm(a,'chem_orders_prepare')?1:0));
+
+  const handleSave = async () => {
+    const clean = items.filter(i=>i.material_id);
+    if (!isSuperAdmin(user)) {
+      if (!form.customer_name.trim()) { toast('أدخل اسم الزبون / الجهة','error'); return; }
+      if (!form.assigned_to) { toast('اختر الكيميائي المسؤول عن التجهيز','error'); return; }
+      if (!clean.length) { toast('أضف مادة واحدة على الأقل','error'); return; }
+      for (const it of clean) {
+        const nm = matById[it.material_id]?.name_en;
+        if (!it.pack_size_id) { toast(`اختر حجم العبوة لـ "${nm}"`,'error'); return; }
+        if (!(parseInt(it.qty)>0)) { toast(`أدخل عدد العبوات لـ "${nm}"`,'error'); return; }
+      }
+    }
+    setLoading(true);
+    try {
+      const cust = customers.find(c=>c.name.trim().toLowerCase()===form.customer_name.trim().toLowerCase());
+      const payload = { customer_name: form.customer_name.trim(), customer_id: cust?.id || null, assigned_to: form.assigned_to || null,
+        priority: form.priority, due_date: form.due_date || null, notes: form.notes.trim() || null };
+      let saved;
+      if (isEdit) {
+        const { data, error } = await sb.from('chem_prep_orders').update(payload).eq('id', order.id).select().single(); if (error) throw error; saved = data;
+        const { error: de } = await sb.from('chem_prep_order_items').delete().eq('order_id', order.id); if (de) throw de;
+      } else {
+        const { data, error } = await sb.from('chem_prep_orders').insert({ ...payload, created_by: user.id }).select().single(); if (error) throw error; saved = data;
+      }
+      const rows = clean.map((it,idx)=>({ order_id: saved.id, seq: idx, material_id: it.material_id,
+        pack_size_id: it.pack_size_id, qty: parseInt(it.qty), notes: it.notes.trim()||null }));
+      if (rows.length) { const { error } = await sb.from('chem_prep_order_items').insert(rows); if (error) throw error; }
+      if (saved.assigned_to && (!isEdit || order.assigned_to !== saved.assigned_to) && saved.assigned_to !== user.id) {
+        await createNotif({ userId: saved.assigned_to, title: `🧪 طلب تجهيز ${saved.order_no}${saved.priority==='urgent'?' — مستعجل':''}`,
+          body: `${saved.customer_name} · ${rows.length} صنف${saved.due_date?` · مطلوب ${saved.due_date}`:''}`, linkType:'chem_prep_order', linkId: saved.id });
+      }
+      createLog(user, `${isEdit?'عدّل':'أنشأ'} طلب تجهيز كيماويات ${saved.order_no}`, 'chem_prep_order', saved.id, saved.order_no);
+      toast(isEdit?'تم التحديث ✓':`تم إنشاء الطلب ${saved.order_no} ✓`,'success');
+      onSave(saved);
+    } catch(err) { toast('خطأ: '+chemRpcError(err),'error'); }
+    finally { setLoading(false); }
+  };
+
+  const rowBox = {display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderBottom:'1px dashed #e2edf5'};
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:820}}>
+        <div className="modal-header">
+          <span className="modal-title">📋 {isEdit ? `تعديل طلب التجهيز ${order.order_no}` : 'طلب تجهيز جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <datalist id="chem-prep-customers">{customers.map(c=><option key={c.id} value={c.name}/>)}</datalist>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الزبون / الجهة <span style={{color:'var(--danger)'}}>*</span></label>
+              <input className="form-control" list="chem-prep-customers" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)} placeholder="مدرسة، مستشفى، جامعة..."/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الكيميائي المسؤول <span style={{color:'var(--danger)'}}>*</span></label>
+              <select className="form-control" value={form.assigned_to} onChange={e=>setF('assigned_to',e.target.value)}>
+                <option value="">— اختر —</option>
+                {chemists.map(p=><option key={p.id} value={p.id}>{p.full_name}{hasPerm(p,'chem_orders_prepare')?' 🧪':''}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">الأولوية</label>
+              <select className="form-control" value={form.priority} onChange={e=>setF('priority',e.target.value)}>
+                <option value="normal">عادي</option><option value="urgent">🔴 مستعجل</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">مطلوب بتاريخ</label>
+              <input type="date" className="form-control" value={form.due_date} onChange={e=>setF('due_date',e.target.value)}/>
+            </div>
+          </div>
+
+          <ChemSection title="🧪 المواد المطلوبة"
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setItems(r=>[...r,{material_id:'',pack_size_id:'',qty:'',notes:''}])}>➕ مادة</button>}>
+            {items.map((it,i)=>{
+              const m = matById[it.material_id];
+              const mp = m ? activePacks(m.id) : [];
+              const avail = m && it.pack_size_id ? chemAvailableLots(lots, packBal, m.id, it.pack_size_id).reduce((s,x)=>s+x.bal,0) : null;
+              const short = avail!==null && parseInt(it.qty)>avail;
+              return (
+                <div key={i} style={rowBox}>
+                  <ChemMaterialPicker materials={materials} value={it.material_id} onChange={id=>pickMaterial(i,id)} style={{flex:'1 1 240px'}}/>
+                  {!m ? (
+                    <select className="form-control" style={{width:150}} disabled><option>اختر المادة أولاً</option></select>
+                  ) : (mp.length===0 || it.adding) ? (
+                    <ChemPackQuickAdd user={user} material={m}
+                      onAdded={p=>{ setItems(rows=>rows.map((x,idx)=>idx===i?{...x,pack_size_id:p.id,adding:false}:x)); onPacksChanged && onPacksChanged(); }}
+                      onCancel={mp.length ? ()=>setItem(i,'adding',false) : null}/>
+                  ) : (
+                    <select className="form-control" style={{width:160}} value={it.pack_size_id}
+                      onChange={e=> e.target.value==='__new' ? setItem(i,'adding',true) : setItem(i,'pack_size_id',e.target.value)}>
+                      <option value="">— حجم العبوة —</option>
+                      {mp.map(p=><option key={p.id} value={p.id}>{formatChemPack(p)}</option>)}
+                      {hasPerm(user,'chemicals_edit') && <option value="__new">➕ حجم جديد...</option>}
+                    </select>
+                  )}
+                  <input type="number" min="1" step="1" className="form-control" style={{width:90}} placeholder="العدد" value={it.qty} onChange={e=>setItem(i,'qty',e.target.value)}/>
+                  {avail!==null && <span style={{fontSize:11,fontWeight:700,color: short?'#b45309':'#166534'}}>{short ? `⚠️ المتاح ${avail} — بدها تشغيلة` : `✓ متاح ${avail}`}</span>}
+                  <input className="form-control" style={{flex:'1 1 120px'}} placeholder="ملاحظة" value={it.notes} onChange={e=>setItem(i,'notes',e.target.value)}/>
+                  <button type="button" className="btn btn-danger btn-sm" onClick={()=>setItems(r=>r.filter((_,idx)=>idx!==i))}>✕</button>
+                </div>
+              );
+            })}
+          </ChemSection>
+          <div className="form-group">
+            <label className="form-label">ملاحظات للكيميائي</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>{loading?'...':isEdit?'حفظ':'إرسال الطلب للكيميائي'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChemPrepOrderDetail({ user, order:o, matById, packById, lots, lotById, packBal, coaByLot, receiptById, profilesById, onClose, onChanged, onEdit, onNewLot }) {
+  const items = (o.chem_prep_order_items||[]).slice().sort((a,b)=>a.seq-b.seq);
+  const picks = o.chem_prep_order_picks||[];
+  const st = CHEM_PREP_STATUS[o.status];
+  const canCreate = hasPerm(user,'chem_orders_create');
+  const canPrepare = hasPerm(user,'chem_orders_prepare');
+  const preparing = ['new','in_progress'].includes(o.status);
+  const [busy, setBusy] = useState(false);
+  const [printSlip, setPrintSlip] = useState(false);
+  const [printCoas, setPrintCoas] = useState(false);
+
+  // اقتراح الصرف (FEFO) لكل بند: توزيع الكمية على التشغيلات الأقرب انتهاءً
+  const [alloc, setAlloc] = useState(() => {
+    const a = {};
+    items.forEach(it => {
+      let need = it.qty;
+      chemAvailableLots(lots, packBal, it.material_id, it.pack_size_id).forEach(x => {
+        const take = Math.min(need, x.bal); a[it.id+'|'+x.lot.id] = take > 0 ? String(take) : ''; need -= take;
+      });
+    });
+    return a;
+  });
+  const pickedFor = (it) => chemAvailableLots(lots, packBal, it.material_id, it.pack_size_id).reduce((s,x)=>s+(parseInt(alloc[it.id+'|'+x.lot.id])||0),0);
+  const allComplete = items.every(it => pickedFor(it)===it.qty);
+
+  const run = async (fn, okMsg, logMsg) => {
+    setBusy(true);
+    try { const { error } = await fn(); if (error) throw error; if (logMsg) createLog(user, logMsg, 'chem_prep_order', o.id, o.order_no); toast(okMsg,'success'); onChanged(); return true; }
+    catch(err) { toast('خطأ: '+chemRpcError(err),'error'); return false; }
+    finally { setBusy(false); }
+  };
+  const setStatus = (status, msg) => run(() => sb.from('chem_prep_orders').update({ status }).eq('id', o.id), msg, `${CHEM_PREP_STATUS[status].label}: طلب التجهيز ${o.order_no}`);
+  const fulfill = async () => {
+    if (!allComplete) { toast('وزّع الكمية المطلوبة بالكامل على التشغيلات','error'); return; }
+    if (!confirm('تأكيد التجهيز؟ العبوات بتنخصم من المخزون.')) return;
+    const p_picks = [];
+    items.forEach(it => chemAvailableLots(lots, packBal, it.material_id, it.pack_size_id).forEach(x => {
+      const q = parseInt(alloc[it.id+'|'+x.lot.id])||0; if (q>0) p_picks.push({ item_id: it.id, lot_id: x.lot.id, qty: q });
+    }));
+    const ok = await run(() => sb.rpc('chem_fulfill_prep_order', { p_order: o.id, p_picks }), 'تم التجهيز والصرف ✓', `جهّز طلب التجهيز ${o.order_no}`);
+    if (ok && o.created_by && o.created_by !== user.id) createNotif({ userId: o.created_by, title: `✅ طلب التجهيز ${o.order_no} جاهز`, body: o.customer_name, linkType:'chem_prep_order', linkId: o.id });
+  };
+  const reopen = (to) => {
+    if (!confirm(to==='cancelled' ? 'إلغاء الطلب؟ أي عبوات مصروفة بترجع للمخزون.' : 'إرجاع الطلب للتجهيز؟ العبوات المصروفة بترجع للمخزون.')) return;
+    run(() => sb.rpc('chem_reopen_prep_order', { p_order: o.id, p_to: to }), 'تم ✓', `${to==='cancelled'?'ألغى':'أرجع للتجهيز'} طلب التجهيز ${o.order_no}`);
+  };
+  const del = () => {
+    if (!confirm(`حذف الطلب ${o.order_no} نهائياً؟`)) return;
+    run(() => sb.from('chem_prep_orders').delete().eq('id', o.id), 'تم الحذف', `حذف طلب التجهيز ${o.order_no}`).then(ok => { if (ok) onClose(); });
+  };
+
+  const coaDocs = [...new Set(picks.map(p=>p.lot_id))].map(lid => ({ lot: lotById[lid], coa: coaByLot[lid] }))
+    .filter(d => d.lot && d.coa).map(d => ({ ...d, material: matById[d.lot.material_id] }));
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:860}}>
+        <div className="modal-header">
+          <span className="modal-title">📋 {o.order_no} — {o.customer_name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12,alignItems:'center'}}>
+            <ChemPill color={st.color} bg={st.bg}>{st.label}</ChemPill>
+            {o.priority==='urgent' && <ChemPill color="#b91c1c" bg="#fee2e2">🔴 مستعجل</ChemPill>}
+            {o.due_date && <ChemPill color="#374151" bg="#f3f4f6">مطلوب {o.due_date}</ChemPill>}
+            <span style={{fontSize:12,color:'var(--gray-500)'}}>الكيميائي: <b>{profilesById[o.assigned_to]?.full_name || '—'}</b> · أنشأه: {profilesById[o.created_by]?.full_name || '—'}</span>
+          </div>
+          {o.notes && <div style={{fontSize:13,background:'#f0f7fc',borderRadius:8,padding:'8px 12px',marginBottom:12}}>📝 {o.notes}</div>}
+
+          {items.map(it => {
+            const m = matById[it.material_id], ps = packById[it.pack_size_id];
+            const cand = chemAvailableLots(lots, packBal, it.material_id, it.pack_size_id);
+            const itemPicks = picks.filter(p=>p.item_id===it.id);
+            const picked = preparing ? pickedFor(it) : itemPicks.reduce((s,p)=>s+p.qty,0);
+            const availTotal = cand.reduce((s,x)=>s+x.bal,0);
+            return (
+              <ChemSection key={it.id} title={<span dir="ltr">{m?.name_en} — {ps?formatChemPack(ps):''} × {it.qty}</span>}
+                action={<ChemPill color={picked===it.qty?'#166534':'#92400e'} bg={picked===it.qty?'#dcfce7':'#fef3c7'}>{picked} / {it.qty}</ChemPill>}>
+                {it.notes && <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:6}}>📝 {it.notes}</div>}
+                {preparing ? (
+                  cand.length===0 ? (
+                    <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                      <span style={{fontSize:12,color:'#b45309'}}>لا يوجد رصيد معتمد لهذا الحجم.</span>
+                      {hasPerm(user,'chem_production') && <button className="btn btn-ghost btn-sm" onClick={()=>onNewLot(it.material_id)}>🏭 تشغيلة جديدة</button>}
+                    </div>
+                  ) : <>
+                    {cand.map(x => (
+                      <div key={x.lot.id} style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',padding:'5px 0'}}>
+                        <b style={{minWidth:110}}>{x.lot.lot_no}</b>
+                        <span style={{fontSize:12,color:'var(--gray-500)'}}>متاح {x.bal} · ينتهي {x.lot.expiry_date||'—'} · {coaByLot[x.lot.id]?.coa_no||''}</span>
+                        <input type="number" min="0" max={x.bal} step="1" className="form-control" style={{width:90}} disabled={!canPrepare}
+                          value={alloc[it.id+'|'+x.lot.id]||''} onChange={e=>setAlloc(a=>({...a,[it.id+'|'+x.lot.id]:e.target.value}))}/>
+                      </div>
+                    ))}
+                    {availTotal < it.qty && <div style={{fontSize:12,color:'#b45309',marginTop:4}}>⚠️ المتاح {availTotal} فقط — ناقص {it.qty-availTotal}.
+                      {hasPerm(user,'chem_production') && <button className="btn btn-ghost btn-sm" style={{marginInlineStart:8}} onClick={()=>onNewLot(it.material_id)}>🏭 تشغيلة جديدة</button>}</div>}
+                  </>
+                ) : itemPicks.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لم يُصرف شي</div>
+                  : itemPicks.map(p => (
+                    <div key={p.id} style={{fontSize:13,padding:'3px 0'}}>{p.qty} عبوة من <b>{lotById[p.lot_id]?.lot_no}</b> · ينتهي {lotById[p.lot_id]?.expiry_date||'—'} · {coaByLot[p.lot_id]?.coa_no||''}</div>
+                  ))}
+              </ChemSection>
+            );
+          })}
+          {o.prepared_at && <div style={{fontSize:12,color:'var(--gray-500)'}}>جُهّز بواسطة {profilesById[o.prepared_by]?.full_name||'—'} · {new Date(o.prepared_at).toLocaleString('en-GB')}</div>}
+          {o.delivered_at && <div style={{fontSize:12,color:'var(--gray-500)'}}>سُلّم {new Date(o.delivered_at).toLocaleString('en-GB')}</div>}
+        </div>
+        <div className="modal-footer" style={{flexWrap:'wrap'}}>
+          {canCreate && o.status==='new' && <button className="btn btn-ghost" disabled={busy} onClick={onEdit}>✏️ تعديل</button>}
+          {canCreate && ['new','cancelled'].includes(o.status) && <button className="btn btn-danger" disabled={busy} onClick={del}>🗑 حذف</button>}
+          {(canCreate||canPrepare) && ['new','in_progress','ready'].includes(o.status) && <button className="btn btn-danger" disabled={busy} onClick={()=>reopen('cancelled')}>✕ إلغاء الطلب</button>}
+          <div style={{flex:1}}/>
+          {['ready','delivered'].includes(o.status) && <>
+            <button className="btn btn-ghost" onClick={()=>setPrintSlip(true)}>🖨️ ورقة التسليم</button>
+            <button className="btn btn-ghost" disabled={!coaDocs.length} onClick={()=>setPrintCoas(true)}>🧾 شهادات التحليل ({coaDocs.length})</button>
+          </>}
+          {canPrepare && o.status==='new' && <button className="btn btn-ghost" disabled={busy} onClick={()=>setStatus('in_progress','بدأ التجهيز')}>▶ بدء التجهيز</button>}
+          {canPrepare && preparing && <button className="btn btn-primary" disabled={busy||!allComplete} onClick={fulfill} style={{background:'#16a34a'}}>✅ تم التجهيز والصرف</button>}
+          {canPrepare && o.status==='ready' && <button className="btn btn-ghost" disabled={busy} onClick={()=>reopen('in_progress')}>↩️ إرجاع للتجهيز</button>}
+          {(canCreate||canPrepare) && o.status==='ready' && <button className="btn btn-primary" disabled={busy} onClick={()=>{ if (confirm('تأكيد تسليم الطلب؟ بعد التسليم ما بينلغى.')) setStatus('delivered','تم التسليم ✓'); }}>🚚 تم التسليم</button>}
+        </div>
+      </div>
+      {printSlip && <ChemPrepSlipPrint order={o} items={items} picks={picks} matById={matById} packById={packById} lotById={lotById} coaByLot={coaByLot} profilesById={profilesById} onClose={()=>setPrintSlip(false)}/>}
+      {printCoas && <ChemCoaPrint docs={coaDocs} packById={packById} receiptById={receiptById} title={`COA - ${o.order_no} - ${o.customer_name}`} onClose={()=>setPrintCoas(false)}/>}
+    </div>
+  );
+}
+
+/* ---- ورقة تجهيز وتسليم: صفحة A4 بترويسة الشركة، سطر لكل تشغيلة مصروفة ---- */
+function ChemPrepSlipPrint({ order:o, items, picks, matById, packById, lotById, coaByLot, profilesById, onClose }) {
+  const rows = items.flatMap(it => picks.filter(p=>p.item_id===it.id).map(p => ({ it, p })));
+  const cell = { border:'1px solid #b9cfe0', padding:'6px 8px', fontSize:12 };
+  const today = new Date().toLocaleDateString('en-GB');
+  return (
+    <div className="modal-overlay" style={{zIndex:1200}}>
+      <div className="modal" style={{maxWidth:900}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">🖨️ ورقة تسليم — {o.order_no}</span>
+          <div className="flex gap-2">
+            <button className="btn btn-primary btn-sm" onClick={()=>printDoc('chem-slip-print', `ورقة تسليم ${o.order_no} - ${o.customer_name}`)}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className="modal-body pq-preview-body" id="chem-slip-print">
+          <div className="pq-page">
+            <div className="pq-page-inner" dir="rtl">
+              <PqDocHeader/>
+              <div style={{textAlign:'center',margin:'4mm 0 3mm',fontSize:19,fontWeight:900,color:'#1C6A99'}}>ورقة تجهيز وتسليم كيماويات</div>
+              <table style={{width:'100%',borderCollapse:'collapse',marginBottom:'4mm'}}>
+                <tbody>
+                  <tr><td style={{...cell,background:'#eef6fb',fontWeight:700,width:'18%'}}>رقم الطلب</td><td style={cell}>{o.order_no}</td>
+                      <td style={{...cell,background:'#eef6fb',fontWeight:700,width:'18%'}}>التاريخ</td><td style={cell}>{today}</td></tr>
+                  <tr><td style={{...cell,background:'#eef6fb',fontWeight:700}}>الجهة</td><td style={cell} colSpan={3}>{o.customer_name}</td></tr>
+                </tbody>
+              </table>
+              <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
+                <colgroup><col style={{width:'5%'}}/><col style={{width:'33%'}}/><col style={{width:'12%'}}/><col style={{width:'8%'}}/><col style={{width:'15%'}}/><col style={{width:'12%'}}/><col style={{width:'15%'}}/></colgroup>
+                <thead><tr>{['#','المادة','العبوة','العدد','رقم التشغيلة','الانتهاء','شهادة التحليل'].map((h,i)=>(
+                  <th key={i} style={{...cell,background:'#1C6A99',color:'#fff'}}>{h}</th>))}</tr></thead>
+                <tbody>{rows.map(({it,p},i)=>(
+                  <tr key={p.id}>
+                    <td style={{...cell,textAlign:'center'}}>{i+1}</td>
+                    <td style={cell} dir="ltr">{matById[it.material_id]?.name_en}</td>
+                    <td style={cell} dir="ltr">{packById[it.pack_size_id] ? `${chemNum(packById[it.pack_size_id].size)} ${packById[it.pack_size_id].unit}` : ''}</td>
+                    <td style={{...cell,textAlign:'center',fontWeight:700}}>{p.qty}</td>
+                    <td style={cell} dir="ltr">{lotById[p.lot_id]?.lot_no}</td>
+                    <td style={cell} dir="ltr">{lotById[p.lot_id]?.expiry_date||'—'}</td>
+                    <td style={cell} dir="ltr">{coaByLot[p.lot_id]?.coa_no||'—'}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+              <div style={{fontSize:12,marginTop:'3mm'}}>إجمالي العبوات: <b>{rows.reduce((s,r)=>s+r.p.qty,0)}</b> — مرفق شهادة تحليل (COA) لكل تشغيلة.</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12mm',marginTop:'14mm',fontSize:12}}>
+                <div>جهّزه: <b>{profilesById[o.prepared_by]?.full_name||''}</b><div style={{borderBottom:'1px dashed #999',height:'12mm'}}/><div style={{color:'#777',fontSize:10}}>التوقيع</div></div>
+                <div>استلمه (الاسم والتوقيع):<div style={{borderBottom:'1px dashed #999',height:'12mm'}}/><div style={{color:'#777',fontSize:10}}>التاريخ: ____ / ____ / ______</div></div>
+              </div>
+            </div>
+            <PqFooterBar/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- سجل الحركات + التتبّع ---- */
+const CHEM_MOV_TYPES = {
+  receive: { label:'استلام',            icon:'📥', color:'#166534', bg:'#dcfce7' },
+  produce: { label:'إنتاج تشغيلة',      icon:'🏭', color:'#1e40af', bg:'#dbeafe' },
+  consume: { label:'استهلاك بتشغيلة',   icon:'⚗️', color:'#6b21a8', bg:'#f3e8ff' },
+  issue:   { label:'صرف لطلب تجهيز',    icon:'🚚', color:'#9a3412', bg:'#ffedd5' },
+  adjust:  { label:'تسوية',             icon:'⚖️', color:'#374151', bg:'#f3f4f6' },
+};
+
+function ChemLedgerPanel({ materials, matById, receiptById, lotById, packById, prepById, profilesById, initialMaterialId, onOpenLot }) {
+  const [materialId, setMaterialId] = useState(initialMaterialId || '');
+  const [type, setType] = useState('all');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+  const LIMIT = 500;
+  useEffect(() => { if (initialMaterialId) setMaterialId(initialMaterialId); }, [initialMaterialId]);
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    let qy = sb.from('chem_stock_movements').select('*').order('created_at',{ascending:false}).limit(LIMIT);
+    if (materialId) qy = qy.eq('material_id', materialId);
+    if (type!=='all') qy = qy.eq('movement_type', type);
+    if (from) qy = qy.gte('created_at', from);
+    if (to) qy = qy.lte('created_at', to+'T23:59:59');
+    qy.then(({ data, error }) => { if (!alive) return; setError(error||null); setRows(data||[]); });
+    return () => { alive = false; };
+  }, [materialId, type, from, to]);
+
+  const bucket = (r) => {
+    if (r.receipt_id) { const rc = receiptById[r.receipt_id]; return rc ? `Bulk ${rc.receipt_no} · Lot ${rc.manufacturer_lot||'—'}` : 'Bulk'; }
+    const l = lotById[r.lot_id], p = packById[r.pack_size_id];
+    return `${l?.lot_no||'تشغيلة محذوفة'}${p?` · ${formatChemPack(p)}`:''}`;
+  };
+  const ref = (r) => {
+    if (r.ref_type==='lot' && r.ref_id && r.ref_id!==r.lot_id) return `→ ${lotById[r.ref_id]?.lot_no || 'تشغيلة'}`;
+    if (r.ref_type==='prep_order') { const o = prepById[r.ref_id]; return o ? `${o.order_no} — ${o.customer_name}` : 'طلب تجهيز'; }
+    return r.reason || '';
+  };
+  const qtyTxt = (r) => r.unit==='pack' ? `${r.qty>0?'+':''}${chemNum(r.qty)} عبوة` : `${r.qty>0?'+':''}${fmtChemQty(r.qty, r.unit)}`;
+  const csv = () => {
+    const head = ['التاريخ','النوع','المادة','الرصيد','الكمية','الوحدة','المرجع','المستخدم'];
+    const lines = (rows||[]).map(r => [new Date(r.created_at).toLocaleString('en-GB'), CHEM_MOV_TYPES[r.movement_type]?.label, matById[r.material_id]?.name_en,
+      bucket(r), r.qty, r.unit, ref(r), profilesById[r.created_by]?.full_name||''].map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(','));
+    const blob = new Blob(['﻿'+[head.join(','), ...lines].join('\r\n')], { type:'text/csv;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `chemical-movements-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',background:'#fff',border:'1.5px solid #e2edf5',borderRadius:12,padding:12,marginBottom:12}}>
+        <div style={{flex:'1 1 240px'}}>
+          <label className="form-label">المادة</label>
+          <div style={{display:'flex',gap:6}}>
+            <ChemMaterialPicker materials={materials} value={materialId} onChange={setMaterialId} placeholder="كل المواد" style={{flex:1}}/>
+            {materialId && <button className="btn btn-ghost btn-sm" onClick={()=>setMaterialId('')}>✕</button>}
+          </div>
+        </div>
+        <div>
+          <label className="form-label">نوع الحركة</label>
+          <select className="form-control" value={type} onChange={e=>setType(e.target.value)}>
+            <option value="all">الكل</option>
+            {Object.entries(CHEM_MOV_TYPES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+          </select>
+        </div>
+        <div><label className="form-label">من</label><input type="date" className="form-control" value={from} onChange={e=>setFrom(e.target.value)}/></div>
+        <div><label className="form-label">إلى</label><input type="date" className="form-control" value={to} onChange={e=>setTo(e.target.value)}/></div>
+        <button className="btn btn-ghost" onClick={csv} disabled={!rows||!rows.length}>⬇️ Excel (CSV)</button>
+      </div>
+      {error ? <div className="empty-state" style={{padding:40}}><p>تعذّر التحميل: {error.message}</p></div>
+      : !rows ? <div style={{textAlign:'center',padding:40}}><div className="spinner" style={{margin:'auto'}}/></div>
+      : rows.length===0 ? <div className="empty-state" style={{padding:'50px 20px'}}><div style={{fontSize:44}}>📜</div><p>لا توجد حركات بهذا الفلتر</p></div>
+      : (
+        <div style={{background:'#fff',border:'1.5px solid #e2edf5',borderRadius:12,overflow:'hidden'}}>
+          {rows.map((r,i) => {
+            const t = CHEM_MOV_TYPES[r.movement_type] || CHEM_MOV_TYPES.adjust;
+            const lotLink = r.lot_id && lotById[r.lot_id];
+            return (
+              <div key={r.id} style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',padding:'9px 14px',borderBottom:'1px solid #f0f4f8',background:i%2?'#fafcfd':'#fff'}}>
+                <div style={{width:118,fontSize:11,color:'var(--gray-500)'}}>{new Date(r.created_at).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+                <ChemPill color={t.color} bg={t.bg}>{t.icon} {t.label}</ChemPill>
+                <div style={{flex:'1 1 200px',minWidth:0}}>
+                  <div dir="ltr" style={{fontWeight:700,fontSize:13,textAlign:'right'}}>{matById[r.material_id]?.name_en}</div>
+                  <div style={{fontSize:11,color:'var(--gray-500)'}}>
+                    {lotLink ? <a href="#" onClick={e=>{ e.preventDefault(); onOpenLot(r.lot_id); }}>{bucket(r)}</a> : bucket(r)}
+                    {ref(r) && <> · {ref(r)}</>}
+                  </div>
+                </div>
+                <div dir="ltr" style={{fontWeight:800,fontSize:13,color:r.qty<0?'#b91c1c':'#166534',minWidth:90,textAlign:'left'}}>{qtyTxt(r)}</div>
+                <div style={{fontSize:11,color:'var(--gray-500)',minWidth:90}}>{profilesById[r.created_by]?.full_name||''}</div>
+              </div>
+            );
+          })}
+          {rows.length===LIMIT && <div style={{padding:10,fontSize:12,color:'var(--gray-500)',textAlign:'center'}}>يعرض آخر {LIMIT} حركة — ضيّق الفلتر لرؤية الأقدم</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* التتبّع: من تشغيلتنا أو تشغيلة المصنّع أو الجهة → المصادر والتوزيع (للسحب من السوق Recall) */
+function ChemTracePanel({ lots, receipts, prepOrders, matById, packById, coaByLot, lotById, receiptById, packBal, onOpenLot }) {
+  const [q, setQ] = useState('');
+  const [target, setTarget] = useState(null);   // { type:'lot'|'receipt'|'customer', id }
+  const s = q.trim().toLowerCase();
+
+  const allPicks = React.useMemo(() => prepOrders.flatMap(o => (o.chem_prep_order_picks||[]).map(p => ({ ...p, order:o }))), [prepOrders]);
+  const customers = React.useMemo(() => [...new Set(prepOrders.filter(o=>(o.chem_prep_order_picks||[]).length).map(o=>o.customer_name))], [prepOrders]);
+  const results = !s ? [] : [
+    ...lots.filter(l => (l.lot_no||'').toLowerCase().includes(s) || (matById[l.material_id]?.name_en||'').toLowerCase().includes(s))
+      .map(l => ({ type:'lot', id:l.id, title:l.lot_no, sub:`${matById[l.material_id]?.name_en} · تشغيلتنا` })),
+    ...receipts.filter(r => (r.receipt_no||'').toLowerCase().includes(s) || (r.manufacturer_lot||'').toLowerCase().includes(s))
+      .map(r => ({ type:'receipt', id:r.id, title:`${r.receipt_no} · Lot المصنّع ${r.manufacturer_lot||'—'}`, sub:`${matById[r.material_id]?.name_en} · bulk` })),
+    ...customers.filter(c => (c||'').toLowerCase().includes(s)).map(c => ({ type:'customer', id:c, title:c, sub:'جهة استلمت كيماويات' })),
+  ].slice(0, 30);
+
+  const distOf = (lotId) => allPicks.filter(p => p.lot_id===lotId && p.order.status!=='cancelled');
+  const childLots = (lotId) => lots.filter(l => (l.chem_lot_inputs||[]).some(i => i.source_lot_id===lotId));
+  const lotsFromReceipt = (rid) => lots.filter(l => (l.chem_lot_inputs||[]).some(i => i.receipt_id===rid));
+  const LotLink = ({ id }) => <a href="#" onClick={e=>{ e.preventDefault(); setTarget({ type:'lot', id }); }}><b>{lotById[id]?.lot_no}</b></a>;
+  const DistList = ({ lotId }) => {
+    const d = distOf(lotId);
+    if (!d.length) return <div style={{fontSize:12,color:'var(--gray-400)'}}>لم يُصرف لأي جهة بعد</div>;
+    return d.map(p => (
+      <div key={p.id} style={{fontSize:13,padding:'3px 0',display:'flex',gap:8,flexWrap:'wrap'}}>
+        <span>🏥 <b>{p.order.customer_name}</b></span>
+        <span>{p.qty} × {packById[p.pack_size_id] ? formatChemPack(packById[p.pack_size_id]) : ''}</span>
+        <span style={{color:'var(--gray-500)'}}>{p.order.order_no} · {CHEM_PREP_STATUS[p.order.status]?.label}{p.order.prepared_at?` · ${p.order.prepared_at.slice(0,10)}`:''}</span>
+      </div>
+    ));
+  };
+
+  let body = null;
+  if (target?.type==='lot' && lotById[target.id]) {
+    const l = lotById[target.id], m = matById[l.material_id], st = CHEM_LOT_STATUS[l.status], coa = coaByLot[l.id];
+    const kids = childLots(l.id);
+    const reach = new Set(distOf(l.id).map(p=>p.order.customer_name));
+    kids.forEach(k => distOf(k.id).forEach(p => reach.add(p.order.customer_name)));
+    body = <>
+      <ChemSection title={<span>🏭 {l.lot_no} — <span dir="ltr">{m?.name_en}</span></span>}
+        action={<button className="btn btn-ghost btn-sm" onClick={()=>onOpenLot(l.id)}>فتح التشغيلة</button>}>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          <ChemPill color={st.color} bg={st.bg}>{st.label}</ChemPill>
+          {coa && <ChemPill color="#1e40af" bg="#dbeafe">{coa.coa_no}</ChemPill>}
+          <ChemPill color="#374151" bg="#f3f4f6">إنتاج {l.prod_date}</ChemPill>
+          {chemExpiryPill(l.expiry_date)}
+          <ChemPill color={reach.size?'#9a3412':'#374151'} bg={reach.size?'#ffedd5':'#f3f4f6'}>وصلت لـ {reach.size} جهة</ChemPill>
+        </div>
+      </ChemSection>
+      <ChemSection title="⬅️ المصادر">
+        {(l.chem_lot_inputs||[]).length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>بدون مدخلات مخزنية</div>
+          : (l.chem_lot_inputs||[]).map(i => {
+            const r = i.receipt_id ? receiptById[i.receipt_id] : null;
+            return <div key={i.id} style={{fontSize:13,padding:'3px 0'}}>
+              <span dir="ltr">{matById[i.material_id]?.name_en}</span> — {r
+                ? <>{fmtChemQty(i.qty, i.unit)} من <a href="#" onClick={e=>{ e.preventDefault(); setTarget({ type:'receipt', id:r.id }); }}><b>{r.receipt_no}</b></a> (المصنّع {r.manufacturer||'—'} · Lot {r.manufacturer_lot||'—'})</>
+                : <>{chemNum(i.qty)} عبوة من <LotLink id={i.source_lot_id}/></>}
+            </div>;
+          })}
+      </ChemSection>
+      <ChemSection title="📦 العبوات">
+        {(l.chem_lot_packs||[]).map(lp => <div key={lp.id} style={{fontSize:13}}>{lp.count} × {packById[lp.pack_size_id]?formatChemPack(packById[lp.pack_size_id]):''} — متبقي {packBal[l.id+'|'+lp.pack_size_id]||0}</div>)}
+      </ChemSection>
+      <ChemSection title="➡️ التوزيع على الجهات"><DistList lotId={l.id}/></ChemSection>
+      {kids.length>0 && <ChemSection title="➡️ دخلت كمكوّن بتشغيلات">
+        {kids.map(k => <div key={k.id} style={{fontSize:13,padding:'3px 0'}}><LotLink id={k.id}/> — <span dir="ltr">{matById[k.material_id]?.name_en}</span><div style={{paddingInlineStart:16}}><DistList lotId={k.id}/></div></div>)}
+      </ChemSection>}
+    </>;
+  } else if (target?.type==='receipt' && receiptById[target.id]) {
+    const r = receiptById[target.id], made = lotsFromReceipt(r.id);
+    const reach = new Set(); made.forEach(l => { distOf(l.id).forEach(p=>reach.add(p.order.customer_name)); childLots(l.id).forEach(k=>distOf(k.id).forEach(p=>reach.add(p.order.customer_name))); });
+    body = <>
+      <ChemSection title={<span>📥 {r.receipt_no} — <span dir="ltr">{matById[r.material_id]?.name_en}</span></span>}>
+        <div style={{fontSize:13,display:'flex',gap:12,flexWrap:'wrap'}}>
+          <span>المصنّع: <b>{r.manufacturer||'—'}</b></span><span>Lot المصنّع: <b>{r.manufacturer_lot||'—'}</b></span>
+          <span>المورد: {r.supplier_name||'—'}</span><span>استلام {r.received_date}</span>{chemExpiryPill(r.expiry_date)}
+          <ChemPill color={reach.size?'#9a3412':'#374151'} bg={reach.size?'#ffedd5':'#f3f4f6'}>وصلت لـ {reach.size} جهة</ChemPill>
+        </div>
+      </ChemSection>
+      <ChemSection title="➡️ التشغيلات المصنوعة منه">
+        {made.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لم يُستعمل بأي تشغيلة بعد</div>
+          : made.map(l => <div key={l.id} style={{padding:'4px 0'}}><div style={{fontSize:13}}><LotLink id={l.id}/> — <span dir="ltr">{matById[l.material_id]?.name_en}</span> · {CHEM_LOT_STATUS[l.status].label}</div>
+              <div style={{paddingInlineStart:16}}><DistList lotId={l.id}/></div></div>)}
+      </ChemSection>
+    </>;
+  } else if (target?.type==='customer') {
+    const ps = allPicks.filter(p => p.order.customer_name===target.id && p.order.status!=='cancelled');
+    body = <ChemSection title={`🏥 ${target.id} — ${ps.length} سطر صرف`}>
+      {ps.map(p => {
+        const l = lotById[p.lot_id];
+        return <div key={p.id} style={{fontSize:13,padding:'4px 0',display:'flex',gap:8,flexWrap:'wrap'}}>
+          <span dir="ltr"><b>{matById[l?.material_id]?.name_en}</b></span>
+          <span>{p.qty} × {packById[p.pack_size_id]?formatChemPack(packById[p.pack_size_id]):''}</span>
+          <span>من <LotLink id={p.lot_id}/></span>
+          <span style={{color:'var(--gray-500)'}}>{p.order.order_no} · {p.order.prepared_at?.slice(0,10)||''} · {coaByLot[p.lot_id]?.coa_no||''}</span>
+        </div>;
+      })}
+    </ChemSection>;
+  }
+
+  return (
+    <div>
+      <div style={{background:'#fff',border:'1.5px solid #e2edf5',borderRadius:12,padding:12,marginBottom:12,position:'relative'}}>
+        <label className="form-label">ابحث برقم تشغيلتنا (HM-…)، رقم الاستلام (RC-…)، تشغيلة المصنّع، اسم المادة أو الجهة</label>
+        <input className="form-control" value={q} onChange={e=>setQ(e.target.value)} placeholder="HM-2609-001 أو K123 أو مدرسة..."/>
+        {s && (
+          <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:4,maxHeight:260,overflowY:'auto'}}>
+            {results.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد نتائج</div>
+              : results.map(r => (
+                <div key={r.type+r.id} onClick={()=>{ setTarget({ type:r.type, id:r.id }); setQ(''); }}
+                  style={{padding:'7px 10px',border:'1px solid #e2edf5',borderRadius:8,cursor:'pointer',background:'#fafcfd'}}>
+                  <b>{r.title}</b> <span style={{fontSize:12,color:'var(--gray-500)'}}>— {r.sub}</span>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+      {body || <div className="empty-state" style={{padding:'50px 20px'}}><div style={{fontSize:44}}>🔎</div><p>ابحث عن تشغيلة أو استلام أو جهة لعرض مسارها الكامل</p></div>}
+    </div>
+  );
+}
+
+function ChemAdjustForm({ user, material:m, receipts, receiptBal, lots, packBal, packById, onSave, onClose }) {
+  const buckets = [
+    ...receipts.filter(r=>(receiptBal[r.id]||0)>0).map(r=>({ key:'r:'+r.id, label:`Bulk ${r.receipt_no} (Lot ${r.manufacturer_lot||'—'})`, bal:receiptBal[r.id]||0, unit:r.base_unit, receipt_id:r.id })),
+    ...lots.flatMap(l=>(l.chem_lot_packs||[]).map(lp=>({ key:`l:${l.id}|${lp.pack_size_id}`, label:`${l.lot_no} · ${packById[lp.pack_size_id]?formatChemPack(packById[lp.pack_size_id]):''}`, bal:packBal[l.id+'|'+lp.pack_size_id]||0, unit:'pack', lot_id:l.id, pack_size_id:lp.pack_size_id }))),
+  ];
+  const [key, setKey] = useState(buckets[0]?.key || '');
+  const [dir, setDir] = useState('out');
+  const [qty, setQty] = useState('');
+  const [reason, setReason] = useState(CHEM_ADJ_REASONS[0]);
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(false);
+  const b = buckets.find(x=>x.key===key);
+
+  const handleSave = async () => {
+    const qn = parseFloat(qty);
+    if (!b) { toast('اختر الرصيد','error'); return; }
+    if (!(qn>0)) { toast('أدخل الكمية','error'); return; }
+    if (b.unit==='pack' && !Number.isInteger(qn)) { toast('عدد العبوات لازم يكون رقم صحيح','error'); return; }
+    if (dir==='out' && qn > b.bal) { toast(`الكمية أكبر من الرصيد (${b.bal})`,'error'); return; }
+    setLoading(true);
+    try {
+      const row = { material_id: m.id, movement_type:'adjust', qty: dir==='out' ? -qn : qn, unit: b.unit,
+        reason: [reason, note.trim()].filter(Boolean).join(' — '), ref_type:'adjust' };
+      if (b.receipt_id) row.receipt_id = b.receipt_id; else { row.lot_id = b.lot_id; row.pack_size_id = b.pack_size_id; }
+      const { error } = await sb.from('chem_stock_movements').insert(row);
+      if (error) throw error;
+      createLog(user, `تسوية مخزون ${m.name_en}: ${dir==='out'?'-':'+'}${qn} ${b.unit==='pack'?'عبوة':b.unit} (${reason})`, 'chem_stock', m.id, m.code);
+      toast('تمت التسوية ✓','success'); onSave();
+    } catch(err) { toast('خطأ: '+chemRpcError(err),'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:520}}>
+        <div className="modal-header">
+          <span className="modal-title">⚖️ تسوية مخزون — {m.name_en}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          {buckets.length===0 ? <div style={{fontSize:13,color:'var(--gray-500)'}}>لا يوجد رصيد لهذه المادة.</div> : <>
+            <div className="form-group">
+              <label className="form-label">الرصيد</label>
+              <select className="form-control" value={key} onChange={e=>setKey(e.target.value)}>
+                {buckets.map(x=><option key={x.key} value={x.key}>{x.label} — متاح {x.unit==='pack'?`${x.bal} عبوة`:fmtChemQty(x.bal,x.unit)}</option>)}
+              </select>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">النوع</label>
+                <select className="form-control" value={dir} onChange={e=>setDir(e.target.value)}>
+                  <option value="out">➖ خصم</option><option value="in">➕ إضافة</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الكمية ({b?.unit==='pack'?'عبوة':b?.unit})</label>
+                <input type="number" min="0" step="any" className="form-control" value={qty} onChange={e=>setQty(e.target.value)}/>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">السبب</label>
+                <select className="form-control" value={reason} onChange={e=>setReason(e.target.value)}>
+                  {CHEM_ADJ_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">تفاصيل</label>
+                <input className="form-control" value={note} onChange={e=>setNote(e.target.value)}/>
+              </div>
+            </div>
+          </>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||!buckets.length}>{loading?'...':'حفظ التسوية'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- مزامنة صفوف فرعية (عبوات/مواصفات): تحديث الموجود، إضافة الجديد، حذف المُزال ---- */
+async function chemSyncRows(table, materialId, original, rows, toPayload) {
+  const keepIds = rows.filter(r=>r.id).map(r=>r.id);
+  const removed = original.filter(o=>!keepIds.includes(o.id)).map(o=>o.id);
+  if (removed.length) { const { error } = await sb.from(table).delete().in('id', removed); if (error) throw error; }
+  for (let i=0; i<rows.length; i++) {
+    const payload = { ...toPayload(rows[i], i), material_id: materialId };
+    const { error } = rows[i].id
+      ? await sb.from(table).update(payload).eq('id', rows[i].id)
+      : await sb.from(table).insert(payload);
+    if (error) throw error;
+  }
+}
+
+function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
+  const isEdit = !!material;
+  const [form, setForm] = useState({
+    name_en: material?.name_en || '', name_ar: material?.name_ar || '',
+    category: material?.category || 'chemical', production_type: material?.production_type || 'repack',
+    cas_no: material?.cas_no || '', formula: material?.formula || '', mol_weight: material?.mol_weight ?? '',
+    grade: material?.grade || '', physical_state: material?.physical_state || '',
+    manufacturer: material?.manufacturer || '', shelf_life_months: material?.shelf_life_months ?? '',
+    storage_conditions: material?.storage_conditions || '',
+    ghs_pictograms: material?.ghs_pictograms || [], signal_word: material?.signal_word || '',
+    hazard_statements: material?.hazard_statements || '', precautionary_statements: material?.precautionary_statements || '',
+    notes: material?.notes || '', is_active: material?.is_active ?? true,
+    specs_reviewed: material?.specs_reviewed ?? true,
+  });
+  const [packRows, setPackRows] = useState(packs.map(p=>({ id:p.id, size:chemNum(p.size), unit:p.unit, container:p.container||'' })));
+  const [specRows, setSpecRows] = useState(specs.slice().sort((a,b)=>a.seq-b.seq).map(s=>({
+    id:s.id, parameter:s.parameter, spec_type:s.spec_type, min_value:chemNum(s.min_value), max_value:chemNum(s.max_value),
+    text_value:s.text_value||'', unit:s.unit||'', method:s.method||'' })));
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const toggleGhs = (code) => setF('ghs_pictograms', form.ghs_pictograms.includes(code) ? form.ghs_pictograms.filter(c=>c!==code) : [...form.ghs_pictograms, code]);
+  const setRow = (setter) => (i,k,v) => setter(rows=>rows.map((r,idx)=>idx===i?{...r,[k]:v}:r));
+  const setPack = setRow(setPackRows), setSpec = setRow(setSpecRows);
+  const casBad = form.cas_no.trim() && !isValidCAS(form.cas_no);
+
+  const handleSave = async () => {
+    if (!form.name_en.trim() && !isSuperAdmin(user)) { toast('أدخل اسم المادة بالإنجليزي','error'); return; }
+    const cleanPacks = packRows.filter(p=>String(p.size).trim()!=='');
+    if (cleanPacks.some(p=>!(parseFloat(p.size)>0)) && !isSuperAdmin(user)) { toast('حجم العبوة لازم يكون رقم أكبر من صفر','error'); return; }
+    const cleanSpecs = specRows.filter(s=>s.parameter.trim());
+    for (const s of cleanSpecs) {
+      if (isSuperAdmin(user)) break;
+      if ((s.spec_type==='min'||s.spec_type==='range') && s.min_value==='') { toast(`حدّد الحد الأدنى لبند "${s.parameter}"`,'error'); return; }
+      if ((s.spec_type==='max'||s.spec_type==='range') && s.max_value==='') { toast(`حدّد الحد الأعلى لبند "${s.parameter}"`,'error'); return; }
+      if (s.spec_type==='text' && !s.text_value.trim()) { toast(`اكتب نص المواصفة لبند "${s.parameter}"`,'error'); return; }
+    }
+    if (casBad && !confirm('رقم CAS لا يطابق خانة التحقق — ممكن يكون فيه خطأ بالكتابة. متابعة الحفظ؟')) return;
+    setLoading(true);
+    try {
+      const num = (v) => v===''||v===null ? null : parseFloat(v);
+      const payload = {
+        name_en: form.name_en.trim(), name_ar: form.name_ar.trim()||null,
+        category: form.category, production_type: form.production_type,
+        cas_no: form.cas_no.trim()||null, formula: form.formula.trim()||null, mol_weight: num(form.mol_weight),
+        grade: form.grade.trim()||null, physical_state: form.physical_state||null,
+        manufacturer: form.manufacturer.trim()||null, shelf_life_months: form.shelf_life_months===''?null:parseInt(form.shelf_life_months),
+        storage_conditions: form.storage_conditions.trim()||null,
+        ghs_pictograms: form.ghs_pictograms, signal_word: form.signal_word||null,
+        hazard_statements: form.hazard_statements.trim()||null, precautionary_statements: form.precautionary_statements.trim()||null,
+        notes: form.notes.trim()||null, is_active: form.is_active,
+      };
+      // العمود بينضاف مع chemicals_specs_seed.sql — ما منرسله لو لسا مش موجود
+      if (material && 'specs_reviewed' in material) payload.specs_reviewed = form.specs_reviewed;
+      let saved;
+      if (isEdit) {
+        const { data, error } = await sb.from('chem_materials').update(payload).eq('id', material.id).select().single();
+        if (error) throw error; saved = data;
+      } else {
+        const { data, error } = await sb.from('chem_materials').insert({ ...payload, created_by: user.id }).select().single();
+        if (error) throw error; saved = data;
+      }
+      await chemSyncRows('chem_pack_sizes', saved.id, packs, cleanPacks,
+        p => ({ size: parseFloat(p.size), unit: p.unit, container: p.container.trim()||null }));
+      await chemSyncRows('chem_specs', saved.id, specs, cleanSpecs,
+        (s,i) => ({ seq:i, parameter:s.parameter.trim(), spec_type:s.spec_type,
+          min_value: (s.spec_type==='min'||s.spec_type==='range') ? num(s.min_value) : null,
+          max_value: (s.spec_type==='max'||s.spec_type==='range') ? num(s.max_value) : null,
+          text_value: s.spec_type==='text' ? s.text_value.trim() : null,
+          unit: s.unit.trim()||null, method: s.method.trim()||null }));
+      createLog(user, `${isEdit?'عدّل':'أضاف'} المادة الكيميائية ${saved.name_en}`, 'chem_material', saved.id, saved.code);
+      toast(isEdit?'تم التحديث ✓':'تمت إضافة المادة ✓','success');
+      onSave(saved);
+    } catch(err) {
+      toast(err.code==='23505' ? 'يوجد مادة بنفس الاسم مسبقاً'
+        : err.code==='23503' ? 'حجم عبوة مستخدم بتشغيلات — ما بينحذف (باقي التعديلات انحفظت)'
+        : 'خطأ: '+err.message,'error');
+    } finally { setLoading(false); }
+  };
+
+  const rowBox = {display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderBottom:'1px dashed #e2edf5'};
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:880}}>
+        <div className="modal-header">
+          <span className="modal-title">🧪 {isEdit ? `تعديل ${material.name_en}` : 'مادة كيميائية جديدة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <ChemSection title="البيانات الأساسية">
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">الاسم (إنجليزي) <span style={{color:'var(--danger)'}}>*</span></label>
+                <input className="form-control" dir="ltr" value={form.name_en} onChange={e=>setF('name_en',e.target.value)} placeholder="Sodium Chloride"/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الاسم (عربي)</label>
+                <input className="form-control" value={form.name_ar} onChange={e=>setF('name_ar',e.target.value)} placeholder="كلوريد الصوديوم"/>
+              </div>
+            </div>
+            <div className="form-row-3">
+              <div className="form-group">
+                <label className="form-label">التصنيف</label>
+                <select className="form-control" value={form.category} onChange={e=>setF('category',e.target.value)}>
+                  {Object.entries(CHEM_CATEGORIES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">طريقة الإنتاج</label>
+                <select className="form-control" value={form.production_type} onChange={e=>setF('production_type',e.target.value)}>
+                  {Object.entries(CHEM_PROD_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الحالة الفيزيائية</label>
+                <select className="form-control" value={form.physical_state} onChange={e=>setF('physical_state',e.target.value)}>
+                  <option value="">—</option>
+                  {Object.entries(CHEM_STATES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="form-row-3">
+              <div className="form-group">
+                <label className="form-label">رقم CAS</label>
+                <input className="form-control" dir="ltr" value={form.cas_no} onChange={e=>setF('cas_no',e.target.value)} placeholder="7647-14-5"
+                  style={casBad?{borderColor:'#dc2626'}:undefined}/>
+                {casBad && <div style={{fontSize:11,color:'#dc2626',marginTop:3}}>خانة التحقق غير مطابقة — راجع الرقم</div>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">الصيغة الكيميائية</label>
+                <input className="form-control" dir="ltr" value={form.formula} onChange={e=>setF('formula',e.target.value)} placeholder="NaCl"/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الوزن الجزيئي (g/mol)</label>
+                <input type="number" min="0" step="0.001" className="form-control" value={form.mol_weight} onChange={e=>setF('mol_weight',e.target.value)}/>
+              </div>
+            </div>
+            <div className="form-row-3">
+              <div className="form-group">
+                <label className="form-label">الدرجة (Grade)</label>
+                <input className="form-control" dir="ltr" value={form.grade} onChange={e=>setF('grade',e.target.value)} placeholder="AR / LR / Extra Pure"/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الشركة المصنّعة</label>
+                <input className="form-control" dir="ltr" value={form.manufacturer} onChange={e=>setF('manufacturer',e.target.value)}/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">الصلاحية بعد التعبئة (شهر)</label>
+                <input type="number" min="0" step="1" className="form-control" value={form.shelf_life_months} onChange={e=>setF('shelf_life_months',e.target.value)}/>
+              </div>
+            </div>
+          </ChemSection>
+
+          <ChemSection title="⚠️ الخطورة (GHS)">
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+              {GHS_PICTOGRAMS.map(g=>{
+                const on = form.ghs_pictograms.includes(g.code);
+                return (
+                  <button key={g.code} type="button" onClick={()=>toggleGhs(g.code)}
+                    style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+                      border: on?'2px solid #dc2626':'1.5px solid #e2edf5', background: on?'#fef2f2':'#fff', color: on?'#b91c1c':'#4b5563'}}>
+                    <span>{g.icon}</span>{g.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">كلمة التنبيه</label>
+                <select className="form-control" value={form.signal_word} onChange={e=>setF('signal_word',e.target.value)}>
+                  <option value="">— بدون —</option>
+                  {Object.entries(CHEM_SIGNAL_WORDS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">شروط التخزين</label>
+                <input className="form-control" value={form.storage_conditions} onChange={e=>setF('storage_conditions',e.target.value)} placeholder="مكان جاف، بعيد عن الضوء، 15–25 °C"/>
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">عبارات الخطر (H)</label>
+                <textarea className="form-control" dir="ltr" rows={2} value={form.hazard_statements} onChange={e=>setF('hazard_statements',e.target.value)} placeholder="H302 Harmful if swallowed" style={{resize:'vertical'}}/>
+              </div>
+              <div className="form-group">
+                <label className="form-label">عبارات الوقاية (P)</label>
+                <textarea className="form-control" dir="ltr" rows={2} value={form.precautionary_statements} onChange={e=>setF('precautionary_statements',e.target.value)} placeholder="P280 Wear protective gloves" style={{resize:'vertical'}}/>
+              </div>
+            </div>
+          </ChemSection>
+
+          <ChemSection title="📦 أحجام العبوات"
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setPackRows(r=>[...r,{size:'',unit:form.physical_state==='liquid'?'mL':'g',container:''}])}>➕ حجم</button>}>
+            {packRows.length===0 && <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد أحجام — أضف الأحجام اللي بتبيعها (مثلاً 500 g، 1 L)</div>}
+            {packRows.map((p,i)=>(
+              <div key={p.id||'n'+i} style={rowBox}>
+                <input type="number" min="0" step="0.001" className="form-control" style={{width:110}} placeholder="الحجم" value={p.size} onChange={e=>setPack(i,'size',e.target.value)}/>
+                <select className="form-control" style={{width:90}} value={p.unit} onChange={e=>setPack(i,'unit',e.target.value)}>
+                  {CHEM_PACK_UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+                </select>
+                <input className="form-control" style={{flex:'1 1 160px'}} placeholder="نوع العبوة (زجاج عنبري، بلاستيك...)" value={p.container} onChange={e=>setPack(i,'container',e.target.value)}/>
+                <button type="button" className="btn btn-danger btn-sm" onClick={()=>setPackRows(r=>r.filter((_,idx)=>idx!==i))}>✕</button>
+              </div>
+            ))}
+          </ChemSection>
+
+          <ChemSection title="📋 مواصفات الفحص (أساس شهادة التحليل COA)"
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setSpecRows(r=>[...r,{parameter:'',spec_type:'min',min_value:'',max_value:'',text_value:'',unit:'%',method:''}])}>➕ بند</button>}>
+            {specRows.length===0 && <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد بنود — مثال: Purity ≥ 98 %، Iron ≤ 0.005 %، Appearance = White powder</div>}
+            {specRows.map((s,i)=>(
+              <div key={s.id||'n'+i} style={rowBox}>
+                <input className="form-control" dir="ltr" style={{flex:'1 1 150px'}} placeholder="Parameter" value={s.parameter} onChange={e=>setSpec(i,'parameter',e.target.value)}/>
+                <select className="form-control" style={{width:130}} value={s.spec_type} onChange={e=>setSpec(i,'spec_type',e.target.value)}>
+                  {Object.entries(CHEM_SPEC_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                </select>
+                {(s.spec_type==='min'||s.spec_type==='range') && <input type="number" step="any" className="form-control" style={{width:95}} placeholder="أدنى" value={s.min_value} onChange={e=>setSpec(i,'min_value',e.target.value)}/>}
+                {(s.spec_type==='max'||s.spec_type==='range') && <input type="number" step="any" className="form-control" style={{width:95}} placeholder="أعلى" value={s.max_value} onChange={e=>setSpec(i,'max_value',e.target.value)}/>}
+                {s.spec_type==='text' && <input className="form-control" dir="ltr" style={{width:170}} placeholder="Passes test" value={s.text_value} onChange={e=>setSpec(i,'text_value',e.target.value)}/>}
+                {s.spec_type!=='text' && <input className="form-control" dir="ltr" style={{width:70}} placeholder="الوحدة" value={s.unit} onChange={e=>setSpec(i,'unit',e.target.value)}/>}
+                <input className="form-control" dir="ltr" style={{width:120}} placeholder="Method" value={s.method} onChange={e=>setSpec(i,'method',e.target.value)}/>
+                <button type="button" className="btn btn-ghost btn-sm" disabled={i===0} title="تحريك لأعلى"
+                  onClick={()=>setSpecRows(r=>{ const a=r.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; return a; })}>▲</button>
+                <button type="button" className="btn btn-danger btn-sm" onClick={()=>setSpecRows(r=>r.filter((_,idx)=>idx!==i))}>✕</button>
+              </div>
+            ))}
+          </ChemSection>
+
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+          <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,fontWeight:600,marginTop:8}}>
+            <input type="checkbox" checked={form.is_active} onChange={e=>setF('is_active',e.target.checked)}/> مادة فعّالة
+          </label>
+          {material && 'specs_reviewed' in material && (
+            <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,fontWeight:700,marginTop:8,color:form.specs_reviewed?'#166534':'#6b21a8'}}>
+              <input type="checkbox" checked={form.specs_reviewed} onChange={e=>setF('specs_reviewed',e.target.checked)}/> ✔ راجعت مواصفات الفحص وهي معتمدة لهذه المادة
+            </label>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(!form.name_en.trim() && !isSuperAdmin(user))}>{loading?'...':isEdit?'حفظ':'إضافة المادة'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChemMaterialDetail({ user, material:m, packs, specs, docs, recipe, matById, onClose, onEdit, onDelete, onOpenRecipe, onChanged }) {
+  const [docForm, setDocForm] = useState(null); // null | 'new' | doc
+  const canEdit = hasPerm(user,'chemicals_edit');
+  const canDelete = hasPerm(user,'chemicals_delete');
+  const cat = CHEM_CATEGORIES[m.category] || CHEM_CATEGORIES.chemical;
+  const ms = CHEM_MSDS_META[chemMsdsStatus(docs)];
+  const rs = m.production_type==='prepare' ? CHEM_RECIPE_META[recipe?.status || 'none'] : null;
+  const sortedSpecs = specs.slice().sort((a,b)=>a.seq-b.seq);
+  const today = new Date().toISOString().slice(0,10);
+
+  const deleteDoc = async (d) => {
+    if (!confirm('حذف رابط هذه الوثيقة؟ (الملف نفسه على Drive ما بينحذف)')) return;
+    const { error } = await sb.from('chem_documents').delete().eq('id', d.id);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    toast('تم الحذف','success'); onChanged();
+  };
+
+  const field = (label, value, ltr) => value ? (
+    <div style={{fontSize:13}}><span style={{color:'var(--gray-500)'}}>{label}: </span><span dir={ltr?'ltr':undefined} style={{fontWeight:700,color:'#1a2e3d'}}>{value}</span></div>
+  ) : null;
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:820}}>
+        <div className="modal-header">
+          <span className="modal-title">{cat.icon} {m.name_en}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14,alignItems:'center'}}>
+            <ChemPill color="#374151" bg="#f3f4f6">{m.code}</ChemPill>
+            <ChemPill color="#1C6A99" bg="#e0f0fa">{cat.label}</ChemPill>
+            <ChemPill color="#1C6A99" bg="#e0f0fa">{CHEM_PROD_TYPES[m.production_type]}</ChemPill>
+            <ChemPill color={ms.color} bg={ms.bg}>{ms.label}</ChemPill>
+            {rs && <ChemPill color={rs.color} bg={rs.bg}>{rs.label}</ChemPill>}
+            {!m.is_active && <ChemPill color="#6b7280" bg="#f3f4f6">غير فعّالة</ChemPill>}
+          </div>
+
+          <ChemSection title="البيانات الأساسية">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:8}}>
+              {field('الاسم العربي', m.name_ar)}
+              {field('CAS', m.cas_no, true)}
+              {field('الصيغة', m.formula, true)}
+              {field('الوزن الجزيئي', m.mol_weight && `${chemNum(m.mol_weight)} g/mol`, true)}
+              {field('الدرجة', m.grade, true)}
+              {field('الحالة', CHEM_STATES[m.physical_state])}
+              {field('المصنّع', m.manufacturer, true)}
+              {field('الصلاحية بعد التعبئة', m.shelf_life_months && `${m.shelf_life_months} شهر`)}
+            </div>
+            {m.notes && <div style={{marginTop:10,fontSize:12,color:'#92400e',background:'#fffbeb',borderRadius:8,padding:'8px 10px'}}>📝 {m.notes}</div>}
+          </ChemSection>
+
+          <ChemSection title="⚠️ الخطورة والتخزين">
+            {(m.ghs_pictograms||[]).length===0 && !m.signal_word && !m.hazard_statements && !m.storage_conditions
+              ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لم تُدخل بيانات الخطورة بعد — راجع MSDS المصنّع</div>
+              : <>
+                <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                  <GhsIcons codes={m.ghs_pictograms} size={30}/>
+                  {m.signal_word && <span style={{fontWeight:900,fontSize:15,color:m.signal_word==='danger'?'#b91c1c':'#b45309'}}>{CHEM_SIGNAL_WORDS[m.signal_word]}</span>}
+                </div>
+                {m.hazard_statements && <div dir="ltr" style={{fontSize:12,marginTop:8,whiteSpace:'pre-wrap',textAlign:'left'}}>{m.hazard_statements}</div>}
+                {m.precautionary_statements && <div dir="ltr" style={{fontSize:12,marginTop:6,color:'var(--gray-500)',whiteSpace:'pre-wrap',textAlign:'left'}}>{m.precautionary_statements}</div>}
+                {m.storage_conditions && <div style={{fontSize:12,marginTop:8}}>🏷️ <b>التخزين:</b> {m.storage_conditions}</div>}
+              </>}
+          </ChemSection>
+
+          <ChemSection title="📦 أحجام العبوات">
+            {packs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لم تُحدَّد بعد</div>
+              : <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{packs.map(p=><ChemPill key={p.id} color="#1a2e3d" bg="#f1f5f9">{formatChemPack(p)}</ChemPill>)}</div>}
+          </ChemSection>
+
+          <ChemSection title="📋 مواصفات الفحص (COA)">
+            {m.specs_reviewed===false && sortedSpecs.length>0 && <div style={{fontSize:12,color:'#6b21a8',background:'#f3e8ff',borderRadius:8,padding:'6px 10px',marginBottom:8}}>مسودة مواصفات نموذجية — راجعها وعدّلها حسب COA المصنّع ودرجة المادة، ثم علّم "راجعت المواصفات" من التعديل.</div>}
+            {sortedSpecs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد بنود — أضفها من "تعديل" لتُبنى عليها شهادة التحليل</div> : (
+              <div style={{overflowX:'auto'}}>
+                <table dir="ltr" style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:380}}>
+                  <thead><tr style={{background:'#f1f5f9'}}>
+                    <th style={{textAlign:'left',padding:'6px 8px'}}>Parameter</th>
+                    <th style={{textAlign:'left',padding:'6px 8px'}}>Specification</th>
+                    <th style={{textAlign:'left',padding:'6px 8px'}}>Method</th>
+                  </tr></thead>
+                  <tbody>{sortedSpecs.map(s=>(
+                    <tr key={s.id} style={{borderTop:'1px solid #e2edf5'}}>
+                      <td style={{padding:'6px 8px',fontWeight:700}}>{s.parameter}</td>
+                      <td style={{padding:'6px 8px'}}>{formatChemSpec(s)}</td>
+                      <td style={{padding:'6px 8px',color:'var(--gray-500)'}}>{s.method||'—'}</td>
+                    </tr>))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </ChemSection>
+
+          <ChemSection title="📄 الوثائق (Google Drive)"
+            action={canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setDocForm('new')}>➕ إضافة رابط</button>}>
+            {docs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد وثائق — أضف رابط MSDS المصنّع من Google Drive</div>
+              : docs.map(d=>{
+                const overdue = d.is_current && d.review_date && d.review_date < today;
+                return (
+                  <div key={d.id} style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',padding:'8px 0',borderBottom:'1px dashed #e2edf5',opacity:d.is_current?1:.6}}>
+                    <span style={{fontSize:18}}>📄</span>
+                    <div style={{flex:'1 1 200px',minWidth:0}}>
+                      <div style={{fontWeight:800,fontSize:13}}>{CHEM_DOC_TYPES[d.doc_type]}{d.title?` — ${d.title}`:''} {!d.is_current && <span style={{fontSize:11,color:'var(--gray-400)'}}>(نسخة قديمة)</span>}</div>
+                      <div style={{fontSize:11,color:'var(--gray-500)'}}>
+                        {[d.version && `نسخة ${d.version}`, d.language==='ar'?'عربي':'إنجليزي', d.issue_date && `إصدار ${d.issue_date}`].filter(Boolean).join(' · ')}
+                        {d.review_date && <span style={{color:overdue?'#b91c1c':undefined,fontWeight:overdue?800:400}}> · المراجعة {d.review_date}</span>}
+                      </div>
+                    </div>
+                    <a className="btn btn-ghost btn-sm" href={d.url} target="_blank" rel="noopener noreferrer">🔗 فتح</a>
+                    {canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setDocForm(d)}>✏️</button>}
+                    {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>deleteDoc(d)}>🗑</button>}
+                  </div>
+                );
+              })}
+          </ChemSection>
+
+          {m.production_type==='prepare' && (
+            <ChemSection title="📖 الوصفة"
+              action={(recipe || canEdit) && <button className="btn btn-ghost btn-sm" onClick={onOpenRecipe}>{recipe?'👁 فتح الوصفة':'➕ إضافة وصفة'}</button>}>
+              {recipe
+                ? <div style={{fontSize:12}}>دفعة {chemNum(recipe.batch_size)} {recipe.batch_unit}: {(recipe.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq).map(i=>matById[i.material_id]?.name_en||i.item_name).join('، ')}</div>
+                : <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد وصفة بعد</div>}
+            </ChemSection>
+          )}
+        </div>
+        <div className="modal-footer">
+          {onDelete && <button className="btn btn-danger" onClick={onDelete} style={{marginInlineEnd:'auto'}}>🗑 حذف المادة</button>}
+          <button className="btn btn-ghost" onClick={onClose}>إغلاق</button>
+          {onEdit && <button className="btn btn-primary" onClick={onEdit}>✏️ تعديل</button>}
+        </div>
+      </div>
+      {docForm && <ChemDocForm user={user} materialId={m.id} doc={docForm==='new'?null:docForm}
+        onClose={()=>setDocForm(null)} onSave={()=>{ setDocForm(null); onChanged(); }}/>}
+    </div>
+  );
+}
+
+function ChemDocForm({ user, materialId, doc, onSave, onClose }) {
+  const isEdit = !!doc;
+  const [form, setForm] = useState({
+    doc_type: doc?.doc_type || 'msds', title: doc?.title || '', url: doc?.url || '',
+    version: doc?.version || '', language: doc?.language || 'en',
+    issue_date: doc?.issue_date || '', review_date: doc?.review_date || '',
+    is_current: doc?.is_current ?? true, notes: doc?.notes || '',
+  });
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const urlOk = /^https?:\/\/\S+$/i.test(form.url.trim());
+
+  // تاريخ المراجعة الافتراضي للـMSDS = 3 سنوات من الإصدار
+  const onIssue = (v) => {
+    setF('issue_date', v);
+    if (v && !form.review_date && form.doc_type==='msds') {
+      const d = new Date(v+'T00:00:00'); d.setFullYear(d.getFullYear()+3);
+      setF('review_date', d.toISOString().slice(0,10));
+    }
+  };
+
+  const handleSave = async () => {
+    if (!urlOk && !isSuperAdmin(user)) { toast('ألصق رابط صحيح يبدأ بـ https://','error'); return; }
+    setLoading(true);
+    try {
+      const payload = {
+        material_id: materialId, doc_type: form.doc_type, title: form.title.trim()||null, url: form.url.trim(),
+        version: form.version.trim()||null, language: form.language,
+        issue_date: form.issue_date||null, review_date: form.review_date||null,
+        is_current: form.is_current, notes: form.notes.trim()||null,
+      };
+      // نسخة واحدة سارية لكل نوع وثيقة: الجديدة السارية تحوّل السابقة لـ"قديمة"
+      if (form.is_current) {
+        let qry = sb.from('chem_documents').update({ is_current:false }).eq('material_id', materialId).eq('doc_type', form.doc_type).eq('is_current', true);
+        if (isEdit) qry = qry.neq('id', doc.id);
+        const { error } = await qry; if (error) throw error;
+      }
+      const { error } = isEdit
+        ? await sb.from('chem_documents').update(payload).eq('id', doc.id)
+        : await sb.from('chem_documents').insert({ ...payload, created_by: user.id });
+      if (error) throw error;
+      toast(isEdit?'تم التحديث ✓':'تمت إضافة الوثيقة ✓','success');
+      onSave();
+    } catch(err) { toast('خطأ: '+err.message,'error'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="modal-overlay" style={{zIndex:1100}}>
+      <div className="modal" style={{maxWidth:540}}>
+        <div className="modal-header">
+          <span className="modal-title">📄 {isEdit?'تعديل وثيقة':'إضافة وثيقة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:12}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">نوع الوثيقة</label>
+              <select className="form-control" value={form.doc_type} onChange={e=>setF('doc_type',e.target.value)}>
+                {Object.entries(CHEM_DOC_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">اللغة</label>
+              <select className="form-control" value={form.language} onChange={e=>setF('language',e.target.value)}>
+                <option value="en">إنجليزي</option><option value="ar">عربي</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">رابط Google Drive <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className="form-control" dir="ltr" value={form.url} onChange={e=>setF('url',e.target.value)} placeholder="https://drive.google.com/file/d/..."
+              style={form.url && !urlOk ? {borderColor:'#dc2626'} : undefined}/>
+            <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>تأكد إن مشاركة الملف على Drive مفتوحة للي لازم يشوفه</div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">العنوان / المصدر</label>
+              <input className="form-control" dir="ltr" value={form.title} onChange={e=>setF('title',e.target.value)} placeholder="Merck SDS"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">رقم النسخة</label>
+              <input className="form-control" dir="ltr" value={form.version} onChange={e=>setF('version',e.target.value)} placeholder="Rev. 4"/>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">تاريخ الإصدار</label>
+              <input type="date" className="form-control" value={form.issue_date} onChange={e=>onIssue(e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">تاريخ المراجعة القادمة</label>
+              <input type="date" className="form-control" value={form.review_date} onChange={e=>setF('review_date',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <input className="form-control" value={form.notes} onChange={e=>setF('notes',e.target.value)}/>
+          </div>
+          <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,fontWeight:600}}>
+            <input type="checkbox" checked={form.is_current} onChange={e=>setF('is_current',e.target.checked)}/> النسخة السارية (أي نسخة سارية سابقة من نفس النوع بتصير "قديمة")
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(!urlOk && !isSuperAdmin(user))}>{loading?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChemRecipeView({ user, material:m, recipe:r, matById, onClose, onEdit, onChanged }) {
+  const [target, setTarget] = useState(chemNum(r.batch_size));
+  const [saving, setSaving] = useState(false);
+  const items = (r.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq);
+  const factor = parseFloat(target) > 0 && parseFloat(r.batch_size) > 0 ? parseFloat(target)/parseFloat(r.batch_size) : 1;
+  const rs = CHEM_RECIPE_META[r.status];
+  const canApprove = hasPerm(user,'chem_recipes_approve');
+
+  const setStatus = async (status) => {
+    setSaving(true);
+    const { error } = await sb.from('chem_recipes').update(status==='approved'
+      ? { status, approved_by:user.id, approved_at:new Date().toISOString() }
+      : { status, approved_by:null, approved_at:null }).eq('id', r.id);
+    setSaving(false);
+    if (error) { toast('خطأ: '+error.message,'error'); return; }
+    createLog(user, `${status==='approved'?'اعتمد':'ألغى اعتماد'} وصفة ${m.name_en}`, 'chem_recipe', r.id, m.code);
+    toast(status==='approved'?'تم اعتماد الوصفة ✓':'رجعت الوصفة مسودة','success');
+    onChanged();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:760}}>
+        <div className="modal-header">
+          <span className="modal-title">📖 وصفة {m.name_en}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:14}}>
+            <ChemPill color={rs.color} bg={rs.bg}>{rs.label}</ChemPill>
+            {r.approved_at && <span style={{fontSize:11,color:'var(--gray-500)'}}>اعتُمدت {new Date(r.approved_at).toLocaleDateString('en-GB')}</span>}
+          </div>
+
+          <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',background:'#f0f7fc',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
+            <span style={{fontWeight:800,fontSize:13}}>🧮 حجم التحضير:</span>
+            <input type="number" min="0" step="any" className="form-control" style={{width:120}} value={target} onChange={e=>setTarget(e.target.value)}/>
+            <span style={{fontWeight:700}}>{r.batch_unit}</span>
+            <span style={{fontSize:11,color:'var(--gray-500)'}}>الوصفة الأساسية: {chemNum(r.batch_size)} {r.batch_unit}{factor!==1?` · معامل ×${chemNum(factor)}`:''}</span>
+          </div>
+
+          <div style={{overflowX:'auto',marginBottom:14}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13,minWidth:420}}>
+              <thead><tr style={{background:'#f1f5f9'}}>
+                <th style={{textAlign:'right',padding:'7px 8px'}}>#</th>
+                <th style={{textAlign:'right',padding:'7px 8px'}}>المكوّن</th>
+                <th style={{textAlign:'right',padding:'7px 8px'}}>الكمية</th>
+                <th style={{textAlign:'right',padding:'7px 8px'}}>ملاحظة</th>
+              </tr></thead>
+              <tbody>{items.map((it,i)=>{
+                const mat = matById[it.material_id];
+                return (
+                  <tr key={it.id} style={{borderTop:'1px solid #e2edf5'}}>
+                    <td style={{padding:'7px 8px',color:'var(--gray-400)'}}>{i+1}</td>
+                    <td style={{padding:'7px 8px'}} dir="ltr">
+                      <div style={{fontWeight:700,textAlign:'right'}}>{mat?.name_en || it.item_name}</div>
+                      {!mat && <div style={{fontSize:10,color:'#b45309',textAlign:'right'}}>غير مربوطة بمادة بالسجل</div>}
+                    </td>
+                    <td style={{padding:'7px 8px',fontWeight:800,color:'var(--primary)',whiteSpace:'nowrap'}} dir="ltr">
+                      {it.quantity==null ? '—' : `${chemNum(it.quantity*factor)} ${it.unit||''}`}
+                    </td>
+                    <td style={{padding:'7px 8px',fontSize:12,color:'var(--gray-500)'}}>{it.notes||''}</td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
+
+          {r.procedure && <ChemSection title="طريقة التحضير"><div style={{fontSize:13,whiteSpace:'pre-wrap',lineHeight:1.8}}>{r.procedure}</div></ChemSection>}
+          {r.notes && <div style={{fontSize:12,color:'#92400e',background:'#fffbeb',borderRadius:8,padding:'8px 10px',marginBottom:10}}>⚠️ {r.notes}</div>}
+          {r.source && <div style={{fontSize:11,color:'var(--gray-500)'}} dir="ltr">📚 {r.source}</div>}
+        </div>
+        <div className="modal-footer">
+          {canApprove && (r.status==='approved'
+            ? <button className="btn btn-ghost" disabled={saving} onClick={()=>setStatus('draft')} style={{marginInlineEnd:'auto'}}>↩️ إلغاء الاعتماد</button>
+            : <button className="btn btn-primary" disabled={saving} onClick={()=>setStatus('approved')} style={{marginInlineEnd:'auto',background:'#16a34a'}}>✅ اعتماد الوصفة</button>)}
+          <button className="btn btn-ghost" onClick={onClose}>إغلاق</button>
+          {onEdit && <button className="btn btn-primary" onClick={onEdit}>✏️ تعديل</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChemRecipeForm({ user, material:m, recipe:r, materials, matById, onSave, onClose }) {
+  const isEdit = !!r;
+  const [form, setForm] = useState({
+    batch_size: r ? chemNum(r.batch_size) : '1000', batch_unit: r?.batch_unit || (m.physical_state==='solid'?'g':'mL'),
+    procedure: r?.procedure || '', source: r?.source || '', notes: r?.notes || '',
+  });
+  const [items, setItems] = useState(r
+    ? (r.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq).map(i=>({ name: matById[i.material_id]?.name_en || i.item_name || '', quantity: chemNum(i.quantity), unit: i.unit||'', notes: i.notes||'' }))
+    : [{ name:'', quantity:'', unit:'g', notes:'' }]);
+  const [loading, setLoading] = useState(false);
+  const setF = (k,v) => setForm(f=>({...f,[k]:v}));
+  const setItem = (i,k,v) => setItems(rows=>rows.map((x,idx)=>idx===i?{...x,[k]:v}:x));
+  const byName = React.useMemo(()=>materials.reduce((acc,x)=>{ acc[x.name_en.toLowerCase()] = x; return acc; },{}),[materials]);
+  const listId = 'chem-mat-options';
+
+  const handleSave = async () => {
+    const clean = items.filter(i=>i.name.trim());
+    if (!isSuperAdmin(user)) {
+      if (!(parseFloat(form.batch_size)>0)) { toast('حدّد حجم الدفعة الأساسية','error'); return; }
+      if (!clean.length) { toast('أضف مكوّناً واحداً على الأقل','error'); return; }
+    }
+    if (isEdit && r.status==='approved' && !confirm('الوصفة معتمدة — أي تعديل بيرجّعها "مسودة" وبتحتاج اعتماد من جديد. متابعة؟')) return;
+    setLoading(true);
+    try {
+      const payload = {
+        material_id: m.id, batch_size: parseFloat(form.batch_size)||0, batch_unit: form.batch_unit,
+        procedure: form.procedure.trim()||null, source: form.source.trim()||null, notes: form.notes.trim()||null,
+        status: 'draft', approved_by: null, approved_at: null, updated_at: new Date().toISOString(),
+      };
+      let recipeId = r?.id;
+      if (isEdit) {
+        const { error } = await sb.from('chem_recipes').update(payload).eq('id', recipeId); if (error) throw error;
+        const { error: de } = await sb.from('chem_recipe_items').delete().eq('recipe_id', recipeId); if (de) throw de;
+      } else {
+        const { data, error } = await sb.from('chem_recipes').insert({ ...payload, created_by: user.id }).select().single(); if (error) throw error;
+        recipeId = data.id;
+      }
+      if (clean.length) {
+        const rows = clean.map((it,idx)=>{
+          const mat = byName[it.name.trim().toLowerCase()];
+          return { recipe_id: recipeId, seq: idx, material_id: mat?.id || null, item_name: mat ? mat.name_en : it.name.trim(),
+            quantity: it.quantity===''?null:parseFloat(it.quantity), unit: it.unit.trim()||null, notes: it.notes.trim()||null };
+        });
+        const { error } = await sb.from('chem_recipe_items').insert(rows); if (error) throw error;
+      }
+      createLog(user, `${isEdit?'عدّل':'أضاف'} وصفة ${m.name_en}`, 'chem_recipe', recipeId, m.code);
+      toast('تم حفظ الوصفة ✓ (بانتظار الاعتماد)','success');
+      onSave();
+    } catch(err) { toast('خطأ: '+err.message,'error'); }
+    finally { setLoading(false); }
+  };
+
+  const rowBox = {display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderBottom:'1px dashed #e2edf5'};
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:820}}>
+        <div className="modal-header">
+          <span className="modal-title">📖 {isEdit?'تعديل':'إضافة'} وصفة — {m.name_en}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <datalist id={listId}>{materials.map(x=><option key={x.id} value={x.name_en}/>)}</datalist>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">حجم الدفعة الأساسية <span style={{color:'var(--danger)'}}>*</span></label>
+              <input type="number" min="0" step="any" className="form-control" value={form.batch_size} onChange={e=>setF('batch_size',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">الوحدة</label>
+              <select className="form-control" value={form.batch_unit} onChange={e=>setF('batch_unit',e.target.value)}>
+                {CHEM_RECIPE_UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <ChemSection title="⚗️ المكوّنات"
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setItems(r=>[...r,{name:'',quantity:'',unit:'g',notes:''}])}>➕ مكوّن</button>}>
+            {items.map((it,i)=>{
+              const linked = !!byName[it.name.trim().toLowerCase()];
+              return (
+                <div key={i} style={rowBox}>
+                  <div style={{flex:'1 1 220px'}}>
+                    <input className="form-control" dir="ltr" list={listId} placeholder="ابحث عن مادة من السجل..." value={it.name} onChange={e=>setItem(i,'name',e.target.value)}
+                      style={it.name && !linked ? {borderColor:'#f59e0b'} : undefined}/>
+                    {it.name && !linked && <div style={{fontSize:10,color:'#b45309',marginTop:2}}>غير موجودة بالسجل — بتنحفظ كنص فقط (لن تُخصم من المخزون لاحقاً)</div>}
+                  </div>
+                  <input type="number" min="0" step="any" className="form-control" style={{width:100}} placeholder="الكمية" value={it.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/>
+                  <input className="form-control" dir="ltr" style={{width:80}} list="chem-unit-options" placeholder="الوحدة" value={it.unit} onChange={e=>setItem(i,'unit',e.target.value)}/>
+                  <input className="form-control" style={{flex:'1 1 140px'}} placeholder="ملاحظة" value={it.notes} onChange={e=>setItem(i,'notes',e.target.value)}/>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={i===0} title="تحريك لأعلى"
+                    onClick={()=>setItems(r=>{ const a=r.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; return a; })}>▲</button>
+                  <button type="button" className="btn btn-danger btn-sm" onClick={()=>setItems(r=>r.filter((_,idx)=>idx!==i))}>✕</button>
+                </div>
+              );
+            })}
+            <datalist id="chem-unit-options">{['g','kg','mg','mL','L','عبوة','قطرات'].map(u=><option key={u} value={u}/>)}</datalist>
+          </ChemSection>
+
+          <div className="form-group">
+            <label className="form-label">طريقة التحضير</label>
+            <textarea className="form-control" rows={5} value={form.procedure} onChange={e=>setF('procedure',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">المرجع / المصدر</label>
+            <input className="form-control" dir="ltr" value={form.source} onChange={e=>setF('source',e.target.value)} placeholder="USP / FDA BAM / Vogel..."/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">تحذيرات وملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading}>{loading?'...':'حفظ الوصفة'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== CHAT PANEL ===================== */
 const CHAT_EMOJIS = ['👍','❤️','😂','🎉','✅','🔥'];
 
@@ -18084,7 +21079,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد', properties:'إدارة الأصول' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد', properties:'إدارة الأصول', chemicals:'إدارة الكيماويات' };
 
   return (
     <div className="app-layout">
@@ -18106,6 +21101,7 @@ function App() {
           {page==='procurement' && hasPerm(user,'suppliers_access') && <ProcurementPage user={user}/>}
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
+          {page==='chemicals' && hasPerm(user,'chemicals_access') && <ChemicalsPage user={user}/>}
           {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
