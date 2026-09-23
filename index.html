@@ -4884,17 +4884,17 @@ function QuotesList({ user, quotes, onReload }) {
         <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
           المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
         </button>
-        {hasPerm(user,'quotes_clone_other_company') && (
-        <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
-          🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
-        </button>
-        )}
         <button onClick={()=>setTab('archive')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='archive'?'3px solid #6b7280':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='archive'?'#374151':'var(--gray-500)',marginBottom:-2}}>
           الأرشيف <span style={{background:'var(--gray-100)',color:'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{archivedQuotes.length}</span>
         </button>
         <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',marginBottom:-2}}>
           المحذوفة <span style={{background:deletedQuotes.length?'#fee2e2':'var(--gray-100)',color:deletedQuotes.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deletedQuotes.length}</span>
         </button>
+        {hasPerm(user,'quotes_clone_other_company') && (
+        <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
+          🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
+        </button>
+        )}
       </div>
 
       {/* قائمة العروض الرسمية */}
@@ -17745,7 +17745,7 @@ function LettersPage({ user }) {
           <table>
             <thead>
               <tr>
-                <th>الرقم</th><th>السادة</th><th>الموضوع</th><th>التاريخ</th>
+                <th>الرقم</th><th>السادة</th><th>الموضوع</th><th>التاريخ</th><th>أصدره</th>
                 {canManageLetters && <th>التصنيف</th>}
                 {canManageLetters && <th>التبويب</th>}
                 <th>إجراءات</th>
@@ -17758,6 +17758,7 @@ function LettersPage({ user }) {
                   <td>{l.recipient}</td>
                   <td>{l.is_private && <span title="كتاب خاص" style={{marginLeft:6}}>🔒</span>}{l.subject}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{l.date}</td>
+                  <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[l.created_by]||'—'}</td>
                   {canManageLetters && (() => {
                     const meta = letterCatMeta(catTree, l.category);
                     const color = letterCatColor(meta?.main.id || l.category);
@@ -17775,7 +17776,7 @@ function LettersPage({ user }) {
                   </td>
                 </tr>
               ))}
-              {filtered.length===0 && <tr><td colSpan={canManageLetters?7:5}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
+              {filtered.length===0 && <tr><td colSpan={canManageLetters?8:6}><div className="empty-state"><p>{search?'لا توجد نتائج':'لا توجد كتب بعد'}</p></div></td></tr>}
             </tbody>
           </table>
         </div>
