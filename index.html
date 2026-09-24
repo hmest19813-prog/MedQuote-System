@@ -7824,11 +7824,11 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                 </div>
               </div>
               <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة أو الجهة" span/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                 <ErpField label="هاتف" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-6-..."/>
                 <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+962-6-..."/>
-                <ErpField label="موبايل" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-7-..."/>
               </div>
+              <ErpField label="موبايل" value={form.phone} onChange={v=>setF('phone',v)} placeholder="+962-7-..." span/>
               <ErpField label="البريد الإلكتروني" value={form.email} onChange={v=>setF('email',v)} type="email" placeholder="info@company.com"/>
               <ErpField label="الموقع الإلكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
               <ErpSelect label="المحافظة" value={form.city} onChange={v=>{ setF('city',v); setF('district',''); }} options={CUST_GOVS} placeholder="اختر المحافظة"/>
@@ -7836,17 +7836,18 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                 <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="gov-districts" options={dbDistricts[form.city]||CUST_DISTRICTS[form.city]} placeholder="اختر أو اكتب المنطقة"/>
               )}
               <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={dbCats} placeholder="اختر أو اكتب التصنيف"/>
-              <ErpDatalist label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} listId="cust-tags-list" options={CUST_TAGS} placeholder="اختر أو اكتب وسماً"/>
-              <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، الرقم" span/>
+              {customer?.id && (
+                <ErpDatalist label="الوسم / Tag" value={form.tags} onChange={v=>setF('tags',v)} listId="cust-tags-list" options={CUST_TAGS} placeholder="اختر أو اكتب وسماً"/>
+              )}
+              {customer?.id && (
+                <ErpField label="العنوان التفصيلي" value={form.address} onChange={v=>setF('address',v)} placeholder="الشارع، المبنى، الرقم" span/>
+              )}
               <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..." span/>
             </div>
 
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الأول</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم الأول"/>
-                <ErpField label="الكنية" value={form.contact1_last_name||''} onChange={v=>setF('contact1_last_name',v)} placeholder="اختياري"/>
-              </div>
+              <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم الأول"/>
               <ErpDatalist label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} listId="job-t1" options={CUST_TITLES} placeholder="مدير المشتريات"/>
               <ErpField label="رقم موبايل أساسي" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-7-..."/>
               <ErpField label="رقم موبايل ثانوي" value={form.contact1_mobile2||''} onChange={v=>setF('contact1_mobile2',v)} placeholder="+962-7-..."/>
@@ -7857,10 +7858,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
 
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم الأول"/>
-                <ErpField label="الكنية" value={form.contact2_last_name||''} onChange={v=>setF('contact2_last_name',v)} placeholder="اختياري"/>
-              </div>
+              <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم الأول"/>
               <ErpDatalist label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} listId="job-t2" options={CUST_TITLES} placeholder="المحاسب / المشرف"/>
               <ErpField label="رقم موبايل أساسي" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-7-..."/>
               <ErpField label="رقم موبايل ثانوي" value={form.contact2_mobile2||''} onChange={v=>setF('contact2_mobile2',v)} placeholder="+962-7-..."/>
@@ -10848,7 +10846,7 @@ function CustomersPage({ user }) {
   const [approvalsView, setApprovalsView] = useState('pending');
   const pendingCustomers = customers.filter(c => c.approval_status === 'pending');
   const rejectedCustomers = customers.filter(c => c.approval_status === 'rejected');
-  const visibleCustomers = customers.filter(c => c.approval_status !== 'rejected');
+  const visibleCustomers = customers.filter(c => c.approval_status !== 'rejected' && c.approval_status !== 'pending');
 
   const usedCities = [...new Set(visibleCustomers.map(c=>c.city).filter(Boolean))].sort();
   const usedCategories = [...new Set(visibleCustomers.map(c=>c.category).filter(Boolean))].sort();
