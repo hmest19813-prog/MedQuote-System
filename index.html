@@ -6958,6 +6958,13 @@ const PERM_GROUPS = [
     { key: 'daily_orders_delete', label: 'حذف الطلبيات اليومية' },
     { key: 'daily_orders_prepare', label: 'واجهة التجهيز المبسّطة (موظف تجهيز الطلبيات لشركة النقل)' },
   ]},
+  { label: 'الكاش فان (مندوبي التوزيع)', icon: '🚐', perms: [
+    { key: 'cashvan_access',   label: 'الوصول لقسم الكاش فان' },
+    { key: 'cashvan_create',   label: 'تسجيل تزويد/بيع/تسوية جديدة' },
+    { key: 'cashvan_edit',     label: 'تعديل سجلات الكاش فان' },
+    { key: 'cashvan_delete',   label: 'حذف سجلات الكاش فان' },
+    { key: 'cashvan_view_all', label: 'مشاهدة كل المندوبين (وإلا كل مندوب يشوف بضاعته/مبيعاته فقط)' },
+  ]},
   { label: 'الفواتير والدفعات', icon: '💰', perms: [
     { key: 'accounting_access', label: 'الوصول لصفحة إدارة المحاسبة' },
     { key: 'payments_delete',   label: 'حذف الدفعات من الفواتير' },
@@ -7025,6 +7032,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   deleted_quotes_access: false,
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
   daily_orders_access: true, daily_orders_create: true, daily_orders_edit: true, daily_orders_delete: false, daily_orders_prepare: false,
+  cashvan_access: false, cashvan_create: false, cashvan_edit: false, cashvan_delete: false, cashvan_view_all: false,
   customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
   export_customers_create: true, export_customers_edit: false, export_customers_delete: false,
   catalog_access: true, catalog_edit: false,    catalog_delete: false,
@@ -12658,6 +12666,732 @@ function ProcurementPage({ user }) {
       {showPayForm && <SupplierPaymentForm suppliers={suppliers} onSave={()=>{setShowPayForm(false);load();}} onClose={()=>setShowPayForm(false)}/>}
       {showSFForm && <SupplyFileForm user={user} file={editingSF} onSave={()=>{setShowSFForm(false);load();}} onClose={()=>setShowSFForm(false)}/>}
       {viewingSF && <SupplyFileDetail user={user} file={viewingSF} onClose={()=>setViewingSF(null)} onUpdated={load}/>}
+    </div>
+  );
+}
+
+/* ===================== الكاش فان (محاسبة مندوب التوزيع المتجول) ===================== */
+const CASHVAN_PAY_LABEL = { paid: 'مدفوع', partial: 'جزئي', unpaid: 'غير مدفوع' };
+function CashVanPayBadge({ status }) {
+  if (status === 'paid')    return <span className="pay-badge-paid">مدفوع ✓</span>;
+  if (status === 'partial') return <span className="pay-badge-partial">جزئي</span>;
+  return <span className="pay-badge-pending">غير مدفوع</span>;
+}
+const cashvanRepName = (profiles, id) => profiles.find(p => p.id === id)?.full_name || '—';
+
+function CashVanPage({ user }) {
+  const [tab, setTab] = useState('overview');
+  const [profiles, setProfiles] = useState([]);
+  const [loads, setLoads] = useState([]);
+  const [loadItems, setLoadItems] = useState([]);
+  const [sales, setSales] = useState([]);
+  const [saleItems, setSaleItems] = useState([]);
+  const [settlements, setSettlements] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [showLoadForm, setShowLoadForm] = useState(false);
+  const [editingLoad, setEditingLoad] = useState(null);
+  const [showSaleForm, setShowSaleForm] = useState(false);
+  const [editingSale, setEditingSale] = useState(null);
+  const [showSettleForm, setShowSettleForm] = useState(false);
+  const [editingSettle, setEditingSettle] = useState(null);
+  const [repFilter, setRepFilter] = useState('all');
+  const [viewingRepId, setViewingRepId] = useState(null);
+
+  /* موظف عادي بدون صلاحية مشاهدة الكل بيشوف بضاعته/مبيعاته هو بس — نفس منطق daily_orders */
+  const scopeToSelf = user.role !== 'admin' && !hasPerm(user, 'cashvan_view_all');
+
+  const load = async () => {
+    setLoading(true);
+    let lQuery = sb.from('cashvan_stock_loads').select('*').order('load_date',{ascending:false}).order('created_at',{ascending:false});
+    let sQuery = sb.from('cashvan_sales').select('*').order('sale_date',{ascending:false}).order('created_at',{ascending:false});
+    let tQuery = sb.from('cashvan_settlements').select('*').order('settlement_date',{ascending:false}).order('created_at',{ascending:false});
+    if (scopeToSelf) { lQuery = lQuery.eq('rep_id', user.id); sQuery = sQuery.eq('rep_id', user.id); tQuery = tQuery.eq('rep_id', user.id); }
+    const [pRes, lRes, siRes, sRes, saiRes, tRes] = await Promise.all([
+      sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name'),
+      lQuery, sb.from('cashvan_stock_load_items').select('*'),
+      sQuery, sb.from('cashvan_sale_items').select('*'),
+      tQuery,
+    ]);
+    setProfiles(pRes.data || []);
+    setLoads(lRes.data || []);
+    setLoadItems(siRes.data || []);
+    setSales(sRes.data || []);
+    setSaleItems(saiRes.data || []);
+    setSettlements(tRes.data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const itemNames = React.useMemo(() => {
+    const s = new Set();
+    loadItems.forEach(i => i.item_name && s.add(i.item_name));
+    saleItems.forEach(i => i.item_name && s.add(i.item_name));
+    return Array.from(s).sort();
+  }, [loadItems, saleItems]);
+
+  const repIds = React.useMemo(() => {
+    const s = new Set();
+    loads.forEach(l => s.add(l.rep_id));
+    sales.forEach(x => s.add(x.rep_id));
+    settlements.forEach(x => s.add(x.rep_id));
+    return Array.from(s);
+  }, [loads, sales, settlements]);
+
+  /* البضاعة: rep_id -> { item_name -> {loaded, sold, unit_cost} } */
+  const stockByRep = React.useMemo(() => {
+    const out = {};
+    const loadById = {}; loads.forEach(l => loadById[l.id] = l);
+    const saleById = {}; sales.forEach(s => saleById[s.id] = s);
+    loadItems.forEach(li => {
+      const rep = loadById[li.load_id]?.rep_id; if (!rep) return;
+      out[rep] = out[rep] || {};
+      out[rep][li.item_name] = out[rep][li.item_name] || { loaded: 0, sold: 0, unit_cost: 0 };
+      out[rep][li.item_name].loaded += parseFloat(li.quantity) || 0;
+      out[rep][li.item_name].unit_cost = parseFloat(li.unit_cost) || 0;
+    });
+    saleItems.forEach(si => {
+      const rep = saleById[si.sale_id]?.rep_id; if (!rep) return;
+      out[rep] = out[rep] || {};
+      out[rep][si.item_name] = out[rep][si.item_name] || { loaded: 0, sold: 0, unit_cost: 0 };
+      out[rep][si.item_name].sold += parseFloat(si.quantity) || 0;
+    });
+    return out;
+  }, [loads, loadItems, sales, saleItems]);
+
+  /* المال: rep_id -> { totalSales, cashCollected, cashSettled } */
+  const financeByRep = React.useMemo(() => {
+    const out = {};
+    repIds.forEach(id => out[id] = { totalSales: 0, cashCollected: 0, cashSettled: 0 });
+    sales.forEach(s => {
+      out[s.rep_id] = out[s.rep_id] || { totalSales: 0, cashCollected: 0, cashSettled: 0 };
+      out[s.rep_id].totalSales += parseFloat(s.total_amount) || 0;
+      out[s.rep_id].cashCollected += parseFloat(s.amount_paid) || 0;
+    });
+    settlements.forEach(t => {
+      out[t.rep_id] = out[t.rep_id] || { totalSales: 0, cashCollected: 0, cashSettled: 0 };
+      out[t.rep_id].cashSettled += parseFloat(t.amount) || 0;
+    });
+    return out;
+  }, [sales, settlements, repIds]);
+
+  const stockValue = (repId) => Object.values(stockByRep[repId] || {})
+    .reduce((s, it) => s + Math.max(0, it.loaded - it.sold) * it.unit_cost, 0);
+  const stockItemsCount = (repId) => Object.values(stockByRep[repId] || {})
+    .filter(it => (it.loaded - it.sold) > 0.001).length;
+  const cashOwed = (repId) => { const f = financeByRep[repId]; return f ? f.cashCollected - f.cashSettled : 0; };
+  const receivables = (repId) => { const f = financeByRep[repId]; return f ? f.totalSales - f.cashCollected : 0; };
+
+  const deleteLoad = async (l) => {
+    if (!confirm(`حذف تزويد "${l.number}"؟`)) return;
+    await sb.from('cashvan_stock_load_items').delete().eq('load_id', l.id);
+    const { error } = await sb.from('cashvan_stock_loads').delete().eq('id', l.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `حذف تزويد الكاش فان ${l.number}`, 'cashvan_load', l.id, l.number);
+    toast('تم الحذف', 'success'); load();
+  };
+  const deleteSale = async (s) => {
+    if (!confirm(`حذف عملية البيع "${s.number}"؟`)) return;
+    await sb.from('cashvan_sale_items').delete().eq('sale_id', s.id);
+    const { error } = await sb.from('cashvan_sales').delete().eq('id', s.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `حذف بيع الكاش فان ${s.number}`, 'cashvan_sale', s.id, s.number);
+    toast('تم الحذف', 'success'); load();
+  };
+  const deleteSettlement = async (t) => {
+    if (!confirm(`حذف التسوية "${t.number}"؟`)) return;
+    const { error } = await sb.from('cashvan_settlements').delete().eq('id', t.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `حذف تسوية الكاش فان ${t.number}`, 'cashvan_settlement', t.id, t.number);
+    toast('تم الحذف', 'success'); load();
+  };
+
+  const tabStyle = (t) => ({
+    padding:'8px 20px', border:'none', cursor:'pointer', fontWeight:700, fontSize:13,
+    background: tab===t ? 'var(--primary)' : '#f0f4f8', color: tab===t ? '#fff' : 'var(--gray-600)',
+  });
+
+  const visibleReps = repFilter === 'all' ? repIds : [repFilter];
+  const filteredLoads = loads.filter(l => repFilter==='all' || l.rep_id===repFilter);
+  const filteredSales = sales.filter(s => repFilter==='all' || s.rep_id===repFilter);
+  const filteredSettlements = settlements.filter(t => repFilter==='all' || t.rep_id===repFilter);
+
+  if (loading) return <LoadingScreen msg="جاري تحميل الكاش فان..."/>;
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:12,padding:'14px 20px',background:'#fff',borderRadius:'12px 12px 0 0',border:'1.5px solid #e2edf5',borderBottom:'none',boxShadow:'0 2px 8px rgba(43,143,196,.06)',flexWrap:'wrap'}}>
+        <div style={{width:36,height:36,borderRadius:10,background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>🚐</div>
+        <div>
+          <div style={{fontSize:16,fontWeight:900,color:'#1a2e3d'}}>الكاش فان — محاسبة مندوبي التوزيع</div>
+          <div style={{fontSize:11,color:'#7a8fa6',fontWeight:600}}>{repIds.length} مندوب · {loads.length} تزويد · {sales.length} عملية بيع</div>
+        </div>
+        <div style={{flex:1}}/>
+        {!scopeToSelf && (
+          <FilterPopover active={repFilter!=='all'} onClear={()=>setRepFilter('all')}>
+            <div className="form-group" style={{margin:0}}>
+              <label className="form-label">المندوب</label>
+              <select className="form-control" value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
+                <option value="all">كل المندوبين</option>
+                {profiles.filter(p=>repIds.includes(p.id)).map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+          </FilterPopover>
+        )}
+        {tab==='loads' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingLoad(null);setShowLoadForm(true);}}>➕ تزويد جديد</button>}
+        {tab==='sales' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSale(null);setShowSaleForm(true);}}>➕ عملية بيع</button>}
+        {tab==='settlements' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSettle(null);setShowSettleForm(true);}}>➕ تسوية جديدة</button>}
+      </div>
+
+      <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5',overflowX:'auto'}}>
+        <button style={tabStyle('overview')} onClick={()=>setTab('overview')}>📊 نظرة عامة</button>
+        <button style={tabStyle('loads')} onClick={()=>setTab('loads')}>📦 التزويد ({filteredLoads.length})</button>
+        <button style={tabStyle('sales')} onClick={()=>setTab('sales')}>🧾 المبيعات ({filteredSales.length})</button>
+        <button style={tabStyle('settlements')} onClick={()=>setTab('settlements')}>💰 التسويات ({filteredSettlements.length})</button>
+      </div>
+
+      {tab==='overview' && (
+        repIds.length===0 ? <div className="empty-state">لا يوجد مندوبون بعد — ابدأ بتسجيل أول عملية تزويد</div> : (
+        <div style={ENTITY_GRID_STYLE}>
+          {visibleReps.map(repId => {
+            const f = financeByRep[repId] || { totalSales:0, cashCollected:0, cashSettled:0 };
+            const owed = cashOwed(repId), recv = receivables(repId);
+            return (
+              <EntityCard key={repId} onClick={()=>setViewingRepId(repId)}
+                avatar="🚐" title={cashvanRepName(profiles, repId)}
+                subtitle={`${stockItemsCount(repId)} صنف متبقي معه`}
+                rows={[
+                  { icon:'📦', text: `قيمة البضاعة معه: ${numFmt(stockValue(repId))} د.أ` },
+                  { icon:'🧾', text: `إجمالي مبيعاته: ${numFmt(f.totalSales)} د.أ` },
+                  { icon:'💵', text: `كاش بعهدته (غير مسوّى): ${numFmt(owed)} د.أ` },
+                  recv>0.001 && { icon:'⏳', text: `ذمم زبائن غير محصّلة: ${numFmt(recv)} د.أ` },
+                ]}
+                actions={<button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();setViewingRepId(repId);}}>📋 التفاصيل</button>}
+              />
+            );
+          })}
+        </div>
+        )
+      )}
+
+      {tab==='loads' && (
+        filteredLoads.length===0 ? <div className="empty-state">لا توجد عمليات تزويد</div> : (
+        <div style={ENTITY_GRID_STYLE}>
+          {filteredLoads.map(l => (
+            <EntityCard key={l.id} avatar="📦" title={l.number} subtitle={cashvanRepName(profiles, l.rep_id)}
+              rows={[
+                { icon:'📅', text: l.load_date },
+                { icon:'💰', text: `القيمة: ${numFmt(l.total_cost)} د.أ` },
+                { icon:'🗂️', text: `${loadItems.filter(i=>i.load_id===l.id).length} صنف` },
+              ]}
+              actions={<>
+                {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingLoad(l);setShowLoadForm(true);}}>✏️ تعديل</button>}
+                {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteLoad(l)}>🗑️ حذف</button>}
+              </>}
+            />
+          ))}
+        </div>
+        )
+      )}
+
+      {tab==='sales' && (
+        filteredSales.length===0 ? <div className="empty-state">لا توجد عمليات بيع</div> : (
+        <div style={ENTITY_GRID_STYLE}>
+          {filteredSales.map(s => (
+            <EntityCard key={s.id} avatar="🧾" title={s.number} subtitle={cashvanRepName(profiles, s.rep_id)}
+              badge={<CashVanPayBadge status={s.payment_status}/>}
+              rows={[
+                { icon:'📅', text: s.sale_date },
+                { icon:'👤', text: s.customer_name || 'زبون نقدي' },
+                { icon:'💰', text: `الإجمالي: ${numFmt(s.total_amount)} د.أ — محصّل: ${numFmt(s.amount_paid)} د.أ` },
+              ]}
+              actions={<>
+                {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSale(s);setShowSaleForm(true);}}>✏️ تعديل</button>}
+                {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSale(s)}>🗑️ حذف</button>}
+              </>}
+            />
+          ))}
+        </div>
+        )
+      )}
+
+      {tab==='settlements' && (
+        filteredSettlements.length===0 ? <div className="empty-state">لا توجد تسويات</div> : (
+        <div style={ENTITY_GRID_STYLE}>
+          {filteredSettlements.map(t => (
+            <EntityCard key={t.id} avatar="💰" title={t.number} subtitle={cashvanRepName(profiles, t.rep_id)}
+              rows={[
+                { icon:'📅', text: t.settlement_date },
+                { icon:'💵', text: `المبلغ: ${numFmt(t.amount)} د.أ` },
+                { icon:'🏦', text: t.method },
+                t.notes && { icon:'📝', text: t.notes },
+              ]}
+              actions={<>
+                {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSettle(t);setShowSettleForm(true);}}>✏️ تعديل</button>}
+                {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSettlement(t)}>🗑️ حذف</button>}
+              </>}
+            />
+          ))}
+        </div>
+        )
+      )}
+
+      {showLoadForm && <CashVanLoadForm load={editingLoad} profiles={profiles} itemNames={itemNames} user={user}
+        onSave={()=>{setShowLoadForm(false);load();}} onClose={()=>setShowLoadForm(false)}/>}
+      {showSaleForm && <CashVanSaleForm sale={editingSale} profiles={profiles} itemNames={itemNames} stockByRep={stockByRep} user={user}
+        onSave={()=>{setShowSaleForm(false);load();}} onClose={()=>setShowSaleForm(false)}/>}
+      {showSettleForm && <CashVanSettleForm settlement={editingSettle} profiles={profiles} cashOwed={cashOwed} user={user}
+        onSave={()=>{setShowSettleForm(false);load();}} onClose={()=>setShowSettleForm(false)}/>}
+      {viewingRepId && <CashVanRepDetail
+        repId={viewingRepId} repName={cashvanRepName(profiles, viewingRepId)}
+        stockMap={stockByRep[viewingRepId]||{}} finance={financeByRep[viewingRepId]||{totalSales:0,cashCollected:0,cashSettled:0}}
+        loads={loads.filter(l=>l.rep_id===viewingRepId)} sales={sales.filter(s=>s.rep_id===viewingRepId)} settlements={settlements.filter(t=>t.rep_id===viewingRepId)}
+        onClose={()=>setViewingRepId(null)}/>}
+    </div>
+  );
+}
+
+function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
+  const isEdit = !!load;
+  const [form, setForm] = useState({
+    rep_id: load?.rep_id || user?.id || '',
+    load_date: load?.load_date || today(),
+    notes: load?.notes || '',
+  });
+  const [items, setItems] = useState([{ item_name:'', quantity:1, unit_cost:0 }]);
+  const [loadingItems, setLoadingItems] = useState(isEdit);
+  const [saving, setSaving] = useState(false);
+  const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
+  const setItem = (idx,k,v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
+  const addItem = () => setItems(list => [...list, { item_name:'', quantity:1, unit_cost:0 }]);
+  const delItem = (idx) => setItems(list => list.length>1 ? list.filter((_,i)=>i!==idx) : list);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    sb.from('cashvan_stock_load_items').select('*').eq('load_id', load.id).order('sort_order').then(({data}) => {
+      setItems((data&&data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_cost:i.unit_cost })) : [{ item_name:'', quantity:1, unit_cost:0 }]);
+      setLoadingItems(false);
+    });
+  }, []);
+
+  const total = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_cost||0)), 0);
+
+  const handleSubmit = async () => {
+    if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
+    const clean = items.filter(i => i.item_name.trim());
+    if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        rep_id: form.rep_id, load_date: form.load_date,
+        notes: form.notes.trim() || null, total_cost: total.toFixed(3),
+      };
+      let loadId;
+      if (isEdit) {
+        const { error } = await sb.from('cashvan_stock_loads').update(payload).eq('id', load.id);
+        if (error) throw error;
+        loadId = load.id;
+        const { error: dErr } = await sb.from('cashvan_stock_load_items').delete().eq('load_id', loadId);
+        if (dErr) throw dErr;
+      } else {
+        const { data: newLoad, error } = await sb.from('cashvan_stock_loads').insert({ ...payload, created_by: user?.id||null }).select().single();
+        if (error) throw error;
+        loadId = newLoad.id;
+      }
+      const rows = clean.map((it,idx) => ({
+        load_id: loadId, sort_order: idx, item_name: it.item_name.trim(),
+        quantity: parseFloat(it.quantity)||0, unit_cost: parseFloat(it.unit_cost)||0,
+        total_cost: (parseFloat(it.quantity)||0)*(parseFloat(it.unit_cost)||0),
+      }));
+      const { error: iErr } = await sb.from('cashvan_stock_load_items').insert(rows);
+      if (iErr) throw iErr;
+      createLog(user, isEdit ? `عدّل تزويد الكاش فان ${load.number}` : 'سجّل تزويد كاش فان جديد', 'cashvan_load', loadId, isEdit?load.number:null);
+      toast(isEdit?'تم التحديث':'تم تسجيل التزويد', 'success');
+      onSave();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:680,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">{isEdit ? `تعديل تزويد ${load.number}` : 'تزويد بضاعة جديد'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {loadingItems ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        <div style={{padding:20}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المندوب *</label>
+              <select className="form-control" value={form.rep_id} onChange={e=>setF('rep_id',e.target.value)}>
+                <option value="">— اختر المندوب —</option>
+                {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={form.load_date} onChange={e=>setF('load_date',e.target.value)}/>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">الأصناف</label>
+            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+              <colgroup><col/><col style={{width:100}}/><col style={{width:120}}/><col style={{width:110}}/><col style={{width:36}}/></colgroup>
+              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th><th>تكلفة الوحدة</th><th>الإجمالي</th><th></th></tr></thead>
+              <tbody>
+                {items.map((it,idx) => (
+                  <tr key={idx}>
+                    <td><SuggestInput value={it.item_name} onChange={v=>setItem(idx,'item_name',v)} options={itemNames} placeholder="اسم المادة"/></td>
+                    <td><input type="number" step="0.001" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/></td>
+                    <td><input type="number" step="0.001" className="form-control" value={it.unit_cost} onChange={e=>setItem(idx,'unit_cost',e.target.value)}/></td>
+                    <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_cost)||0))}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delItem(idx)}>🗑</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addItem}>➕ إضافة صنف</button>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+
+          <div style={{display:'flex',justifyContent:'flex-end',padding:'10px 4px',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
+            الإجمالي: {numFmt(total)} د.أ
+          </div>
+        </div>
+        )}
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving||loadingItems}>{saving?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, onClose }) {
+  const isEdit = !!sale;
+  const [form, setForm] = useState({
+    rep_id: sale?.rep_id || user?.id || '',
+    sale_date: sale?.sale_date || today(),
+    customer_name: sale?.customer_name || '',
+    customer_phone: sale?.customer_phone || '',
+    customer_address: sale?.customer_address || '',
+    payment_status: sale?.payment_status || 'paid',
+    amount_paid: sale?.amount_paid ?? '',
+    notes: sale?.notes || '',
+  });
+  const [items, setItems] = useState([{ item_name:'', quantity:1, unit_price:0 }]);
+  const [loadingItems, setLoadingItems] = useState(isEdit);
+  const [saving, setSaving] = useState(false);
+  const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
+  const setItem = (idx,k,v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
+  const addItem = () => setItems(list => [...list, { item_name:'', quantity:1, unit_price:0 }]);
+  const delItem = (idx) => setItems(list => list.length>1 ? list.filter((_,i)=>i!==idx) : list);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    sb.from('cashvan_sale_items').select('*').eq('sale_id', sale.id).order('sort_order').then(({data}) => {
+      setItems((data&&data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_price:i.unit_price })) : [{ item_name:'', quantity:1, unit_price:0 }]);
+      setLoadingItems(false);
+    });
+  }, []);
+
+  const total = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+  const availableQty = (itemName) => {
+    const st = stockByRep[form.rep_id]?.[itemName];
+    return st ? st.loaded - st.sold : 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
+    const clean = items.filter(i => i.item_name.trim());
+    if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
+    setSaving(true);
+    try {
+      const amountPaid = form.payment_status==='paid' ? total : (parseFloat(form.amount_paid)||0);
+      const payload = {
+        rep_id: form.rep_id, sale_date: form.sale_date,
+        customer_name: form.customer_name.trim() || null,
+        customer_phone: form.customer_phone.trim() || null,
+        customer_address: form.customer_address.trim() || null,
+        payment_status: form.payment_status, amount_paid: amountPaid.toFixed(3),
+        total_amount: total.toFixed(3), notes: form.notes.trim() || null,
+      };
+      let saleId;
+      if (isEdit) {
+        const { error } = await sb.from('cashvan_sales').update(payload).eq('id', sale.id);
+        if (error) throw error;
+        saleId = sale.id;
+        const { error: dErr } = await sb.from('cashvan_sale_items').delete().eq('sale_id', saleId);
+        if (dErr) throw dErr;
+      } else {
+        const { data: newSale, error } = await sb.from('cashvan_sales').insert({ ...payload, created_by: user?.id||null }).select().single();
+        if (error) throw error;
+        saleId = newSale.id;
+      }
+      const rows = clean.map((it,idx) => ({
+        sale_id: saleId, sort_order: idx, item_name: it.item_name.trim(),
+        quantity: parseFloat(it.quantity)||0, unit_price: parseFloat(it.unit_price)||0,
+        total_price: (parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0),
+      }));
+      const { error: iErr } = await sb.from('cashvan_sale_items').insert(rows);
+      if (iErr) throw iErr;
+      createLog(user, isEdit ? `عدّل بيع الكاش فان ${sale.number}` : 'سجّل بيع كاش فان جديد', 'cashvan_sale', saleId, isEdit?sale.number:null);
+      toast(isEdit?'تم التحديث':'تم تسجيل البيع', 'success');
+      onSave();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:720,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">{isEdit ? `تعديل بيع ${sale.number}` : 'عملية بيع جديدة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {loadingItems ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+        <div style={{padding:20}}>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">المندوب *</label>
+              <select className="form-control" value={form.rep_id} onChange={e=>setF('rep_id',e.target.value)}>
+                <option value="">— اختر المندوب —</option>
+                {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={form.sale_date} onChange={e=>setF('sale_date',e.target.value)}/>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">اسم الزبون (اختياري)</label>
+              <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)} placeholder="زبون نقدي"/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">هاتف الزبون (اختياري)</label>
+              <input className="form-control" value={form.customer_phone} onChange={e=>setF('customer_phone',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">عنوان الزبون (اختياري)</label>
+            <input className="form-control" value={form.customer_address} onChange={e=>setF('customer_address',e.target.value)}/>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">الأصناف</label>
+            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+              <colgroup><col/><col style={{width:100}}/><col style={{width:110}}/><col style={{width:110}}/><col style={{width:36}}/></colgroup>
+              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th></th></tr></thead>
+              <tbody>
+                {items.map((it,idx) => {
+                  const avail = it.item_name ? availableQty(it.item_name) : null;
+                  return (
+                  <tr key={idx}>
+                    <td>
+                      <SuggestInput value={it.item_name} onChange={v=>setItem(idx,'item_name',v)} options={itemNames} placeholder="اسم المادة"/>
+                      {avail!==null && <div style={{fontSize:10,color: avail<0.001 ? 'var(--danger)':'var(--gray-500)',marginTop:2}}>المتوفر معه: {numFmt(avail,3)}</div>}
+                    </td>
+                    <td><input type="number" step="0.001" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/></td>
+                    <td><input type="number" step="0.001" className="form-control" value={it.unit_price} onChange={e=>setItem(idx,'unit_price',e.target.value)}/></td>
+                    <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0))}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delItem(idx)}>🗑</button></td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addItem}>➕ إضافة صنف</button>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">حالة الدفع</label>
+              <div style={{display:'flex',gap:8}}>
+                {Object.entries(CASHVAN_PAY_LABEL).map(([k,v]) => (
+                  <button key={k} type="button"
+                    style={{flex:1,padding:'9px 12px',borderRadius:8,border: form.payment_status===k?'1.5px solid var(--primary)':'1.5px solid var(--gray-200)',background: form.payment_status===k?'var(--info-light)':'#fff',color: form.payment_status===k?'var(--primary)':'var(--gray-500)',fontWeight:700,fontSize:13,cursor:'pointer'}}
+                    onClick={()=>setF('payment_status',k)}>{v}</button>
+                ))}
+              </div>
+            </div>
+            {form.payment_status==='partial' && (
+              <div className="form-group">
+                <label className="form-label">المبلغ المحصَّل</label>
+                <input type="number" step="0.001" className="form-control" value={form.amount_paid} onChange={e=>setF('amount_paid',e.target.value)}/>
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+
+          <div style={{display:'flex',justifyContent:'flex-end',padding:'10px 4px',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
+            الإجمالي: {numFmt(total)} د.أ
+          </div>
+        </div>
+        )}
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving||loadingItems}>{saving?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashVanSettleForm({ settlement, profiles, cashOwed, user, onSave, onClose }) {
+  const isEdit = !!settlement;
+  const [form, setForm] = useState({
+    rep_id: settlement?.rep_id || user?.id || '',
+    settlement_date: settlement?.settlement_date || today(),
+    amount: settlement?.amount ?? '',
+    method: settlement?.method || 'نقداً',
+    notes: settlement?.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
+  const owed = form.rep_id ? cashOwed(form.rep_id) : 0;
+
+  const handleSubmit = async () => {
+    if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
+    if (!parseFloat(form.amount)) { toast('أدخل المبلغ', 'error'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        rep_id: form.rep_id, settlement_date: form.settlement_date,
+        amount: parseFloat(form.amount).toFixed(3), method: form.method.trim() || 'نقداً',
+        notes: form.notes.trim() || null,
+      };
+      let settleId;
+      if (isEdit) {
+        const { error } = await sb.from('cashvan_settlements').update(payload).eq('id', settlement.id);
+        if (error) throw error;
+        settleId = settlement.id;
+      } else {
+        const { data: newSettle, error } = await sb.from('cashvan_settlements').insert({ ...payload, created_by: user?.id||null }).select().single();
+        if (error) throw error;
+        settleId = newSettle.id;
+      }
+      createLog(user, isEdit ? `عدّل تسوية الكاش فان ${settlement.number}` : 'سجّل تسوية كاش فان جديدة', 'cashvan_settlement', settleId, isEdit?settlement.number:null);
+      toast(isEdit?'تم التحديث':'تم تسجيل التسوية', 'success');
+      onSave();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">{isEdit ? `تعديل تسوية ${settlement.number}` : 'تسوية كاش جديدة'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          <div className="form-group">
+            <label className="form-label">المندوب *</label>
+            <select className="form-control" value={form.rep_id} onChange={e=>setF('rep_id',e.target.value)}>
+              <option value="">— اختر المندوب —</option>
+              {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+            </select>
+          </div>
+          {form.rep_id && (
+            <div style={{fontSize:12,fontWeight:700,color: owed>0.001?'var(--warning)':'var(--success)',marginBottom:12,background:'var(--gray-100)',padding:'8px 12px',borderRadius:8}}>
+              الرصيد المستحق تسليمه حالياً: {numFmt(owed)} د.أ
+            </div>
+          )}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={form.settlement_date} onChange={e=>setF('settlement_date',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">المبلغ *</label>
+              <input type="number" step="0.001" className="form-control" value={form.amount} onChange={e=>setF('amount',e.target.value)}/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">طريقة التسليم</label>
+            <input className="form-control" value={form.method} onChange={e=>setF('method',e.target.value)} placeholder="نقداً"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashVanRepDetail({ repId, repName, stockMap, finance, loads, sales, settlements, onClose }) {
+  const stockRows = Object.entries(stockMap).map(([name, v]) => ({ name, loaded:v.loaded, sold:v.sold, remaining:v.loaded-v.sold, unit_cost:v.unit_cost }));
+  const timeline = [
+    ...loads.map(l => ({ date:l.load_date, created_at:l.created_at, type:'تزويد', icon:'📦', text:`${l.number} — ${numFmt(l.total_cost)} د.أ` })),
+    ...sales.map(s => ({ date:s.sale_date, created_at:s.created_at, type:'بيع', icon:'🧾', text:`${s.number} — ${s.customer_name||'زبون نقدي'} — ${numFmt(s.total_amount)} د.أ` })),
+    ...settlements.map(t => ({ date:t.settlement_date, created_at:t.created_at, type:'تسوية', icon:'💰', text:`${t.number} — ${numFmt(t.amount)} د.أ (${t.method})` })),
+  ].sort((a,b) => (b.date+b.created_at).localeCompare(a.date+a.created_at));
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:760,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">🚐 {repName}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:20}}>
+            <div className="stat-card"><div className="stat-label">إجمالي المبيعات</div><div className="stat-value">{numFmt(finance.totalSales)}</div></div>
+            <div className="stat-card"><div className="stat-label">محصَّل من الزبائن</div><div className="stat-value">{numFmt(finance.cashCollected)}</div></div>
+            <div className="stat-card"><div className="stat-label">مسلَّم للشركة</div><div className="stat-value">{numFmt(finance.cashSettled)}</div></div>
+            <div className="stat-card"><div className="stat-label">بعهدته الآن</div><div className="stat-value" style={{color:'var(--warning)'}}>{numFmt(finance.cashCollected-finance.cashSettled)}</div></div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">أرصدة الأصناف معه</label>
+            {stockRows.length===0 ? <div className="empty-state">لا يوجد بضاعة مسجّلة</div> : (
+            <table style={{width:'100%',fontSize:13}}>
+              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>تزويد</th><th>مبيعات</th><th>متبقي معه</th></tr></thead>
+              <tbody>
+                {stockRows.map(r => (
+                  <tr key={r.name} style={{fontWeight: r.remaining>0.001?700:400}}>
+                    <td>{r.name}</td><td>{numFmt(r.loaded,2)}</td><td>{numFmt(r.sold,2)}</td>
+                    <td style={{color: r.remaining>0.001?'var(--primary)': r.remaining<-0.001?'var(--danger)':'var(--gray-500)'}}>{numFmt(r.remaining,2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">سجل الحركات</label>
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {timeline.map((e,i) => (
+                <div key={i} style={{display:'flex',gap:8,alignItems:'center',fontSize:13,padding:'6px 10px',background:'var(--gray-100)',borderRadius:8}}>
+                  <span>{e.icon}</span><span style={{color:'var(--gray-500)',fontSize:11,minWidth:75}}>{e.date}</span>
+                  <span style={{fontWeight:600}}>{e.type}:</span><span>{e.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -20761,8 +21495,8 @@ function FormsPage({ user, quotes, onReload }) {
   return (
     <div>
       {/* تبويبات */}
-      <div style={{display:'flex',gap:8,marginBottom:20}}>
-        {[...(canVouchers ? [['payment','سند صرف 💸'],['receipt','سند قبض 💰']] : []),['invoices','الفواتير 🧾']].map(([id,lbl])=>(
+      <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
+        {[...(canVouchers ? [['payment','سند صرف 💸'],['receipt','سند قبض 💰']] : []),['invoices','الفواتير 🧾'],...(hasPerm(user,'cashvan_access') ? [['cashvan','الكاش فان 🚐']] : [])].map(([id,lbl])=>(
           <button key={id}
             className={`btn btn-sm ${tab===id ? 'btn-primary' : 'btn-ghost'}`}
             style={{fontSize:14,padding:'7px 22px',fontWeight:tab===id?800:500}}
@@ -20771,7 +21505,7 @@ function FormsPage({ user, quotes, onReload }) {
         ))}
       </div>
 
-      {tab === 'invoices' ? <InvoicesPage user={user} quotes={quotes} onReload={onReload}/> : <>
+      {tab === 'invoices' ? <InvoicesPage user={user} quotes={quotes} onReload={onReload}/> : tab === 'cashvan' ? <CashVanPage user={user}/> : <>
       {/* شريط الأدوات */}
       <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
         <input className="form-control" style={{maxWidth:280}}
