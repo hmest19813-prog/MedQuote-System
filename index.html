@@ -12674,16 +12674,29 @@ function ProcurementPage({ user }) {
 const cashvanRepName = (profiles, id) => profiles.find(p => p.id === id)?.full_name || '—';
 
 // قائمة ثابتة لأصناف الكاش فان (اقتراحات تكميل تلقائي فقط — بدون ربط بالكتالوج حالياً)
-const CASHVAN_ITEM_NAMES = [
-  'ستربات بيرفورما', 'ستربات انستانت', 'ستربات اكتيف', 'ستربات كونتور بلس', 'ستربات كونتور TS',
-  'ستربات جلوكولاب', 'ستربات اون كول بلس', 'ستربات دي سمارت', 'ستربات كود فري', 'ستربات جويكو',
-  'جهاز بيرفورما', 'جهاز انستانت', 'جهاز جلوكولاب', 'جهاز اون كول بلس',
-  'واخز انسولين 8', 'واخز انسولين 6', 'واخز انسولين 5', 'واخز انسولين 4', 'واخز ازرق', 'واخز ابيض',
-  'سرنجات انسولين', 'حلقات مطاطية', 'بطارية', 'قلم واخز',
-  'جهاز ضغط هوائي مع سماعة', 'جهاز ضغط زئبقي مع سماعة', 'جهاز ضغط الكتروني ساعد',
-  'مشد ركية', 'مشد دوالي', 'جهاز حرارة عن بعد',
-  'مضخة ضعف جنسي يدوي', 'مضخة ضعف جنسي كهربائي', 'مشد ظهر', 'حذاء سابو',
+const CASHVAN_ITEM_GROUPS = [
+  { label: 'ستربات فحص السكر', icon: '🩸', items: [
+    'ستربات بيرفورما', 'ستربات انستانت', 'ستربات اكتيف', 'ستربات كونتور بلس', 'ستربات كونتور TS',
+    'ستربات جلوكولاب', 'ستربات اون كول بلس', 'ستربات دي سمارت', 'ستربات كود فري', 'ستربات جويكو',
+  ]},
+  { label: 'أجهزة قياس السكر', icon: '📟', items: [
+    'جهاز بيرفورما', 'جهاز انستانت', 'جهاز جلوكولاب', 'جهاز اون كول بلس',
+  ]},
+  { label: 'وخازات ومستلزمات الحقن', icon: '💉', items: [
+    'واخز انسولين 8', 'واخز انسولين 6', 'واخز انسولين 5', 'واخز انسولين 4', 'واخز ازرق', 'واخز ابيض',
+    'سرنجات انسولين', 'حلقات مطاطية', 'بطارية', 'قلم واخز',
+  ]},
+  { label: 'أجهزة ضغط الدم', icon: '🩺', items: [
+    'جهاز ضغط هوائي مع سماعة', 'جهاز ضغط زئبقي مع سماعة', 'جهاز ضغط الكتروني ساعد',
+  ]},
+  { label: 'مشدات وعناية طبية', icon: '🦵', items: [
+    'مشد ركية', 'مشد دوالي', 'جهاز حرارة عن بعد',
+  ]},
+  { label: 'أصناف أخرى', icon: '📦', items: [
+    'مضخة ضعف جنسي يدوي', 'مضخة ضعف جنسي كهربائي', 'مشد ظهر', 'حذاء سابو',
+  ]},
 ];
+const CASHVAN_ITEM_NAMES = CASHVAN_ITEM_GROUPS.flatMap(g => g.items);
 
 function CashVanPage({ user }) {
   const [tab, setTab] = useState('overview');
@@ -13095,21 +13108,34 @@ function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
 
           <div className="form-group">
             <label className="form-label">الأصناف — اكتب الكمية فقط لكل صنف تزوّد به (اتركه فاضي لو لم يُزوَّد)</label>
-            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
-              <colgroup><col/><col style={{width:120}}/></colgroup>
-              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th></tr></thead>
-              <tbody>
-                {pinned.map((it,idx) => {
-                  const active = parseFloat(it.quantity) > 0;
-                  return (
-                  <tr key={it.item_name} style={{opacity: active?1:.65}}>
-                    <td>{it.item_name}</td>
-                    <td><input type="number" step="0.001" className="form-control" placeholder="0" value={it.quantity} onChange={e=>setPinnedItem(idx,'quantity',e.target.value)}/></td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div style={{border:'1.5px solid var(--gray-200)',borderRadius:10,overflow:'hidden'}}>
+              <table style={{width:'100%',fontSize:13,tableLayout:'fixed',borderCollapse:'collapse'}}>
+                <colgroup><col/><col style={{width:120}}/></colgroup>
+                {CASHVAN_ITEM_GROUPS.map(group => (
+                  <tbody key={group.label}>
+                    <tr>
+                      <td colSpan={2} style={{background:'linear-gradient(135deg,#12293b,#1C6A99)',color:'#fff',fontWeight:800,fontSize:12,padding:'8px 12px',letterSpacing:.3}}>
+                        {group.icon} {group.label}
+                      </td>
+                    </tr>
+                    {group.items.map((name,gIdx) => {
+                      const idx = pinned.findIndex(it => it.item_name===name);
+                      const it = pinned[idx];
+                      const active = parseFloat(it.quantity) > 0;
+                      return (
+                        <tr key={name} style={{
+                          background: active ? '#DFF5E7' : (gIdx%2 ? '#F7FAFC' : '#fff'),
+                          borderBottom: '1px solid var(--gray-200)',
+                        }}>
+                          <td style={{padding:'6px 12px',fontWeight: active?700:400,color: active?'#0a5c34':'#1a2e3d'}}>{name}</td>
+                          <td style={{padding:'5px 8px'}}><input type="number" step="0.001" className="form-control" placeholder="0" value={it.quantity} onChange={e=>setPinnedItem(idx,'quantity',e.target.value)}/></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                ))}
+              </table>
+            </div>
           </div>
 
           <div className="form-group">
