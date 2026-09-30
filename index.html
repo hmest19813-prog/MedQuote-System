@@ -12704,6 +12704,8 @@ function CashVanPage({ user }) {
   const [editingSettle, setEditingSettle] = useState(null);
   const [repFilter, setRepFilter] = useState('all');
   const [viewingRepId, setViewingRepId] = useState(null);
+  const [viewingSettle, setViewingSettle] = useState(null);
+  const [viewingSaleBatchKey, setViewingSaleBatchKey] = useState(null);
 
   /* موظف عادي بدون صلاحية مشاهدة الكل بيشوف بضاعته/مبيعاته هو بس — نفس منطق daily_orders */
   const scopeToSelf = user.role !== 'admin' && !hasPerm(user, 'cashvan_view_all');
@@ -12833,6 +12835,18 @@ function CashVanPage({ user }) {
   const filteredSales = sales.filter(s => repFilter==='all' || s.rep_id===repFilter);
   const filteredSettlements = settlements.filter(t => repFilter==='all' || t.rep_id===repFilter);
 
+  /* دفعة/فترة إدخال = كل الطلبيات المسجّلة سوا بنفس المندوب ونفس الفترة (من/إلى) — كرت واحد بدل كرت لكل طلبية.
+     السجلات القديمة (قبل إضافة period_from/period_to) بترجع كل طلبية دفعة لحالها بتاريخها. */
+  const saleBatches = React.useMemo(() => {
+    const groups = {};
+    filteredSales.forEach(s => {
+      const pf = s.period_from || s.sale_date, pt = s.period_to || s.sale_date;
+      const key = `${s.rep_id}|${pf}|${pt}`;
+      (groups[key] = groups[key] || { rep_id:s.rep_id, period_from:pf, period_to:pt, sales:[] }).sales.push(s);
+    });
+    return Object.values(groups).sort((a,b) => b.period_to.localeCompare(a.period_to));
+  }, [filteredSales]);
+
   if (loading) return <LoadingScreen msg="جاري تحميل الكاش فان..."/>;
 
   return (
@@ -12912,20 +12926,24 @@ function CashVanPage({ user }) {
       )}
 
       {tab==='sales' && (
-        filteredSales.length===0 ? <div className="empty-state">لا توجد عمليات بيع</div> : (
+        saleBatches.length===0 ? <div className="empty-state">لا توجد عمليات بيع</div> : (
         <div style={ENTITY_GRID_STYLE}>
-          {filteredSales.map(s => (
-            <EntityCard key={s.id} avatar="🧾" title={s.number} subtitle={cashvanRepName(reps, s.rep_id)}
-              rows={[
-                { icon:'📅', text: s.sale_date },
-                { icon:'💰', text: `الإجمالي: ${numFmt(s.total_amount)} د.أ` },
-              ]}
-              actions={<>
-                {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSale(s);setShowSaleForm(true);}}>✏️ تعديل</button>}
-                {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSale(s)}>🗑️ حذف</button>}
-              </>}
-            />
-          ))}
+          {saleBatches.map(b => {
+            const key = `${b.rep_id}|${b.period_from}|${b.period_to}`;
+            const total = b.sales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+            const clickCount = b.sales.filter(s => s.payment_method==='كليك').length;
+            const label = b.period_from===b.period_to ? b.period_from : `${b.period_from} → ${b.period_to}`;
+            return (
+              <EntityCard key={key} onClick={()=>setViewingSaleBatchKey(key)}
+                avatar="🧾" title={label} subtitle={cashvanRepName(reps, b.rep_id)}
+                rows={[
+                  { icon:'📦', text: `${b.sales.length} طلبية${clickCount>0?` (${clickCount} كليك)`:''}` },
+                  { icon:'💰', text: `الإجمالي: ${numFmt(total)} د.أ` },
+                ]}
+                actions={<button className="btn btn-ghost btn-sm" onClick={()=>setViewingSaleBatchKey(key)}>👁️ التفاصيل</button>}
+              />
+            );
+          })}
         </div>
         )
       )}
@@ -12944,6 +12962,7 @@ function CashVanPage({ user }) {
                 t.notes && { icon:'📝', text: t.notes },
               ]}
               actions={<>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setViewingSettle(t)}>👁️ اطّلاع</button>
                 {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSettle(t);setShowSettleForm(true);}}>✏️ تعديل</button>}
                 {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSettlement(t)}>🗑️ حذف</button>}
               </>}
@@ -12955,7 +12974,7 @@ function CashVanPage({ user }) {
 
       {showLoadForm && <CashVanLoadForm load={editingLoad} profiles={reps} itemNames={itemNames} user={user}
         onSave={()=>{setShowLoadForm(false);load();}} onClose={()=>setShowLoadForm(false)}/>}
-      {showSaleForm && <CashVanSaleForm sale={editingSale} profiles={reps} itemNames={itemNames} stockByRep={stockByRep} user={user}
+      {showSaleForm && <CashVanSaleForm sale={editingSale} profiles={reps} itemNames={itemNames} stockByRep={stockByRep} sales={sales} user={user}
         onSave={()=>{setShowSaleForm(false);load();}} onClose={()=>setShowSaleForm(false)}/>}
       {showSettleForm && <CashVanSettleForm settlement={editingSettle} profiles={reps} sales={sales} saleItems={saleItems} settlements={settlements} stockByRep={stockByRep} user={user}
         onSaved={load} onClose={()=>setShowSettleForm(false)}/>}
@@ -12964,6 +12983,18 @@ function CashVanPage({ user }) {
         stockMap={stockByRep[viewingRepId]||{}} finance={financeByRep[viewingRepId]||{totalSales:0,cashCollected:0,cashSettled:0,salesResolved:0}}
         loads={loads.filter(l=>l.rep_id===viewingRepId)} sales={sales.filter(s=>s.rep_id===viewingRepId)} settlements={settlements.filter(t=>t.rep_id===viewingRepId)}
         onClose={()=>setViewingRepId(null)}/>}
+      {viewingSettle && <CashVanSettleDetail
+        settlement={viewingSettle} repName={cashvanRepName(reps, viewingSettle.rep_id)} sales={sales}
+        onClose={()=>setViewingSettle(null)}/>}
+      {viewingSaleBatchKey && (() => {
+        const batch = saleBatches.find(b => `${b.rep_id}|${b.period_from}|${b.period_to}` === viewingSaleBatchKey);
+        if (!batch) return null;
+        return <CashVanSaleBatchDetail
+          batch={batch} repName={cashvanRepName(reps, batch.rep_id)} saleItems={saleItems} user={user}
+          onEditSale={(s)=>{setViewingSaleBatchKey(null);setEditingSale(s);setShowSaleForm(true);}}
+          onDeleteSale={(s)=>deleteSale(s)}
+          onClose={()=>setViewingSaleBatchKey(null)}/>;
+      })()}
     </div>
   );
 }
@@ -13119,16 +13150,25 @@ function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
 /* عند التعديل: طلبية واحدة فقط بلا إضافة/حذف طلبيات. عند الإنشاء: دفعة طلبيات
    (كل طلبية ممكن تضم أكثر من صنف) بتاريخ ومندوب مشتركين — لتسريع إدخال طلبيات
    نهاية الأسبوع دفعة واحدة بدون فتح/إغلاق الفورم لكل طلبية لحالها. */
-function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, onClose }) {
+function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, sales, user, onSave, onClose }) {
   const isEdit = !!sale;
   /* أبو طارق هو المندوب الافتراضي بصفحة المبيعات (هو من ينفّذ عمليات البيع فعلياً) */
   const defaultRepId = profiles.find(p => p.full_name === 'أبو طارق')?.id || user?.id || '';
   const blankItem = () => ({ item_name:'', quantity:1, unit_price:0 });
-  const blankOrder = () => ({ items: [blankItem()] });
+  const blankOrder = () => ({ items: [blankItem()], payment_method: 'نقداً' });
+
+  /* بداية الفترة الافتراضية = اليوم التالي لنهاية آخر دفعة لنفس المندوب، وإلا اليوم — نفس منطق تسوية الكاش فان */
+  const suggestPeriodFrom = (repId) => {
+    const prev = sales
+      .filter(s => s.rep_id === repId && s.id !== sale?.id && (s.period_to || s.sale_date))
+      .sort((a,b) => (b.period_to||b.sale_date).localeCompare(a.period_to||a.sale_date))[0];
+    return prev ? addDays(prev.period_to || prev.sale_date, 1) : today();
+  };
 
   const [form, setForm] = useState({
     rep_id: sale?.rep_id || defaultRepId,
-    sale_date: sale?.sale_date || today(),
+    period_from: sale?.period_from || sale?.sale_date || suggestPeriodFrom(sale?.rep_id || defaultRepId),
+    period_to: sale?.period_to || sale?.sale_date || today(),
     notes: sale?.notes || '',
   });
   const [orders, setOrders] = useState([blankOrder()]);
@@ -13136,6 +13176,7 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
   const [saving, setSaving] = useState(false);
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
   const setOrderItem = (oIdx,iIdx,k,v) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, items: o.items.map((it,j) => j!==iIdx ? it : { ...it, [k]:v }) }));
+  const setOrderPayment = (oIdx,v) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, payment_method:v }));
   const addOrderItem = (oIdx) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, items:[...o.items, blankItem()] }));
   const delOrderItem = (oIdx,iIdx) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, items: o.items.length>1 ? o.items.filter((_,j)=>j!==iIdx) : o.items }));
   const addOrder = () => setOrders(list => [...list, blankOrder()]);
@@ -13145,7 +13186,7 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
     if (!isEdit) return;
     sb.from('cashvan_sale_items').select('*').eq('sale_id', sale.id).order('sort_order').then(({data}) => {
       const items = (data&&data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_price:i.unit_price })) : [blankItem()];
-      setOrders([{ items }]);
+      setOrders([{ items, payment_method: sale.payment_method || 'نقداً' }]);
       setLoadingItems(false);
     });
   }, []);
@@ -13159,14 +13200,16 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
 
   const handleSubmit = async () => {
     if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
-    const cleanOrders = orders.map(o => ({ items: o.items.filter(it => it.item_name.trim() && parseFloat(it.quantity)>0) })).filter(o => o.items.length>0);
+    const cleanOrders = orders.map(o => ({ items: o.items.filter(it => it.item_name.trim() && parseFloat(it.quantity)>0), payment_method: o.payment_method||'نقداً' })).filter(o => o.items.length>0);
     if (!cleanOrders.length) { toast('أضف صنفاً واحداً على الأقل بطلبية واحدة على الأقل', 'error'); return; }
     setSaving(true);
     try {
       if (isEdit) {
         const total = orderTotal(cleanOrders[0]);
         const payload = {
-          rep_id: form.rep_id, sale_date: form.sale_date,
+          rep_id: form.rep_id, sale_date: form.period_to,
+          period_from: form.period_from, period_to: form.period_to,
+          payment_method: cleanOrders[0].payment_method,
           payment_status: 'paid', amount_paid: total.toFixed(3),
           total_amount: total.toFixed(3), notes: form.notes.trim() || null,
         };
@@ -13188,7 +13231,9 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
         for (const o of cleanOrders) {
           const total = orderTotal(o);
           const payload = {
-            rep_id: form.rep_id, sale_date: form.sale_date,
+            rep_id: form.rep_id, sale_date: form.period_to,
+            period_from: form.period_from, period_to: form.period_to,
+            payment_method: o.payment_method,
             payment_status: 'paid', amount_paid: total.toFixed(3),
             total_amount: total.toFixed(3), notes: form.notes.trim() || null,
           };
@@ -13228,8 +13273,12 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">التاريخ {!isEdit && orders.length>1 && '(لكل الطلبيات بهذه الدفعة)'}</label>
-              <input type="date" className="form-control" value={form.sale_date} onChange={e=>setF('sale_date',e.target.value)}/>
+              <label className="form-label">من {!isEdit && '(بداية فترة هذه الدفعة، الأسبوع مثلاً)'}</label>
+              <input type="date" className="form-control" value={form.period_from} onChange={e=>setF('period_from',e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label className="form-label">إلى</label>
+              <input type="date" className="form-control" value={form.period_to} onChange={e=>setF('period_to',e.target.value)}/>
             </div>
           </div>
 
@@ -13237,7 +13286,20 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
             <div key={oIdx} style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:12,marginBottom:12}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <b style={{fontSize:13}}>{isEdit ? 'الأصناف' : `طلبية ${oIdx+1}`}</b>
-                {!isEdit && orders.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>delOrder(oIdx)}>🗑 حذف الطلبية</button>}
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--gray-200)'}}>
+                    {['نقداً','كليك'].map(pm => (
+                      <button key={pm} type="button"
+                        onClick={()=>setOrderPayment(oIdx,pm)}
+                        style={{padding:'4px 12px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',
+                          background: o.payment_method===pm ? (pm==='كليك'?'var(--info)':'var(--primary)') : '#f0f4f8',
+                          color: o.payment_method===pm ? '#fff' : 'var(--gray-600)'}}>
+                        {pm}
+                      </button>
+                    ))}
+                  </div>
+                  {!isEdit && orders.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>delOrder(oIdx)}>🗑 حذف الطلبية</button>}
+                </div>
               </div>
               <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
                 <colgroup><col/><col style={{width:100}}/><col style={{width:110}}/><col style={{width:110}}/><col style={{width:36}}/></colgroup>
@@ -13312,7 +13374,6 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
     notes: settlement?.notes || '',
   });
   const [deductions, setDeductions] = useState([{ label:'', amount:'' }]);
-  const [clickPayments, setClickPayments] = useState([]);
   const [cashReceived, setCashReceived] = useState(settlement?.amount ?? '');
   const [loadingDeductions, setLoadingDeductions] = useState(isEdit);
   const [saving, setSaving] = useState(false);
@@ -13322,12 +13383,6 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
   const setDeduction = (idx,k,v) => setDeductions(list => list.map((d,i) => i===idx ? { ...d, [k]:v } : d));
   const addDeduction = () => setDeductions(list => [...list, { label:'', amount:'' }]);
   const delDeduction = (idx) => setDeductions(list => list.filter((_,i)=>i!==idx));
-  const setClick = (idx,k,v) => setClickPayments(list => list.map((c,i) => i!==idx ? c : {
-    ...c, [k]:v,
-    ...(k==='sale_id' ? { amount: (sales.find(s=>s.id===v)?.total_amount) ?? c.amount } : {}),
-  }));
-  const addClick = () => setClickPayments(list => [...list, { sale_id:'', amount:'' }]);
-  const delClick = (idx) => setClickPayments(list => list.filter((_,i)=>i!==idx));
 
   useEffect(() => {
     if (!isEdit) return;
@@ -13335,22 +13390,22 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
       setDeductions((data&&data.length) ? data.map(d=>({label:d.label, amount:d.amount})) : [{label:'', amount:''}]);
       setLoadingDeductions(false);
     });
-    sb.from('cashvan_settlement_click_payments').select('*').eq('settlement_id', settlement.id).order('sort_order').then(({data}) => {
-      setClickPayments((data||[]).map(c=>({ sale_id:c.sale_id||'', amount:c.amount })));
-    });
   }, []);
 
+  /* طريقة الدفع (نقداً/كليك) صارت تُحدَّد على كل طلبية وقت إدخالها — فـ"منها عبر كليك"
+     بالتسوية بتُحسب تلقائياً من طلبيات الفترة، بدون أي خطوة يدوية إضافية هون. */
   const periodSales = sales.filter(s => s.rep_id===form.rep_id && form.period_from && form.period_to
     && s.sale_date >= form.period_from && s.sale_date <= form.period_to);
   const ordersCount  = periodSales.length;
   const grossAmount  = periodSales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+  const clickSales    = periodSales.filter(s => s.payment_method==='كليك');
+  const clickCount    = clickSales.length;
   const deliveryRate = parseFloat(form.delivery_rate) || 0;
   const deliveryDeduction = ordersCount * deliveryRate;
   const cleanDeductions  = deductions.filter(d => d.label.trim() && parseFloat(d.amount) > 0);
   const otherDeductions  = cleanDeductions.reduce((s,d) => s + (parseFloat(d.amount)||0), 0);
   const netAmount = grossAmount - deliveryDeduction - otherDeductions;
-  const cleanClicks  = clickPayments.filter(c => c.sale_id && parseFloat(c.amount) > 0);
-  const clickTotal   = cleanClicks.reduce((s,c) => s + (parseFloat(c.amount)||0), 0);
+  const clickTotal   = clickSales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
   const expectedCash = netAmount - clickTotal;
   const cashReceivedNum = parseFloat(cashReceived) || 0;
   const cashDiff = cashReceivedNum - expectedCash;
@@ -13423,8 +13478,6 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
         settleId = settlement.id;
         const { error: dErr } = await sb.from('cashvan_settlement_deductions').delete().eq('settlement_id', settleId);
         if (dErr) throw dErr;
-        const { error: cErr } = await sb.from('cashvan_settlement_click_payments').delete().eq('settlement_id', settleId);
-        if (cErr) throw cErr;
       } else {
         const { data: newSettle, error } = await sb.from('cashvan_settlements').insert({ ...payload, created_by: user?.id||null }).select().single();
         if (error) throw error;
@@ -13434,11 +13487,6 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
         const rows = cleanDeductions.map((d,idx) => ({ settlement_id: settleId, sort_order: idx, label: d.label.trim(), amount: parseFloat(d.amount)||0 }));
         const { error: ddErr } = await sb.from('cashvan_settlement_deductions').insert(rows);
         if (ddErr) throw ddErr;
-      }
-      if (cleanClicks.length) {
-        const rows = cleanClicks.map((c,idx) => ({ settlement_id: settleId, sort_order: idx, sale_id: c.sale_id, amount: parseFloat(c.amount)||0 }));
-        const { error: cpErr } = await sb.from('cashvan_settlement_click_payments').insert(rows);
-        if (cpErr) throw cpErr;
       }
       createLog(user, isEdit ? `عدّل تسوية الكاش فان ${settlement.number}` : 'سجّل تسوية كاش فان جديدة', 'cashvan_settlement', settleId, isEdit?settlement.number:null);
       toast(isEdit?'تم التحديث':'تم تسجيل التسوية', 'success');
@@ -13550,7 +13598,7 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
           </div>
 
           <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:16}}>
-            <div style={{display:'flex',justifyContent:'space-between'}}><span>عدد الطلبيات بالفترة</span><b>{ordersCount}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span>عدد الطلبيات بالفترة{clickCount>0 && ` (منها ${clickCount} كليك)`}</span><b>{ordersCount}</b></div>
             <div style={{display:'flex',justifyContent:'space-between'}}><span>إجمالي فاتورة الفترة</span><b>{numFmt(grossAmount)} د.أ</b></div>
             <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل ({ordersCount} × {numFmt(deliveryRate)})</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
             <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصومات أخرى</span><b>− {numFmt(otherDeductions)} د.أ</b></div>
@@ -13560,32 +13608,8 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
             {ordersCount>0 && <button className="btn btn-ghost btn-sm" style={{marginTop:10,alignSelf:'flex-start'}} onClick={printPeriodInvoice}>🖨️ طباعة فاتورة الفترة</button>}
           </div>
 
-          <div className="form-group">
-            <label className="form-label">طلبيات دُفعت كليك (لا نقداً) — من ضمن طلبيات هذه الفترة</label>
-            {clickPayments.length>0 && (
-            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
-              <colgroup><col/><col style={{width:120}}/><col style={{width:36}}/></colgroup>
-              <tbody>
-                {clickPayments.map((c,idx) => (
-                  <tr key={idx}>
-                    <td>
-                      <select className="form-control" value={c.sale_id} onChange={e=>setClick(idx,'sale_id',e.target.value)}>
-                        <option value="">— اختر الطلبية —</option>
-                        {periodSales.map(s=><option key={s.id} value={s.id}>{s.number} — {s.sale_date} — {numFmt(s.total_amount)} د.أ</option>)}
-                      </select>
-                    </td>
-                    <td><input type="number" step="0.001" className="form-control" placeholder="0" value={c.amount} onChange={e=>setClick(idx,'amount',e.target.value)}/></td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delClick(idx)}>🗑</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            )}
-            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addClick}>➕ إضافة دفعة كليك</button>
-          </div>
-
           <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:16}}>
-            <div style={{display:'flex',justifyContent:'space-between',color:'var(--info)'}}><span>منها عبر كليك</span><b>− {numFmt(clickTotal)} د.أ</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',color:'var(--info)'}}><span>منها عبر كليك (تلقائي حسب طريقة دفع كل طلبية)</span><b>− {numFmt(clickTotal)} د.أ</b></div>
             <div style={{display:'flex',justifyContent:'space-between',fontWeight:700}}><span>المتوقّع نقداً</span><span>{numFmt(expectedCash)} د.أ</span></div>
             <div className="form-group" style={{margin:'6px 0 0'}}>
               <label className="form-label">المبلغ المستلم نقداً *</label>
@@ -13736,6 +13760,197 @@ function CashVanRepDetail({ repId, repName, stockMap, finance, loads, sales, set
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, onDeleteSale, onClose }) {
+  const total = batch.sales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+  const clickTotal = batch.sales.filter(s=>s.payment_method==='كليك').reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+  const label = batch.period_from===batch.period_to ? batch.period_from : `${batch.period_from} → ${batch.period_to}`;
+  const saleIds = new Set(batch.sales.map(s=>s.id));
+  const saleById = {}; batch.sales.forEach(s => saleById[s.id]=s);
+  const itemRows = saleItems.filter(si => saleIds.has(si.sale_id))
+    .map(si => ({ ...si, sale: saleById[si.sale_id] }))
+    .sort((a,b) => (a.sale.sale_date+a.sale.number).localeCompare(b.sale.sale_date+b.sale.number));
+
+  const receiptId = `cashvan-batch-print-${batch.rep_id}-${batch.period_from}-${batch.period_to}`;
+  const doPrint = () => printDoc(receiptId, `طلبيات ${repName} - ${label}`);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:860,maxHeight:'92vh',overflowY:'auto'}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">🧾 {repName} — {label}</span>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="btn btn-primary btn-sm" onClick={doPrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="no-print" style={{padding:'16px 20px 0'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {batch.sales.map(s => (
+              <div key={s.id} style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:13}}>{s.number}</div>
+                  <div style={{fontSize:11,color:'var(--gray-500)'}}>{s.sale_date} · {numFmt(s.total_amount)} د.أ ·
+                    <span style={{color: s.payment_method==='كليك'?'var(--info)':'var(--success)',fontWeight:700}}> {s.payment_method||'نقداً'}</span>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>onEditSale(s)}>✏️ تعديل</button>}
+                  {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>onDeleteSale(s)}>🗑️ حذف</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="modal-body pq-preview-body" id={receiptId}>
+          <div className="pq-page">
+            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+              <PqDocHeader/>
+              <div className="print-doc-title" style={{fontSize:16,letterSpacing:2}}>كشف طلبيات الفترة</div>
+
+              <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+                <div className="print-client-grid">
+                  <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
+                  <div className="field-row"><label>الفترة:</label> <strong style={{color:'var(--primary)'}}>{label}</strong></div>
+                  <div className="field-row"><label>عدد الطلبيات:</label> {batch.sales.length}</div>
+                  <div className="field-row"><label>تاريخ الطباعة:</label> {new Date().toLocaleDateString('ar-JO')}</div>
+                </div>
+              </div>
+
+              <table className="print-items" style={{marginTop:12}}>
+                <colgroup><col style={{width:'12%'}}/><col style={{width:'11%'}}/><col style={{width:'10%'}}/><col/><col style={{width:'10%'}}/><col style={{width:'11%'}}/><col style={{width:'12%'}}/></colgroup>
+                <thead><tr><th>الطلبية</th><th>التاريخ</th><th>الدفع</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
+                <tbody>
+                  {itemRows.map(li => (
+                    <tr key={li.id}>
+                      <td>{li.sale.number}</td>
+                      <td>{li.sale.sale_date}</td>
+                      <td style={{color: li.sale.payment_method==='كليك'?'var(--info)':'var(--success)',fontWeight:700}}>{li.sale.payment_method||'نقداً'}</td>
+                      <td style={{textAlign:'right'}}>{li.item_name}</td>
+                      <td>{numFmt(li.quantity,2)}</td>
+                      <td>{numFmt(li.unit_price)}</td>
+                      <td style={{fontWeight:700}}>{numFmt(li.total_price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="print-totals">
+                <table>
+                  <tbody>
+                    {clickTotal>0 && <tr><td>منها عبر كليك</td><td>{numFmt(clickTotal)}</td></tr>}
+                    <tr><td>الإجمالي الكلي</td><td>{numFmt(total)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <PqFooterBar/>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashVanSettleDetail({ settlement, repName, sales, onClose }) {
+  const [deductions, setDeductions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    sb.from('cashvan_settlement_deductions').select('*').eq('settlement_id', settlement.id).order('sort_order').then(({data}) => {
+      setDeductions(data || []);
+      setLoading(false);
+    });
+  }, []);
+
+  /* طريقة الدفع مُسجَّلة على الطلبية نفسها — نشتق طلبيات الكليك مباشرة من طلبيات
+     الفترة، بدون جدول وسيط منفصل. */
+  const clickSales = sales.filter(s => s.rep_id===settlement.rep_id && settlement.period_from && settlement.period_to
+    && s.sale_date >= settlement.period_from && s.sale_date <= settlement.period_to && s.payment_method==='كليك');
+
+  const gross        = parseFloat(settlement.gross_amount)||0;
+  const deliveryRate  = parseFloat(settlement.delivery_rate)||0;
+  const deliveryDed   = parseFloat(settlement.delivery_deduction)||0;
+  const otherDed      = parseFloat(settlement.other_deductions)||0;
+  const clickTotal    = parseFloat(settlement.click_total)||0;
+  const cash          = parseFloat(settlement.amount)||0;
+  const netAmount     = gross - deliveryDed - otherDed;
+
+  const receiptId = `cashvan-settle-print-${settlement.id}`;
+  const doPrint = () => printDoc(receiptId, `تسوية ${settlement.number||''} - ${repName}`);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:860,maxHeight:'92vh',overflowY:'auto'}}>
+        <div className="modal-header no-print">
+          <span className="modal-title">💰 تسوية {settlement.number} — {repName}</span>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="btn btn-primary btn-sm" onClick={doPrint}>🖨️ طباعة / PDF</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className="modal-body pq-preview-body" id={receiptId}>
+          {loading ? <LoadingScreen msg="جاري التحميل..."/> : (
+          <div className="pq-page">
+            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+              <PqDocHeader/>
+              <div className="print-doc-title" style={{fontSize:16,letterSpacing:2}}>إيصال تسوية الكاش فان</div>
+
+              <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+                <div className="print-client-grid">
+                  <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
+                  <div className="field-row"><label>رقم التسوية:</label> <strong style={{color:'var(--primary)'}}>{settlement.number}</strong></div>
+                  <div className="field-row"><label>الفترة:</label> {settlement.period_from ? `${settlement.period_from} → ${settlement.period_to}` : settlement.settlement_date}</div>
+                  <div className="field-row"><label>طريقة الاستلام:</label> {settlement.method||'نقداً'}</div>
+                </div>
+              </div>
+
+              <table className="print-items" style={{marginTop:12}}>
+                <colgroup><col/><col style={{width:'22%'}}/></colgroup>
+                <thead><tr><th>البيان</th><th>المبلغ (د.أ)</th></tr></thead>
+                <tbody>
+                  <tr><td style={{textAlign:'right'}}>إجمالي فاتورة الفترة ({settlement.orders_count} طلبية)</td><td>{numFmt(gross)}</td></tr>
+                  {deliveryDed>0 && <tr><td style={{textAlign:'right'}}>خصم أجور التوصيل ({numFmt(deliveryRate)} × {settlement.orders_count})</td><td style={{color:'var(--danger)'}}>− {numFmt(deliveryDed)}</td></tr>}
+                  {deductions.map(d => (
+                    <tr key={d.id}><td style={{textAlign:'right'}}>خصم: {d.label}</td><td style={{color:'var(--danger)'}}>− {numFmt(d.amount)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {clickSales.length>0 && (
+              <table className="print-items" style={{marginTop:12}}>
+                <colgroup><col/><col style={{width:'20%'}}/><col style={{width:'22%'}}/></colgroup>
+                <thead><tr><th>طلبيات دُفعت كليك — رقم الطلبية</th><th>التاريخ</th><th>المبلغ (د.أ)</th></tr></thead>
+                <tbody>
+                  {clickSales.map(s => (
+                    <tr key={s.id}><td>{s.number}</td><td>{s.sale_date}</td><td style={{color:'var(--info)'}}>− {numFmt(s.total_amount)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              )}
+
+              <div className="print-totals">
+                <table>
+                  <tbody>
+                    <tr><td>الصافي المستحق</td><td>{numFmt(netAmount)}</td></tr>
+                    {clickTotal>0 && <tr><td>منها عبر كليك</td><td>− {numFmt(clickTotal)}</td></tr>}
+                    <tr><td>المستلم نقداً ({settlement.method||'نقداً'})</td><td>{numFmt(cash)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {settlement.notes && <div className="print-notes">ملاحظات: {settlement.notes}</div>}
+            </div>
+            <PqFooterBar/>
+          </div>
+          )}
         </div>
       </div>
     </div>
