@@ -2896,7 +2896,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [requesterHistory, setRequesterHistory] = useState([]);
 
   useEffect(() => {
-    sb.from('customers').select('id,name,phone,alt_phone,contact1_phone,contact1_mobile2,email,contact1_email').eq('approval_status','approved').order('name').then(({data})=>setCustomers(data||[]));
+    sb.from('customers').select('id,name,phone,alt_phone,contact1_name,contact1_phone,contact1_mobile2,email,contact1_email').eq('approval_status','approved').order('name').then(({data})=>setCustomers(data||[]));
     sb.from('reference_history').select('name').order('last_used_at',{ascending:false}).limit(200).then(({data})=>setReferenceHistory((data||[]).map(r=>r.name)));
     sb.from('requester_history').select('name,phone,phone2').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setRequesterHistory(data||[]));
   }, []);
@@ -2926,6 +2926,8 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     if (phoneVal) setF('phone', phoneVal);
     const emailVal = c.email || c.contact1_email || '';
     if (emailVal) setF('email', emailVal);
+    if (c.contact1_name) setF('requester_name', c.contact1_name);
+    if (c.contact1_phone) setF('requester_phone', c.contact1_phone);
     setShowCustomerPicker(false);
   };
 
@@ -3220,6 +3222,8 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
           setCustomers(list=>[...list, saved]);
           setF('customer_id', saved.id); setF('customer_name', saved.name);
           if (saved.phone) setF('phone', saved.phone);
+          if (saved.contact1_name) setF('requester_name', saved.contact1_name);
+          if (saved.contact1_phone) setF('requester_phone', saved.contact1_phone);
           setShowSaveCustomer(false);
           setShowCustomerPicker(false);
         }}
