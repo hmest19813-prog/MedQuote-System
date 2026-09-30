@@ -12671,17 +12671,24 @@ function ProcurementPage({ user }) {
 }
 
 /* ===================== الكاش فان (محاسبة مندوب التوزيع المتجول) ===================== */
-const CASHVAN_PAY_LABEL = { paid: 'مدفوع', partial: 'جزئي', unpaid: 'غير مدفوع' };
-function CashVanPayBadge({ status }) {
-  if (status === 'paid')    return <span className="pay-badge-paid">مدفوع ✓</span>;
-  if (status === 'partial') return <span className="pay-badge-partial">جزئي</span>;
-  return <span className="pay-badge-pending">غير مدفوع</span>;
-}
 const cashvanRepName = (profiles, id) => profiles.find(p => p.id === id)?.full_name || '—';
+
+// قائمة ثابتة لأصناف الكاش فان (اقتراحات تكميل تلقائي فقط — بدون ربط بالكتالوج حالياً)
+const CASHVAN_ITEM_NAMES = [
+  'ستربات بيرفورما', 'ستربات انستانت', 'ستربات اكتيف', 'ستربات كونتور بلس', 'ستربات كونتور TS',
+  'ستربات جلوكولاب', 'ستربات اون كول بلس', 'ستربات دي سمارت', 'ستربات كود فري', 'ستربات جويكو',
+  'جهاز بيرفورما', 'جهاز انستانت', 'جهاز جلوكولاب', 'جهاز اون كول بلس',
+  'واخز انسولين 8', 'واخز انسولين 6', 'واخز انسولين 5', 'واخز انسولين 4', 'واخز ازرق', 'واخز ابيض',
+  'سرنجات انسولين', 'حلقات مطاطية', 'بطارية', 'قلم واخز',
+  'جهاز ضغط هوائي مع سماعة', 'جهاز ضغط زئبقي مع سماعة', 'جهاز ضغط الكتروني ساعد',
+  'مشد ركية', 'مشد دوالي', 'جهاز حرارة عن بعد',
+  'مضخة ضعف جنسي يدوي', 'مضخة ضعف جنسي كهربائي', 'مشد ظهر', 'حذاء سابو',
+];
 
 function CashVanPage({ user }) {
   const [tab, setTab] = useState('overview');
   const [profiles, setProfiles] = useState([]);
+  const [externalReps, setExternalReps] = useState([]);
   const [loads, setLoads] = useState([]);
   const [loadItems, setLoadItems] = useState([]);
   const [sales, setSales] = useState([]);
@@ -12707,13 +12714,15 @@ function CashVanPage({ user }) {
     let sQuery = sb.from('cashvan_sales').select('*').order('sale_date',{ascending:false}).order('created_at',{ascending:false});
     let tQuery = sb.from('cashvan_settlements').select('*').order('settlement_date',{ascending:false}).order('created_at',{ascending:false});
     if (scopeToSelf) { lQuery = lQuery.eq('rep_id', user.id); sQuery = sQuery.eq('rep_id', user.id); tQuery = tQuery.eq('rep_id', user.id); }
-    const [pRes, lRes, siRes, sRes, saiRes, tRes] = await Promise.all([
+    const [pRes, erRes, lRes, siRes, sRes, saiRes, tRes] = await Promise.all([
       sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name'),
+      sb.from('cashvan_external_reps').select('id,full_name').eq('is_active', true).order('full_name'),
       lQuery, sb.from('cashvan_stock_load_items').select('*'),
       sQuery, sb.from('cashvan_sale_items').select('*'),
       tQuery,
     ]);
     setProfiles(pRes.data || []);
+    setExternalReps(erRes.data || []);
     setLoads(lRes.data || []);
     setLoadItems(siRes.data || []);
     setSales(sRes.data || []);
@@ -12723,8 +12732,11 @@ function CashVanPage({ user }) {
   };
   useEffect(() => { load(); }, []);
 
+  /* المندوبون = موظفون بحساب دخول (profiles) + مندوبون خارجيون بدون حساب (cashvan_external_reps، مثل أبو طارق) */
+  const reps = React.useMemo(() => [...profiles, ...externalReps], [profiles, externalReps]);
+
   const itemNames = React.useMemo(() => {
-    const s = new Set();
+    const s = new Set(CASHVAN_ITEM_NAMES);
     loadItems.forEach(i => i.item_name && s.add(i.item_name));
     saleItems.forEach(i => i.item_name && s.add(i.item_name));
     return Array.from(s).sort();
@@ -12759,27 +12771,32 @@ function CashVanPage({ user }) {
     return out;
   }, [loads, loadItems, sales, saleItems]);
 
-  /* المال: rep_id -> { totalSales, cashCollected, cashSettled } */
+  /* المال: rep_id -> { totalSales, cashCollected, cashSettled, salesResolved }
+     salesResolved = مجموع gross_amount لكل تسويات المندوب — يمثّل قيمة المبيعات
+     اللي "انحسبت" ضمن تسوية (نقداً + كليك + خصومات)، بعكس cashSettled اللي هو
+     الكاش الفعلي المستلم فقط. "بعهدته" لازم تُحسب من salesResolved مش من cashSettled
+     لأنه جزء من قيمة الطلبيات ممكن يتغطى بخصم توصيل أو دفعة كليك بدون كاش فعلي. */
   const financeByRep = React.useMemo(() => {
     const out = {};
-    repIds.forEach(id => out[id] = { totalSales: 0, cashCollected: 0, cashSettled: 0 });
+    repIds.forEach(id => out[id] = { totalSales: 0, cashCollected: 0, cashSettled: 0, salesResolved: 0 });
     sales.forEach(s => {
-      out[s.rep_id] = out[s.rep_id] || { totalSales: 0, cashCollected: 0, cashSettled: 0 };
+      out[s.rep_id] = out[s.rep_id] || { totalSales: 0, cashCollected: 0, cashSettled: 0, salesResolved: 0 };
       out[s.rep_id].totalSales += parseFloat(s.total_amount) || 0;
       out[s.rep_id].cashCollected += parseFloat(s.amount_paid) || 0;
     });
     settlements.forEach(t => {
-      out[t.rep_id] = out[t.rep_id] || { totalSales: 0, cashCollected: 0, cashSettled: 0 };
+      out[t.rep_id] = out[t.rep_id] || { totalSales: 0, cashCollected: 0, cashSettled: 0, salesResolved: 0 };
       out[t.rep_id].cashSettled += parseFloat(t.amount) || 0;
+      out[t.rep_id].salesResolved += parseFloat(t.gross_amount) || 0;
     });
     return out;
   }, [sales, settlements, repIds]);
 
-  const stockValue = (repId) => Object.values(stockByRep[repId] || {})
-    .reduce((s, it) => s + Math.max(0, it.loaded - it.sold) * it.unit_cost, 0);
+  const stockQty = (repId) => Object.values(stockByRep[repId] || {})
+    .reduce((s, it) => s + Math.max(0, it.loaded - it.sold), 0);
   const stockItemsCount = (repId) => Object.values(stockByRep[repId] || {})
     .filter(it => (it.loaded - it.sold) > 0.001).length;
-  const cashOwed = (repId) => { const f = financeByRep[repId]; return f ? f.cashCollected - f.cashSettled : 0; };
+  const cashOwed = (repId) => { const f = financeByRep[repId]; return f ? f.totalSales - f.salesResolved : 0; };
   const receivables = (repId) => { const f = financeByRep[repId]; return f ? f.totalSales - f.cashCollected : 0; };
 
   const deleteLoad = async (l) => {
@@ -12833,13 +12850,13 @@ function CashVanPage({ user }) {
               <label className="form-label">المندوب</label>
               <select className="form-control" value={repFilter} onChange={e=>setRepFilter(e.target.value)}>
                 <option value="all">كل المندوبين</option>
-                {profiles.filter(p=>repIds.includes(p.id)).map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
+                {reps.filter(p=>repIds.includes(p.id)).map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
               </select>
             </div>
           </FilterPopover>
         )}
         {tab==='loads' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingLoad(null);setShowLoadForm(true);}}>➕ تزويد جديد</button>}
-        {tab==='sales' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSale(null);setShowSaleForm(true);}}>➕ عملية بيع</button>}
+        {tab==='sales' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSale(null);setShowSaleForm(true);}}>➕ تسجيل طلبيات</button>}
         {tab==='settlements' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSettle(null);setShowSettleForm(true);}}>➕ تسوية جديدة</button>}
       </div>
 
@@ -12858,10 +12875,10 @@ function CashVanPage({ user }) {
             const owed = cashOwed(repId), recv = receivables(repId);
             return (
               <EntityCard key={repId} onClick={()=>setViewingRepId(repId)}
-                avatar="🚐" title={cashvanRepName(profiles, repId)}
+                avatar="🚐" title={cashvanRepName(reps, repId)}
                 subtitle={`${stockItemsCount(repId)} صنف متبقي معه`}
                 rows={[
-                  { icon:'📦', text: `قيمة البضاعة معه: ${numFmt(stockValue(repId))} د.أ` },
+                  { icon:'📦', text: `إجمالي الكمية المتبقية معه: ${numFmt(stockQty(repId),2)}` },
                   { icon:'🧾', text: `إجمالي مبيعاته: ${numFmt(f.totalSales)} د.أ` },
                   { icon:'💵', text: `كاش بعهدته (غير مسوّى): ${numFmt(owed)} د.أ` },
                   recv>0.001 && { icon:'⏳', text: `ذمم زبائن غير محصّلة: ${numFmt(recv)} د.أ` },
@@ -12878,11 +12895,11 @@ function CashVanPage({ user }) {
         filteredLoads.length===0 ? <div className="empty-state">لا توجد عمليات تزويد</div> : (
         <div style={ENTITY_GRID_STYLE}>
           {filteredLoads.map(l => (
-            <EntityCard key={l.id} avatar="📦" title={l.number} subtitle={cashvanRepName(profiles, l.rep_id)}
+            <EntityCard key={l.id} avatar="📦" title={l.number} subtitle={cashvanRepName(reps, l.rep_id)}
               rows={[
                 { icon:'📅', text: l.load_date },
-                { icon:'💰', text: `القيمة: ${numFmt(l.total_cost)} د.أ` },
                 { icon:'🗂️', text: `${loadItems.filter(i=>i.load_id===l.id).length} صنف` },
+                { icon:'#️⃣', text: `الكمية الإجمالية: ${numFmt(loadItems.filter(i=>i.load_id===l.id).reduce((s,i)=>s+(parseFloat(i.quantity)||0),0),2)}` },
               ]}
               actions={<>
                 {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingLoad(l);setShowLoadForm(true);}}>✏️ تعديل</button>}
@@ -12898,12 +12915,10 @@ function CashVanPage({ user }) {
         filteredSales.length===0 ? <div className="empty-state">لا توجد عمليات بيع</div> : (
         <div style={ENTITY_GRID_STYLE}>
           {filteredSales.map(s => (
-            <EntityCard key={s.id} avatar="🧾" title={s.number} subtitle={cashvanRepName(profiles, s.rep_id)}
-              badge={<CashVanPayBadge status={s.payment_status}/>}
+            <EntityCard key={s.id} avatar="🧾" title={s.number} subtitle={cashvanRepName(reps, s.rep_id)}
               rows={[
                 { icon:'📅', text: s.sale_date },
-                { icon:'👤', text: s.customer_name || 'زبون نقدي' },
-                { icon:'💰', text: `الإجمالي: ${numFmt(s.total_amount)} د.أ — محصّل: ${numFmt(s.amount_paid)} د.أ` },
+                { icon:'💰', text: `الإجمالي: ${numFmt(s.total_amount)} د.أ` },
               ]}
               actions={<>
                 {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSale(s);setShowSaleForm(true);}}>✏️ تعديل</button>}
@@ -12919,11 +12934,13 @@ function CashVanPage({ user }) {
         filteredSettlements.length===0 ? <div className="empty-state">لا توجد تسويات</div> : (
         <div style={ENTITY_GRID_STYLE}>
           {filteredSettlements.map(t => (
-            <EntityCard key={t.id} avatar="💰" title={t.number} subtitle={cashvanRepName(profiles, t.rep_id)}
+            <EntityCard key={t.id} avatar="💰" title={t.number} subtitle={cashvanRepName(reps, t.rep_id)}
               rows={[
-                { icon:'📅', text: t.settlement_date },
-                { icon:'💵', text: `المبلغ: ${numFmt(t.amount)} د.أ` },
-                { icon:'🏦', text: t.method },
+                { icon:'📅', text: t.period_from ? `${t.period_from} → ${t.period_to}` : t.settlement_date },
+                t.orders_count>0 && { icon:'🧾', text: `${t.orders_count} طلبية — فاتورة ${numFmt(t.gross_amount)} د.أ` },
+                (t.delivery_deduction>0 || t.other_deductions>0) && { icon:'➖', text: `خصومات: ${numFmt((parseFloat(t.delivery_deduction)||0)+(parseFloat(t.other_deductions)||0))} د.أ` },
+                { icon:'💵', text: `نقداً: ${numFmt(t.amount)} د.أ (${t.method})` },
+                t.click_total>0 && { icon:'📲', text: `كليك: ${numFmt(t.click_total)} د.أ` },
                 t.notes && { icon:'📝', text: t.notes },
               ]}
               actions={<>
@@ -12936,15 +12953,15 @@ function CashVanPage({ user }) {
         )
       )}
 
-      {showLoadForm && <CashVanLoadForm load={editingLoad} profiles={profiles} itemNames={itemNames} user={user}
+      {showLoadForm && <CashVanLoadForm load={editingLoad} profiles={reps} itemNames={itemNames} user={user}
         onSave={()=>{setShowLoadForm(false);load();}} onClose={()=>setShowLoadForm(false)}/>}
-      {showSaleForm && <CashVanSaleForm sale={editingSale} profiles={profiles} itemNames={itemNames} stockByRep={stockByRep} user={user}
+      {showSaleForm && <CashVanSaleForm sale={editingSale} profiles={reps} itemNames={itemNames} stockByRep={stockByRep} user={user}
         onSave={()=>{setShowSaleForm(false);load();}} onClose={()=>setShowSaleForm(false)}/>}
-      {showSettleForm && <CashVanSettleForm settlement={editingSettle} profiles={profiles} cashOwed={cashOwed} user={user}
-        onSave={()=>{setShowSettleForm(false);load();}} onClose={()=>setShowSettleForm(false)}/>}
+      {showSettleForm && <CashVanSettleForm settlement={editingSettle} profiles={reps} sales={sales} saleItems={saleItems} settlements={settlements} stockByRep={stockByRep} user={user}
+        onSaved={load} onClose={()=>setShowSettleForm(false)}/>}
       {viewingRepId && <CashVanRepDetail
-        repId={viewingRepId} repName={cashvanRepName(profiles, viewingRepId)}
-        stockMap={stockByRep[viewingRepId]||{}} finance={financeByRep[viewingRepId]||{totalSales:0,cashCollected:0,cashSettled:0}}
+        repId={viewingRepId} repName={cashvanRepName(reps, viewingRepId)}
+        stockMap={stockByRep[viewingRepId]||{}} finance={financeByRep[viewingRepId]||{totalSales:0,cashCollected:0,cashSettled:0,salesResolved:0}}
         loads={loads.filter(l=>l.rep_id===viewingRepId)} sales={sales.filter(s=>s.rep_id===viewingRepId)} settlements={settlements.filter(t=>t.rep_id===viewingRepId)}
         onClose={()=>setViewingRepId(null)}/>}
     </div>
@@ -12953,38 +12970,50 @@ function CashVanPage({ user }) {
 
 function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
   const isEdit = !!load;
+  /* أبو طارق هو المندوب الافتراضي بالتزويد كمان (نفس منطق فورم المبيعات) */
+  const defaultRepId = profiles.find(p => p.full_name === 'أبو طارق')?.id || user?.id || '';
   const [form, setForm] = useState({
-    rep_id: load?.rep_id || user?.id || '',
+    rep_id: load?.rep_id || defaultRepId,
     load_date: load?.load_date || today(),
     notes: load?.notes || '',
   });
-  const [items, setItems] = useState([{ item_name:'', quantity:1, unit_cost:0 }]);
+  /* صفوف ثابتة دايماً ظاهرة لأصناف الكتالوج المعروفة — بس رقم الكمية */
+  const [pinned, setPinned] = useState(() => CASHVAN_ITEM_NAMES.map(name => ({ item_name:name, quantity:'' })));
+  /* أصناف إضافية خارج القائمة الثابتة — تُضاف حسب الحاجة */
+  const [extra, setExtra] = useState([]);
   const [loadingItems, setLoadingItems] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
-  const setItem = (idx,k,v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
-  const addItem = () => setItems(list => [...list, { item_name:'', quantity:1, unit_cost:0 }]);
-  const delItem = (idx) => setItems(list => list.length>1 ? list.filter((_,i)=>i!==idx) : list);
+  const setPinnedItem = (idx,k,v) => setPinned(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
+  const setExtraItem = (idx,k,v) => setExtra(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
+  const addExtra = () => setExtra(list => [...list, { item_name:'', quantity:'' }]);
+  const delExtra = (idx) => setExtra(list => list.filter((_,i)=>i!==idx));
 
   useEffect(() => {
     if (!isEdit) return;
     sb.from('cashvan_stock_load_items').select('*').eq('load_id', load.id).order('sort_order').then(({data}) => {
-      setItems((data&&data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_cost:i.unit_cost })) : [{ item_name:'', quantity:1, unit_cost:0 }]);
+      const saved = data || [];
+      setPinned(CASHVAN_ITEM_NAMES.map(name => {
+        const row = saved.find(i => i.item_name === name);
+        return { item_name:name, quantity: row ? row.quantity : '' };
+      }));
+      setExtra(saved.filter(i => !CASHVAN_ITEM_NAMES.includes(i.item_name)).map(i => ({ item_name:i.item_name, quantity:i.quantity })));
       setLoadingItems(false);
     });
   }, []);
 
-  const total = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_cost||0)), 0);
+  const cleanPinned = pinned.filter(i => parseFloat(i.quantity) > 0);
+  const cleanExtra = extra.filter(i => i.item_name.trim() && parseFloat(i.quantity) > 0);
 
   const handleSubmit = async () => {
     if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
-    const clean = items.filter(i => i.item_name.trim());
-    if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
+    const clean = [...cleanPinned, ...cleanExtra];
+    if (!clean.length) { toast('أدخل كمية لصنف واحد على الأقل', 'error'); return; }
     setSaving(true);
     try {
       const payload = {
         rep_id: form.rep_id, load_date: form.load_date,
-        notes: form.notes.trim() || null, total_cost: total.toFixed(3),
+        notes: form.notes.trim() || null,
       };
       let loadId;
       if (isEdit) {
@@ -13000,8 +13029,7 @@ function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
       }
       const rows = clean.map((it,idx) => ({
         load_id: loadId, sort_order: idx, item_name: it.item_name.trim(),
-        quantity: parseFloat(it.quantity)||0, unit_cost: parseFloat(it.unit_cost)||0,
-        total_cost: (parseFloat(it.quantity)||0)*(parseFloat(it.unit_cost)||0),
+        quantity: parseFloat(it.quantity)||0,
       }));
       const { error: iErr } = await sb.from('cashvan_stock_load_items').insert(rows);
       if (iErr) throw iErr;
@@ -13036,32 +13064,46 @@ function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
           </div>
 
           <div className="form-group">
-            <label className="form-label">الأصناف</label>
+            <label className="form-label">الأصناف — اكتب الكمية فقط لكل صنف تزوّد به (اتركه فاضي لو لم يُزوَّد)</label>
             <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
-              <colgroup><col/><col style={{width:100}}/><col style={{width:120}}/><col style={{width:110}}/><col style={{width:36}}/></colgroup>
-              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th><th>تكلفة الوحدة</th><th>الإجمالي</th><th></th></tr></thead>
+              <colgroup><col/><col style={{width:120}}/></colgroup>
+              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th></tr></thead>
               <tbody>
-                {items.map((it,idx) => (
+                {pinned.map((it,idx) => {
+                  const active = parseFloat(it.quantity) > 0;
+                  return (
+                  <tr key={it.item_name} style={{opacity: active?1:.65}}>
+                    <td>{it.item_name}</td>
+                    <td><input type="number" step="0.001" className="form-control" placeholder="0" value={it.quantity} onChange={e=>setPinnedItem(idx,'quantity',e.target.value)}/></td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">أصناف إضافية (خارج القائمة أعلاه)</label>
+            {extra.length>0 && (
+            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+              <colgroup><col/><col style={{width:120}}/><col style={{width:36}}/></colgroup>
+              <tbody>
+                {extra.map((it,idx) => (
                   <tr key={idx}>
-                    <td><SuggestInput value={it.item_name} onChange={v=>setItem(idx,'item_name',v)} options={itemNames} placeholder="اسم المادة"/></td>
-                    <td><input type="number" step="0.001" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/></td>
-                    <td><input type="number" step="0.001" className="form-control" value={it.unit_cost} onChange={e=>setItem(idx,'unit_cost',e.target.value)}/></td>
-                    <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_cost)||0))}</td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delItem(idx)}>🗑</button></td>
+                    <td><SuggestInput value={it.item_name} onChange={v=>setExtraItem(idx,'item_name',v)} options={itemNames} placeholder="اسم المادة"/></td>
+                    <td><input type="number" step="0.001" className="form-control" value={it.quantity} onChange={e=>setExtraItem(idx,'quantity',e.target.value)}/></td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delExtra(idx)}>🗑</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addItem}>➕ إضافة صنف</button>
+            )}
+            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addExtra}>➕ إضافة صنف آخر</button>
           </div>
 
           <div className="form-group">
             <label className="form-label">ملاحظات</label>
             <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
-          </div>
-
-          <div style={{display:'flex',justifyContent:'flex-end',padding:'10px 4px',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
-            الإجمالي: {numFmt(total)} د.أ
           </div>
         </div>
         )}
@@ -13074,35 +13116,42 @@ function CashVanLoadForm({ load, profiles, itemNames, user, onSave, onClose }) {
   );
 }
 
+/* عند التعديل: طلبية واحدة فقط بلا إضافة/حذف طلبيات. عند الإنشاء: دفعة طلبيات
+   (كل طلبية ممكن تضم أكثر من صنف) بتاريخ ومندوب مشتركين — لتسريع إدخال طلبيات
+   نهاية الأسبوع دفعة واحدة بدون فتح/إغلاق الفورم لكل طلبية لحالها. */
 function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, onClose }) {
   const isEdit = !!sale;
+  /* أبو طارق هو المندوب الافتراضي بصفحة المبيعات (هو من ينفّذ عمليات البيع فعلياً) */
+  const defaultRepId = profiles.find(p => p.full_name === 'أبو طارق')?.id || user?.id || '';
+  const blankItem = () => ({ item_name:'', quantity:1, unit_price:0 });
+  const blankOrder = () => ({ items: [blankItem()] });
+
   const [form, setForm] = useState({
-    rep_id: sale?.rep_id || user?.id || '',
+    rep_id: sale?.rep_id || defaultRepId,
     sale_date: sale?.sale_date || today(),
-    customer_name: sale?.customer_name || '',
-    customer_phone: sale?.customer_phone || '',
-    customer_address: sale?.customer_address || '',
-    payment_status: sale?.payment_status || 'paid',
-    amount_paid: sale?.amount_paid ?? '',
     notes: sale?.notes || '',
   });
-  const [items, setItems] = useState([{ item_name:'', quantity:1, unit_price:0 }]);
+  const [orders, setOrders] = useState([blankOrder()]);
   const [loadingItems, setLoadingItems] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
-  const setItem = (idx,k,v) => setItems(list => list.map((it,i) => i===idx ? { ...it, [k]:v } : it));
-  const addItem = () => setItems(list => [...list, { item_name:'', quantity:1, unit_price:0 }]);
-  const delItem = (idx) => setItems(list => list.length>1 ? list.filter((_,i)=>i!==idx) : list);
+  const setOrderItem = (oIdx,iIdx,k,v) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, items: o.items.map((it,j) => j!==iIdx ? it : { ...it, [k]:v }) }));
+  const addOrderItem = (oIdx) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, items:[...o.items, blankItem()] }));
+  const delOrderItem = (oIdx,iIdx) => setOrders(list => list.map((o,i) => i!==oIdx ? o : { ...o, items: o.items.length>1 ? o.items.filter((_,j)=>j!==iIdx) : o.items }));
+  const addOrder = () => setOrders(list => [...list, blankOrder()]);
+  const delOrder = (oIdx) => setOrders(list => list.length>1 ? list.filter((_,i)=>i!==oIdx) : list);
 
   useEffect(() => {
     if (!isEdit) return;
     sb.from('cashvan_sale_items').select('*').eq('sale_id', sale.id).order('sort_order').then(({data}) => {
-      setItems((data&&data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_price:i.unit_price })) : [{ item_name:'', quantity:1, unit_price:0 }]);
+      const items = (data&&data.length) ? data.map(i=>({ item_name:i.item_name, quantity:i.quantity, unit_price:i.unit_price })) : [blankItem()];
+      setOrders([{ items }]);
       setLoadingItems(false);
     });
   }, []);
 
-  const total = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+  const orderTotal = (o) => o.items.reduce((s,it) => s + (parseFloat(it.quantity||0) * parseFloat(it.unit_price||0)), 0);
+  const grandTotal = orders.reduce((s,o) => s + orderTotal(o), 0);
   const availableQty = (itemName) => {
     const st = stockByRep[form.rep_id]?.[itemName];
     return st ? st.loaded - st.sold : 0;
@@ -13110,40 +13159,52 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
 
   const handleSubmit = async () => {
     if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
-    const clean = items.filter(i => i.item_name.trim());
-    if (!clean.length) { toast('أضف صنفاً واحداً على الأقل', 'error'); return; }
+    const cleanOrders = orders.map(o => ({ items: o.items.filter(it => it.item_name.trim() && parseFloat(it.quantity)>0) })).filter(o => o.items.length>0);
+    if (!cleanOrders.length) { toast('أضف صنفاً واحداً على الأقل بطلبية واحدة على الأقل', 'error'); return; }
     setSaving(true);
     try {
-      const amountPaid = form.payment_status==='paid' ? total : (parseFloat(form.amount_paid)||0);
-      const payload = {
-        rep_id: form.rep_id, sale_date: form.sale_date,
-        customer_name: form.customer_name.trim() || null,
-        customer_phone: form.customer_phone.trim() || null,
-        customer_address: form.customer_address.trim() || null,
-        payment_status: form.payment_status, amount_paid: amountPaid.toFixed(3),
-        total_amount: total.toFixed(3), notes: form.notes.trim() || null,
-      };
-      let saleId;
       if (isEdit) {
+        const total = orderTotal(cleanOrders[0]);
+        const payload = {
+          rep_id: form.rep_id, sale_date: form.sale_date,
+          payment_status: 'paid', amount_paid: total.toFixed(3),
+          total_amount: total.toFixed(3), notes: form.notes.trim() || null,
+        };
         const { error } = await sb.from('cashvan_sales').update(payload).eq('id', sale.id);
         if (error) throw error;
-        saleId = sale.id;
-        const { error: dErr } = await sb.from('cashvan_sale_items').delete().eq('sale_id', saleId);
+        const { error: dErr } = await sb.from('cashvan_sale_items').delete().eq('sale_id', sale.id);
         if (dErr) throw dErr;
+        const rows = cleanOrders[0].items.map((it,idx) => ({
+          sale_id: sale.id, sort_order: idx, item_name: it.item_name.trim(),
+          quantity: parseFloat(it.quantity)||0, unit_price: parseFloat(it.unit_price)||0,
+          total_price: (parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0),
+        }));
+        const { error: iErr } = await sb.from('cashvan_sale_items').insert(rows);
+        if (iErr) throw iErr;
+        createLog(user, `عدّل بيع الكاش فان ${sale.number}`, 'cashvan_sale', sale.id, sale.number);
+        toast('تم التحديث', 'success');
       } else {
-        const { data: newSale, error } = await sb.from('cashvan_sales').insert({ ...payload, created_by: user?.id||null }).select().single();
-        if (error) throw error;
-        saleId = newSale.id;
+        /* دفعة طلبيات: كل طلبية تُنشأ كسجل مبيعات مستقل بذات المندوب والتاريخ، بالتتابع لضمان مطابقة كل طلبية ببنودها */
+        for (const o of cleanOrders) {
+          const total = orderTotal(o);
+          const payload = {
+            rep_id: form.rep_id, sale_date: form.sale_date,
+            payment_status: 'paid', amount_paid: total.toFixed(3),
+            total_amount: total.toFixed(3), notes: form.notes.trim() || null,
+          };
+          const { data: newSale, error } = await sb.from('cashvan_sales').insert({ ...payload, created_by: user?.id||null }).select().single();
+          if (error) throw error;
+          const rows = o.items.map((it,idx) => ({
+            sale_id: newSale.id, sort_order: idx, item_name: it.item_name.trim(),
+            quantity: parseFloat(it.quantity)||0, unit_price: parseFloat(it.unit_price)||0,
+            total_price: (parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0),
+          }));
+          const { error: iErr } = await sb.from('cashvan_sale_items').insert(rows);
+          if (iErr) throw iErr;
+        }
+        createLog(user, `سجّل ${cleanOrders.length} طلبية كاش فان جديدة`, 'cashvan_sale', null, null);
+        toast(`تم تسجيل ${cleanOrders.length} طلبية`, 'success');
       }
-      const rows = clean.map((it,idx) => ({
-        sale_id: saleId, sort_order: idx, item_name: it.item_name.trim(),
-        quantity: parseFloat(it.quantity)||0, unit_price: parseFloat(it.unit_price)||0,
-        total_price: (parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0),
-      }));
-      const { error: iErr } = await sb.from('cashvan_sale_items').insert(rows);
-      if (iErr) throw iErr;
-      createLog(user, isEdit ? `عدّل بيع الكاش فان ${sale.number}` : 'سجّل بيع كاش فان جديد', 'cashvan_sale', saleId, isEdit?sale.number:null);
-      toast(isEdit?'تم التحديث':'تم تسجيل البيع', 'success');
       onSave();
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
     finally { setSaving(false); }
@@ -13151,9 +13212,9 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:720,maxHeight:'90vh',overflowY:'auto'}}>
+      <div className="modal" style={{maxWidth:760,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header">
-          <span className="modal-title">{isEdit ? `تعديل بيع ${sale.number}` : 'عملية بيع جديدة'}</span>
+          <span className="modal-title">{isEdit ? `تعديل طلبية ${sale.number}` : 'تسجيل طلبيات جديدة'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {loadingItems ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
@@ -13167,78 +13228,57 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">التاريخ</label>
+              <label className="form-label">التاريخ {!isEdit && orders.length>1 && '(لكل الطلبيات بهذه الدفعة)'}</label>
               <input type="date" className="form-control" value={form.sale_date} onChange={e=>setF('sale_date',e.target.value)}/>
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">اسم الزبون (اختياري)</label>
-              <input className="form-control" value={form.customer_name} onChange={e=>setF('customer_name',e.target.value)} placeholder="زبون نقدي"/>
-            </div>
-            <div className="form-group">
-              <label className="form-label">هاتف الزبون (اختياري)</label>
-              <input className="form-control" value={form.customer_phone} onChange={e=>setF('customer_phone',e.target.value)}/>
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">عنوان الزبون (اختياري)</label>
-            <input className="form-control" value={form.customer_address} onChange={e=>setF('customer_address',e.target.value)}/>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">الأصناف</label>
-            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
-              <colgroup><col/><col style={{width:100}}/><col style={{width:110}}/><col style={{width:110}}/><col style={{width:36}}/></colgroup>
-              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th></th></tr></thead>
-              <tbody>
-                {items.map((it,idx) => {
-                  const avail = it.item_name ? availableQty(it.item_name) : null;
-                  return (
-                  <tr key={idx}>
-                    <td>
-                      <SuggestInput value={it.item_name} onChange={v=>setItem(idx,'item_name',v)} options={itemNames} placeholder="اسم المادة"/>
-                      {avail!==null && <div style={{fontSize:10,color: avail<0.001 ? 'var(--danger)':'var(--gray-500)',marginTop:2}}>المتوفر معه: {numFmt(avail,3)}</div>}
-                    </td>
-                    <td><input type="number" step="0.001" className="form-control" value={it.quantity} onChange={e=>setItem(idx,'quantity',e.target.value)}/></td>
-                    <td><input type="number" step="0.001" className="form-control" value={it.unit_price} onChange={e=>setItem(idx,'unit_price',e.target.value)}/></td>
-                    <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0))}</td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delItem(idx)}>🗑</button></td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addItem}>➕ إضافة صنف</button>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">حالة الدفع</label>
-              <div style={{display:'flex',gap:8}}>
-                {Object.entries(CASHVAN_PAY_LABEL).map(([k,v]) => (
-                  <button key={k} type="button"
-                    style={{flex:1,padding:'9px 12px',borderRadius:8,border: form.payment_status===k?'1.5px solid var(--primary)':'1.5px solid var(--gray-200)',background: form.payment_status===k?'var(--info-light)':'#fff',color: form.payment_status===k?'var(--primary)':'var(--gray-500)',fontWeight:700,fontSize:13,cursor:'pointer'}}
-                    onClick={()=>setF('payment_status',k)}>{v}</button>
-                ))}
+          {orders.map((o,oIdx) => (
+            <div key={oIdx} style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:12,marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <b style={{fontSize:13}}>{isEdit ? 'الأصناف' : `طلبية ${oIdx+1}`}</b>
+                {!isEdit && orders.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>delOrder(oIdx)}>🗑 حذف الطلبية</button>}
+              </div>
+              <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+                <colgroup><col/><col style={{width:100}}/><col style={{width:110}}/><col style={{width:110}}/><col style={{width:36}}/></colgroup>
+                <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية</th><th>سعر البيع</th><th>الإجمالي</th><th></th></tr></thead>
+                <tbody>
+                  {o.items.map((it,iIdx) => {
+                    const avail = it.item_name ? availableQty(it.item_name) : null;
+                    return (
+                    <tr key={iIdx}>
+                      <td>
+                        <SuggestInput value={it.item_name} onChange={v=>setOrderItem(oIdx,iIdx,'item_name',v)} options={itemNames} placeholder="اسم المادة"/>
+                        {avail!==null && <div style={{fontSize:10,color: avail<0.001 ? 'var(--danger)':'var(--gray-500)',marginTop:2}}>المتوفر معه: {numFmt(avail,3)}</div>}
+                      </td>
+                      <td><input type="number" step="0.001" className="form-control" value={it.quantity} onChange={e=>setOrderItem(oIdx,iIdx,'quantity',e.target.value)}/></td>
+                      <td><input type="number" step="0.001" className="form-control" value={it.unit_price} onChange={e=>setOrderItem(oIdx,iIdx,'unit_price',e.target.value)}/></td>
+                      <td style={{fontWeight:700,whiteSpace:'nowrap'}}>{numFmt((parseFloat(it.quantity)||0)*(parseFloat(it.unit_price)||0))}</td>
+                      <td><button className="btn btn-ghost btn-sm" onClick={()=>delOrderItem(oIdx,iIdx)}>🗑</button></td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>addOrderItem(oIdx)}>➕ إضافة صنف لهذه الطلبية</button>
+                <span style={{fontWeight:700,color:'var(--primary)',fontSize:13}}>إجمالي الطلبية: {numFmt(orderTotal(o))} د.أ</span>
               </div>
             </div>
-            {form.payment_status==='partial' && (
-              <div className="form-group">
-                <label className="form-label">المبلغ المحصَّل</label>
-                <input type="number" step="0.001" className="form-control" value={form.amount_paid} onChange={e=>setF('amount_paid',e.target.value)}/>
-              </div>
-            )}
-          </div>
+          ))}
+
+          {!isEdit && (
+            <button className="btn btn-primary btn-sm" style={{marginBottom:16}} onClick={addOrder}>➕ طلبية جديدة</button>
+          )}
 
           <div className="form-group">
             <label className="form-label">ملاحظات</label>
             <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
           </div>
 
-          <div style={{display:'flex',justifyContent:'flex-end',padding:'10px 4px',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
-            الإجمالي: {numFmt(total)} د.أ
+          <div style={{display:'flex',justifyContent:'flex-end',gap:16,padding:'10px 4px',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
+            {!isEdit && <span style={{color:'var(--gray-500)',fontSize:13,fontWeight:600}}>{orders.length} طلبية</span>}
+            <span>الإجمالي الكلي: {numFmt(grandTotal)} د.أ</span>
           </div>
         </div>
         )}
@@ -13251,76 +13291,312 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, user, onSave, 
   );
 }
 
-function CashVanSettleForm({ settlement, profiles, cashOwed, user, onSave, onClose }) {
+function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements, stockByRep, user, onSaved, onClose }) {
   const isEdit = !!settlement;
+
+  /* بداية الفترة الافتراضية = اليوم التالي لنهاية آخر تسوية لنفس المندوب، وإلا اليوم */
+  const suggestPeriodFrom = (repId) => {
+    const prev = settlements
+      .filter(t => t.rep_id === repId && t.id !== settlement?.id && (t.period_to || t.settlement_date))
+      .sort((a,b) => (b.period_to||b.settlement_date).localeCompare(a.period_to||a.settlement_date))[0];
+    return prev ? addDays(prev.period_to || prev.settlement_date, 1) : today();
+  };
+
+  const defaultRepId = settlement?.rep_id || profiles.find(p => p.full_name === 'أبو طارق')?.id || user?.id || '';
   const [form, setForm] = useState({
-    rep_id: settlement?.rep_id || user?.id || '',
-    settlement_date: settlement?.settlement_date || today(),
-    amount: settlement?.amount ?? '',
+    rep_id: defaultRepId,
+    period_from: settlement?.period_from || suggestPeriodFrom(defaultRepId),
+    period_to: settlement?.period_to || today(),
+    delivery_rate: settlement?.delivery_rate ?? 2.5,
     method: settlement?.method || 'نقداً',
     notes: settlement?.notes || '',
   });
+  const [deductions, setDeductions] = useState([{ label:'', amount:'' }]);
+  const [clickPayments, setClickPayments] = useState([]);
+  const [cashReceived, setCashReceived] = useState(settlement?.amount ?? '');
+  const [loadingDeductions, setLoadingDeductions] = useState(isEdit);
   const [saving, setSaving] = useState(false);
-  const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
-  const owed = form.rep_id ? cashOwed(form.rep_id) : 0;
+  const [saved, setSaved] = useState(null);
+  const setF = (k,v) => setForm(f => ({ ...f, [k]:v }));
+  const setRep = (repId) => setForm(f => ({ ...f, rep_id:repId, period_from: isEdit ? f.period_from : suggestPeriodFrom(repId) }));
+  const setDeduction = (idx,k,v) => setDeductions(list => list.map((d,i) => i===idx ? { ...d, [k]:v } : d));
+  const addDeduction = () => setDeductions(list => [...list, { label:'', amount:'' }]);
+  const delDeduction = (idx) => setDeductions(list => list.filter((_,i)=>i!==idx));
+  const setClick = (idx,k,v) => setClickPayments(list => list.map((c,i) => i!==idx ? c : {
+    ...c, [k]:v,
+    ...(k==='sale_id' ? { amount: (sales.find(s=>s.id===v)?.total_amount) ?? c.amount } : {}),
+  }));
+  const addClick = () => setClickPayments(list => [...list, { sale_id:'', amount:'' }]);
+  const delClick = (idx) => setClickPayments(list => list.filter((_,i)=>i!==idx));
+
+  useEffect(() => {
+    if (!isEdit) return;
+    sb.from('cashvan_settlement_deductions').select('*').eq('settlement_id', settlement.id).order('sort_order').then(({data}) => {
+      setDeductions((data&&data.length) ? data.map(d=>({label:d.label, amount:d.amount})) : [{label:'', amount:''}]);
+      setLoadingDeductions(false);
+    });
+    sb.from('cashvan_settlement_click_payments').select('*').eq('settlement_id', settlement.id).order('sort_order').then(({data}) => {
+      setClickPayments((data||[]).map(c=>({ sale_id:c.sale_id||'', amount:c.amount })));
+    });
+  }, []);
+
+  const periodSales = sales.filter(s => s.rep_id===form.rep_id && form.period_from && form.period_to
+    && s.sale_date >= form.period_from && s.sale_date <= form.period_to);
+  const ordersCount  = periodSales.length;
+  const grossAmount  = periodSales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+  const deliveryRate = parseFloat(form.delivery_rate) || 0;
+  const deliveryDeduction = ordersCount * deliveryRate;
+  const cleanDeductions  = deductions.filter(d => d.label.trim() && parseFloat(d.amount) > 0);
+  const otherDeductions  = cleanDeductions.reduce((s,d) => s + (parseFloat(d.amount)||0), 0);
+  const netAmount = grossAmount - deliveryDeduction - otherDeductions;
+  const cleanClicks  = clickPayments.filter(c => c.sale_id && parseFloat(c.amount) > 0);
+  const clickTotal   = cleanClicks.reduce((s,c) => s + (parseFloat(c.amount)||0), 0);
+  const expectedCash = netAmount - clickTotal;
+  const cashReceivedNum = parseFloat(cashReceived) || 0;
+  const cashDiff = cashReceivedNum - expectedCash;
+
+  const printPeriodInvoice = () => {
+    const repName = profiles.find(p=>p.id===form.rep_id)?.full_name || '—';
+    const periodIds = new Set(periodSales.map(s=>s.id));
+    const dateBySale = {}; periodSales.forEach(s => dateBySale[s.id] = s.sale_date);
+    const lineRows = saleItems.filter(si => periodIds.has(si.sale_id))
+      .map(si => ({ ...si, sale_date: dateBySale[si.sale_id] }))
+      .sort((a,b) => a.sale_date.localeCompare(b.sale_date))
+      .map(li => `
+        <tr><td style="white-space:nowrap;color:#7a8fa6">${li.sale_date}</td><td>${li.item_name}</td>
+        <td>${numFmt(li.quantity,2)}</td><td>${numFmt(li.unit_price)}</td>
+        <td style="font-weight:700">${numFmt(li.total_price)}</td></tr>`).join('');
+
+    const body = document.body;
+    const allChildren = Array.from(body.children);
+    const originalStyles = allChildren.map(c => c.style.cssText);
+    allChildren.forEach(c => { c.style.cssText = 'display:none !important;'; });
+
+    const printDiv = document.createElement('div');
+    printDiv.id = 'temp-print-div';
+    printDiv.style.cssText = 'position:static;width:100%;padding:12mm 15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
+    printDiv.innerHTML = `
+      <style>
+        h2{color:#1C6A99;margin:0 0 2px;font-size:20px;font-weight:900}
+        .sub{color:#888;font-size:11px;margin-bottom:14px}
+        table{width:100%;border-collapse:collapse;margin-top:4px}
+        th{background:#1C6A99;color:#fff;padding:7px 10px;font-size:12px;text-align:right}
+        td{padding:6px 10px;border-bottom:1px solid #e8edf2;font-size:12px}
+        tr:nth-child(even) td{background:#f9fbfc}
+        .ft{margin-top:16px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:8px}
+      </style>
+      <div class="sub">${COMPANY.name_ar}</div>
+      <h2>🚐 فاتورة طلبيات الكاش فان — ${repName}</h2>
+      <div class="sub">الفترة: ${form.period_from} → ${form.period_to} · ${ordersCount} طلبية · تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</div>
+      <table>
+        <thead><tr><th style="width:90px">التاريخ</th><th>الصنف</th><th style="width:70px">الكمية</th><th style="width:90px">السعر</th><th style="width:90px">الإجمالي</th></tr></thead>
+        <tbody>${lineRows || '<tr><td colspan="5" style="text-align:center;color:#aaa;padding:16px">لا توجد طلبيات بهذه الفترة</td></tr>'}</tbody>
+      </table>
+      <div style="text-align:left;margin-top:10px;font-size:15px;font-weight:800;color:#1C6A99">الإجمالي: ${numFmt(grossAmount)} د.أ</div>
+      <div class="ft">${COMPANY.name_ar} — ${COMPANY.website}</div>`;
+
+    body.appendChild(printDiv);
+    window.print();
+    body.removeChild(printDiv);
+    allChildren.forEach((c,i) => { c.style.cssText = originalStyles[i]; });
+  };
 
   const handleSubmit = async () => {
     if (!form.rep_id) { toast('اختر المندوب', 'error'); return; }
-    if (!parseFloat(form.amount)) { toast('أدخل المبلغ', 'error'); return; }
+    if (!form.period_from || !form.period_to) { toast('حدد فترة الطلبيات', 'error'); return; }
+    if (cashReceived === '' || isNaN(parseFloat(cashReceived))) { toast('أدخل المبلغ المستلم نقداً', 'error'); return; }
     setSaving(true);
     try {
       const payload = {
-        rep_id: form.rep_id, settlement_date: form.settlement_date,
-        amount: parseFloat(form.amount).toFixed(3), method: form.method.trim() || 'نقداً',
-        notes: form.notes.trim() || null,
+        rep_id: form.rep_id, settlement_date: form.period_to,
+        period_from: form.period_from, period_to: form.period_to,
+        gross_amount: grossAmount.toFixed(3), orders_count: ordersCount,
+        delivery_rate: deliveryRate.toFixed(3), delivery_deduction: deliveryDeduction.toFixed(3),
+        other_deductions: otherDeductions.toFixed(3), amount: cashReceivedNum.toFixed(3),
+        click_total: clickTotal.toFixed(3),
+        method: form.method.trim() || 'نقداً', notes: form.notes.trim() || null,
       };
       let settleId;
       if (isEdit) {
         const { error } = await sb.from('cashvan_settlements').update(payload).eq('id', settlement.id);
         if (error) throw error;
         settleId = settlement.id;
+        const { error: dErr } = await sb.from('cashvan_settlement_deductions').delete().eq('settlement_id', settleId);
+        if (dErr) throw dErr;
+        const { error: cErr } = await sb.from('cashvan_settlement_click_payments').delete().eq('settlement_id', settleId);
+        if (cErr) throw cErr;
       } else {
         const { data: newSettle, error } = await sb.from('cashvan_settlements').insert({ ...payload, created_by: user?.id||null }).select().single();
         if (error) throw error;
         settleId = newSettle.id;
       }
+      if (cleanDeductions.length) {
+        const rows = cleanDeductions.map((d,idx) => ({ settlement_id: settleId, sort_order: idx, label: d.label.trim(), amount: parseFloat(d.amount)||0 }));
+        const { error: ddErr } = await sb.from('cashvan_settlement_deductions').insert(rows);
+        if (ddErr) throw ddErr;
+      }
+      if (cleanClicks.length) {
+        const rows = cleanClicks.map((c,idx) => ({ settlement_id: settleId, sort_order: idx, sale_id: c.sale_id, amount: parseFloat(c.amount)||0 }));
+        const { error: cpErr } = await sb.from('cashvan_settlement_click_payments').insert(rows);
+        if (cpErr) throw cpErr;
+      }
       createLog(user, isEdit ? `عدّل تسوية الكاش فان ${settlement.number}` : 'سجّل تسوية كاش فان جديدة', 'cashvan_settlement', settleId, isEdit?settlement.number:null);
       toast(isEdit?'تم التحديث':'تم تسجيل التسوية', 'success');
-      onSave();
+      onSaved();
+      setSaved({ repId: form.rep_id, method: form.method.trim()||'نقداً' });
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
     finally { setSaving(false); }
   };
 
+  const finalStockRows = saved ? Object.entries(stockByRep[saved.repId]||{})
+    .map(([name,v]) => ({ name, loaded:v.loaded, sold:v.sold, remaining:v.loaded-v.sold })) : [];
+
+  if (saved) {
+    const repName = profiles.find(p=>p.id===saved.repId)?.full_name || '—';
+    return (
+      <div className="modal-overlay">
+        <div className="modal" style={{maxWidth:560,maxHeight:'90vh',overflowY:'auto'}}>
+          <div className="modal-header">
+            <span className="modal-title">✅ تم حفظ التسوية</span>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+          <div style={{padding:20}}>
+            <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:20}}>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span>المندوب</span><b>{repName}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span>عدد الطلبيات بالفترة</span><b>{ordersCount}</b></div>
+              <div style={{display:'flex',justifyContent:'space-between'}}><span>إجمالي فاتورة الفترة</span><b>{numFmt(grossAmount)} د.أ</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصومات أخرى</span><b>− {numFmt(otherDeductions)} د.أ</b></div>
+              <div style={{display:'flex',justifyContent:'space-between',color:'var(--info)'}}><span>منها عبر كليك</span><b>− {numFmt(clickTotal)} د.أ</b></div>
+              <div style={{borderTop:'1px solid var(--gray-200)',marginTop:4,paddingTop:8,display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
+                <span>المستلم نقداً ({saved.method})</span><span>{numFmt(cashReceivedNum)} د.أ</span>
+              </div>
+              {ordersCount>0 && <button className="btn btn-ghost btn-sm" style={{marginTop:10,alignSelf:'flex-start'}} onClick={printPeriodInvoice}>🖨️ طباعة فاتورة الفترة</button>}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">📦 الجرد النهائي — البضاعة المتبقية مع {repName} الآن</label>
+              {finalStockRows.length===0 ? <div className="empty-state">لا يوجد بضاعة مسجّلة لهذا المندوب</div> : (
+              <table style={{width:'100%',fontSize:13}}>
+                <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>تزويد</th><th>مبيعات</th><th>متبقي معه</th></tr></thead>
+                <tbody>
+                  {finalStockRows.map(r => (
+                    <tr key={r.name} style={{fontWeight: r.remaining>0.001?700:400}}>
+                      <td>{r.name}</td><td>{numFmt(r.loaded,2)}</td><td>{numFmt(r.sold,2)}</td>
+                      <td style={{color: r.remaining>0.001?'var(--primary)': r.remaining<-0.001?'var(--danger)':'var(--gray-500)'}}>{numFmt(r.remaining,2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              )}
+            </div>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-primary" onClick={onClose}>إغلاق</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:480}}>
+      <div className="modal" style={{maxWidth:560,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header">
           <span className="modal-title">{isEdit ? `تعديل تسوية ${settlement.number}` : 'تسوية كاش جديدة'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+        {loadingDeductions ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
         <div style={{padding:20}}>
           <div className="form-group">
             <label className="form-label">المندوب *</label>
-            <select className="form-control" value={form.rep_id} onChange={e=>setF('rep_id',e.target.value)}>
+            <select className="form-control" value={form.rep_id} onChange={e=>setRep(e.target.value)}>
               <option value="">— اختر المندوب —</option>
               {profiles.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}
             </select>
           </div>
-          {form.rep_id && (
-            <div style={{fontSize:12,fontWeight:700,color: owed>0.001?'var(--warning)':'var(--success)',marginBottom:12,background:'var(--gray-100)',padding:'8px 12px',borderRadius:8}}>
-              الرصيد المستحق تسليمه حالياً: {numFmt(owed)} د.أ
-            </div>
-          )}
+
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">التاريخ</label>
-              <input type="date" className="form-control" value={form.settlement_date} onChange={e=>setF('settlement_date',e.target.value)}/>
+              <label className="form-label">فترة الطلبيات من</label>
+              <input type="date" className="form-control" value={form.period_from} onChange={e=>setF('period_from',e.target.value)}/>
             </div>
             <div className="form-group">
-              <label className="form-label">المبلغ *</label>
-              <input type="number" step="0.001" className="form-control" value={form.amount} onChange={e=>setF('amount',e.target.value)}/>
+              <label className="form-label">إلى</label>
+              <input type="date" className="form-control" value={form.period_to} onChange={e=>setF('period_to',e.target.value)}/>
             </div>
           </div>
+
+          <div className="form-group">
+            <label className="form-label">أجرة التوصيل للطلبية</label>
+            <input type="number" step="0.001" className="form-control" style={{maxWidth:140}} value={form.delivery_rate} onChange={e=>setF('delivery_rate',e.target.value)}/>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">مستحقات أخرى</label>
+            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+              <colgroup><col/><col style={{width:120}}/><col style={{width:36}}/></colgroup>
+              <tbody>
+                {deductions.map((d,idx) => (
+                  <tr key={idx}>
+                    <td><input className="form-control" placeholder="البيان" value={d.label} onChange={e=>setDeduction(idx,'label',e.target.value)}/></td>
+                    <td><input type="number" step="0.001" className="form-control" placeholder="0" value={d.amount} onChange={e=>setDeduction(idx,'amount',e.target.value)}/></td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delDeduction(idx)}>🗑</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addDeduction}>➕ إضافة مستحق آخر</button>
+          </div>
+
+          <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span>عدد الطلبيات بالفترة</span><b>{ordersCount}</b></div>
+            <div style={{display:'flex',justifyContent:'space-between'}}><span>إجمالي فاتورة الفترة</span><b>{numFmt(grossAmount)} د.أ</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل ({ordersCount} × {numFmt(deliveryRate)})</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصومات أخرى</span><b>− {numFmt(otherDeductions)} د.أ</b></div>
+            <div style={{borderTop:'1px solid var(--gray-200)',marginTop:4,paddingTop:8,display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
+              <span>الصافي المطلوب تسليمه</span><span>{numFmt(netAmount)} د.أ</span>
+            </div>
+            {ordersCount>0 && <button className="btn btn-ghost btn-sm" style={{marginTop:10,alignSelf:'flex-start'}} onClick={printPeriodInvoice}>🖨️ طباعة فاتورة الفترة</button>}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">طلبيات دُفعت كليك (لا نقداً) — من ضمن طلبيات هذه الفترة</label>
+            {clickPayments.length>0 && (
+            <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+              <colgroup><col/><col style={{width:120}}/><col style={{width:36}}/></colgroup>
+              <tbody>
+                {clickPayments.map((c,idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <select className="form-control" value={c.sale_id} onChange={e=>setClick(idx,'sale_id',e.target.value)}>
+                        <option value="">— اختر الطلبية —</option>
+                        {periodSales.map(s=><option key={s.id} value={s.id}>{s.number} — {s.sale_date} — {numFmt(s.total_amount)} د.أ</option>)}
+                      </select>
+                    </td>
+                    <td><input type="number" step="0.001" className="form-control" placeholder="0" value={c.amount} onChange={e=>setClick(idx,'amount',e.target.value)}/></td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>delClick(idx)}>🗑</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            )}
+            <button className="btn btn-ghost btn-sm" style={{marginTop:6}} onClick={addClick}>➕ إضافة دفعة كليك</button>
+          </div>
+
+          <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',color:'var(--info)'}}><span>منها عبر كليك</span><b>− {numFmt(clickTotal)} د.أ</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',fontWeight:700}}><span>المتوقّع نقداً</span><span>{numFmt(expectedCash)} د.أ</span></div>
+            <div className="form-group" style={{margin:'6px 0 0'}}>
+              <label className="form-label">المبلغ المستلم نقداً *</label>
+              <input type="number" step="0.001" className="form-control" style={{maxWidth:160}} value={cashReceived} onChange={e=>setCashReceived(e.target.value)}/>
+            </div>
+            <div style={{borderTop:'1px solid var(--gray-200)',marginTop:4,paddingTop:8,display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:800,color: Math.abs(cashDiff)<0.001 ? 'var(--success)' : 'var(--danger)'}}>
+              <span>{Math.abs(cashDiff)<0.001 ? '✅ مطابق' : (cashDiff>0 ? 'زيادة عن المتوقع' : 'نقص عن المتوقع')}</span>
+              <span>{numFmt(cashDiff)} د.أ</span>
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">طريقة التسليم</label>
             <input className="form-control" value={form.method} onChange={e=>setF('method',e.target.value)} placeholder="نقداً"/>
@@ -13330,9 +13606,10 @@ function CashVanSettleForm({ settlement, profiles, cashOwed, user, onSave, onClo
             <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
           </div>
         </div>
+        )}
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving?'...':'حفظ'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving||loadingDeductions}>{saving?'...':'حفظ'}</button>
         </div>
       </div>
     </div>
@@ -13343,23 +13620,92 @@ function CashVanRepDetail({ repId, repName, stockMap, finance, loads, sales, set
   const stockRows = Object.entries(stockMap).map(([name, v]) => ({ name, loaded:v.loaded, sold:v.sold, remaining:v.loaded-v.sold, unit_cost:v.unit_cost }));
   const timeline = [
     ...loads.map(l => ({ date:l.load_date, created_at:l.created_at, type:'تزويد', icon:'📦', text:`${l.number} — ${numFmt(l.total_cost)} د.أ` })),
-    ...sales.map(s => ({ date:s.sale_date, created_at:s.created_at, type:'بيع', icon:'🧾', text:`${s.number} — ${s.customer_name||'زبون نقدي'} — ${numFmt(s.total_amount)} د.أ` })),
+    ...sales.map(s => ({ date:s.sale_date, created_at:s.created_at, type:'بيع', icon:'🧾', text:`${s.number} — ${numFmt(s.total_amount)} د.أ` })),
     ...settlements.map(t => ({ date:t.settlement_date, created_at:t.created_at, type:'تسوية', icon:'💰', text:`${t.number} — ${numFmt(t.amount)} د.أ (${t.method})` })),
   ].sort((a,b) => (b.date+b.created_at).localeCompare(a.date+a.created_at));
+  const receivables = finance.totalSales - finance.cashCollected;
+
+  const printRepReport = () => {
+    const stat = (label, val, color) => `<div class="ii" style="${color?`color:${color}`:''}"><span class="il">${label}</span><span style="font-size:15px;font-weight:800">${numFmt(val)} د.أ</span></div>`;
+    const stockTableRows = stockRows.map(r => `
+      <tr>
+        <td>${r.name}</td><td>${numFmt(r.loaded,2)}</td><td>${numFmt(r.sold,2)}</td>
+        <td style="font-weight:800;${r.remaining>0.001?'color:#1C6A99':r.remaining<-0.001?'color:#dc2626':''}">${numFmt(r.remaining,2)}</td>
+      </tr>`).join('');
+    const timelineRows = timeline.map(e => `
+      <tr><td style="white-space:nowrap;color:#7a8fa6">${e.date}</td><td>${e.icon} ${e.type}</td><td>${e.text}</td></tr>`).join('');
+
+    const body = document.body;
+    const allChildren = Array.from(body.children);
+    const originalStyles = allChildren.map(c => c.style.cssText);
+    allChildren.forEach(c => { c.style.cssText = 'display:none !important;'; });
+
+    const printDiv = document.createElement('div');
+    printDiv.id = 'temp-print-div';
+    printDiv.style.cssText = 'position:static;width:100%;padding:12mm 15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
+    printDiv.innerHTML = `
+      <style>
+        h2{color:#1C6A99;margin:0 0 2px;font-size:20px;font-weight:900}
+        .sub{color:#888;font-size:11px;margin-bottom:14px}
+        .sec-title{font-size:12px;font-weight:800;color:#1C6A99;border-bottom:2px solid #1C6A99;padding-bottom:3px;margin:14px 0 8px}
+        .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:6px}
+        .ii{background:#f9fbfc;border:1px solid #e8edf2;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+        .il{font-size:10px;color:#7a8fa6;font-weight:700}
+        table{width:100%;border-collapse:collapse;margin-top:4px}
+        th{background:#1C6A99;color:#fff;padding:7px 10px;font-size:12px;text-align:right}
+        td{padding:6px 10px;border-bottom:1px solid #e8edf2;font-size:12px}
+        tr:nth-child(even) td{background:#f9fbfc}
+        .ft{margin-top:16px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:8px}
+      </style>
+
+      <div class="sub">${COMPANY.name_ar}</div>
+      <h2>🚐 تقرير مندوب الكاش فان — ${repName}</h2>
+      <div class="sub">تاريخ التقرير: ${new Date().toLocaleDateString('ar-JO')}</div>
+
+      <div class="sec-title">📊 الملخص المالي</div>
+      <div class="stats">
+        ${stat('إجمالي المبيعات', finance.totalSales)}
+        ${stat('محصَّل من الزبائن', finance.cashCollected)}
+        ${stat('مسلَّم للشركة', finance.cashSettled)}
+        ${stat('بعهدته الآن', finance.totalSales-finance.salesResolved, '#b45309')}
+        ${stat('ذمم زبائن غير محصّلة', receivables, receivables>0.001?'#dc2626':undefined)}
+      </div>
+
+      <div class="sec-title">📦 أرصدة الأصناف معه</div>
+      <table>
+        <thead><tr><th>الصنف</th><th>تزويد</th><th>مبيعات</th><th>متبقي معه</th></tr></thead>
+        <tbody>${stockTableRows || '<tr><td colspan="4" style="text-align:center;color:#aaa;padding:16px">لا يوجد بضاعة مسجّلة</td></tr>'}</tbody>
+      </table>
+
+      <div class="sec-title">🕐 سجل الحركات</div>
+      <table>
+        <thead><tr><th style="width:90px">التاريخ</th><th style="width:90px">النوع</th><th>التفاصيل</th></tr></thead>
+        <tbody>${timelineRows || '<tr><td colspan="3" style="text-align:center;color:#aaa;padding:16px">لا توجد حركات</td></tr>'}</tbody>
+      </table>
+      <div class="ft">${COMPANY.name_ar} — ${COMPANY.website}</div>`;
+
+    body.appendChild(printDiv);
+    window.print();
+    body.removeChild(printDiv);
+    allChildren.forEach((c,i) => { c.style.cssText = originalStyles[i]; });
+  };
 
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:760,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header">
           <span className="modal-title">🚐 {repName}</span>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="btn btn-ghost btn-sm" onClick={printRepReport}>🖨️ طباعة التقرير</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
         </div>
         <div style={{padding:20}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:20}}>
             <div className="stat-card"><div className="stat-label">إجمالي المبيعات</div><div className="stat-value">{numFmt(finance.totalSales)}</div></div>
             <div className="stat-card"><div className="stat-label">محصَّل من الزبائن</div><div className="stat-value">{numFmt(finance.cashCollected)}</div></div>
             <div className="stat-card"><div className="stat-label">مسلَّم للشركة</div><div className="stat-value">{numFmt(finance.cashSettled)}</div></div>
-            <div className="stat-card"><div className="stat-label">بعهدته الآن</div><div className="stat-value" style={{color:'var(--warning)'}}>{numFmt(finance.cashCollected-finance.cashSettled)}</div></div>
+            <div className="stat-card"><div className="stat-label">بعهدته الآن</div><div className="stat-value" style={{color:'var(--warning)'}}>{numFmt(finance.totalSales-finance.salesResolved)}</div></div>
           </div>
 
           <div className="form-group">
