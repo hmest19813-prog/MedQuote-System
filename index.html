@@ -4449,7 +4449,8 @@ function QuotesList({ user, quotes, onReload }) {
   const tenderQuotes  = allOfficial.filter(q => q.quote_type === 'tender');
   const draftQuotes   = active.filter(q => q.status === 'draft' && !isAltCo(q));
   const altCoQuotes   = active.filter(isAltCo);
-  const archivedQuotes = quotes.filter(q => q.archived);
+  const archivedQuotesOnly = quotes.filter(q => q.archived && q.quote_type !== 'tender');
+  const archivedTendersOnly = quotes.filter(q => q.archived && q.quote_type === 'tender');
   const deletedQuotes  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const [archiveSearch, setArchiveSearch] = useState('');
   const [deletedSearch, setDeletedSearch] = useState('');
@@ -4512,13 +4513,15 @@ function QuotesList({ user, quotes, onReload }) {
   const filteredAltCo = altCoQuotes.filter(q => {
     return !search || q.customer_name?.toLowerCase().includes(search.toLowerCase()) || q.number?.includes(search);
   }).sort(sortByNum);
-  const filteredArchive = archivedQuotes.filter(q => {
+  const archiveFilterFn = q => {
     const ms = !archiveSearch || q.customer_name?.toLowerCase().includes(archiveSearch.toLowerCase()) || q.number?.includes(archiveSearch);
     const mf = archiveStatus === 'all' || q.status === archiveStatus;
     const md = (!archiveDateFrom || (q.date||'') >= archiveDateFrom) && (!archiveDateTo || (q.date||'') <= archiveDateTo);
     const mi = !archiveIssuer || q.created_by === archiveIssuer;
     return ms && mf && md && mi;
-  }).sort(sortByNum);
+  };
+  const filteredArchiveOfficial = archivedQuotesOnly.filter(archiveFilterFn).sort(sortByNum);
+  const filteredArchiveTenders = archivedTendersOnly.filter(archiveFilterFn).sort(sortByNum);
   const filteredDeleted = deletedQuotes.filter(q =>
     !deletedSearch || q.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || q.number?.includes(deletedSearch)
   );
@@ -4851,6 +4854,9 @@ function QuotesList({ user, quotes, onReload }) {
     setEditing({ ...q, _convertToInvoice: true });
   };
 
+  const isQuotesGroup = tab === 'official' || tab === 'archive_official';
+  const isTendersGroup = tab === 'tenders' || tab === 'archive_tenders';
+
   return (
     <div>
       {deleteTarget && (
@@ -4874,26 +4880,45 @@ function QuotesList({ user, quotes, onReload }) {
       </div>
 
       {/* تبويبات */}
-      <div className="qtabs-row" style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid var(--gray-200)'}}>
-        <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='official'?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='official'?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
-          عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
-        </button>
-        <button onClick={()=>setTab('tenders')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='tenders'?'3px solid #854d0e':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='tenders'?'#854d0e':'var(--gray-500)',marginBottom:-2}}>
-          العطاءات <span style={{background:tenderQuotes.length?'#fef9c3':'var(--gray-100)',color:tenderQuotes.length?'#854d0e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{tenderQuotes.length}</span>
-        </button>
-        <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
-          المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
-        </button>
-        <button onClick={()=>setTab('archive')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='archive'?'3px solid #6b7280':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='archive'?'#374151':'var(--gray-500)',marginBottom:-2}}>
-          الأرشيف <span style={{background:'var(--gray-100)',color:'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{archivedQuotes.length}</span>
-        </button>
-        <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',marginBottom:-2}}>
-          المحذوفة <span style={{background:deletedQuotes.length?'#fee2e2':'var(--gray-100)',color:deletedQuotes.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deletedQuotes.length}</span>
-        </button>
-        {hasPerm(user,'quotes_clone_other_company') && (
-        <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
-          🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
-        </button>
+      <div className="qtabs-row" style={{marginBottom:16}}>
+        <div style={{display:'flex',gap:0,borderBottom:'2px solid var(--gray-200)'}}>
+          <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:isQuotesGroup?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:isQuotesGroup?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
+            عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
+          </button>
+          <button onClick={()=>setTab('tenders')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:isTendersGroup?'3px solid #854d0e':'3px solid transparent',background:'none',cursor:'pointer',color:isTendersGroup?'#854d0e':'var(--gray-500)',marginBottom:-2}}>
+            العطاءات <span style={{background:tenderQuotes.length?'#fef9c3':'var(--gray-100)',color:tenderQuotes.length?'#854d0e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{tenderQuotes.length}</span>
+          </button>
+          <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
+            المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
+          </button>
+          <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',marginBottom:-2}}>
+            المحذوفة <span style={{background:deletedQuotes.length?'#fee2e2':'var(--gray-100)',color:deletedQuotes.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deletedQuotes.length}</span>
+          </button>
+          {hasPerm(user,'quotes_clone_other_company') && (
+          <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
+            🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
+          </button>
+          )}
+        </div>
+        {isQuotesGroup && (
+        <div style={{display:'flex',gap:8,padding:'8px 20px 0'}}>
+          <button onClick={()=>setTab('official')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='official'?'var(--primary)':'#e5e7eb',background:tab==='official'?'var(--primary)':'#f9fafb',color:tab==='official'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            عروض قائمة
+          </button>
+          <button onClick={()=>setTab('archive_official')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='archive_official'?'var(--primary)':'#e5e7eb',background:tab==='archive_official'?'var(--primary)':'#f9fafb',color:tab==='archive_official'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            مؤرشفة <span style={{opacity:.8}}>({archivedQuotesOnly.length})</span>
+          </button>
+        </div>
+        )}
+        {isTendersGroup && (
+        <div style={{display:'flex',gap:8,padding:'8px 20px 0'}}>
+          <button onClick={()=>setTab('tenders')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='tenders'?'#854d0e':'#e5e7eb',background:tab==='tenders'?'#854d0e':'#f9fafb',color:tab==='tenders'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            عطاءات قائمة
+          </button>
+          <button onClick={()=>setTab('archive_tenders')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='archive_tenders'?'#854d0e':'#e5e7eb',background:tab==='archive_tenders'?'#854d0e':'#f9fafb',color:tab==='archive_tenders'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            مؤرشفة <span style={{opacity:.8}}>({archivedTendersOnly.length})</span>
+          </button>
+        </div>
         )}
       </div>
 
@@ -5273,12 +5298,14 @@ function QuotesList({ user, quotes, onReload }) {
       </div>
       )}
 
-      {tab === 'archive' && (
+      {(tab === 'archive_official' || tab === 'archive_tenders') && (() => {
+        const rows = tab === 'archive_official' ? filteredArchiveOfficial : filteredArchiveTenders;
+        return (
       <div className="card">
         <div className="filter-bar">
           <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={archiveSearch} onChange={e=>setArchiveSearch(e.target.value)}/>
           <ArchiveFilterBtn/>
-          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filteredArchive.length} عرض</span>
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{rows.length} عرض</span>
         </div>
         <div className="table-wrap">
           <table>
@@ -5286,7 +5313,7 @@ function QuotesList({ user, quotes, onReload }) {
               <th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>سبب الأرشفة</th><th></th>
             </tr></thead>
             <tbody>
-              {filteredArchive.map(q => (
+              {rows.map(q => (
                 <tr key={q.id}>
                   <td className="font-bold">{q.number}</td>
                   <td>{q.customer_name}</td>
@@ -5310,12 +5337,13 @@ function QuotesList({ user, quotes, onReload }) {
                   </td>
                 </tr>
               ))}
-              {filteredArchive.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
+              {rows.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
             </tbody>
           </table>
         </div>
       </div>
-      )}
+        );
+      })()}
 
       {tab === 'deleted' && (
       <div className="card">
