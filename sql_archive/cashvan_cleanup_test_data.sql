@@ -6,9 +6,8 @@
 
 BEGIN;
 
--- جدول قديم من تصميم سابق لخاصية الكليك (استُبدل بحقل payment_method على
--- الطلبية نفسها) — لسا فيه صف يشير لطلبية قديمة، لازم يتفضّى قبل حذف المبيعات
--- لأن مرجعه لـsale_id بدون ON DELETE CASCADE.
+-- نفضّي جدول تفاصيل الكليك أولاً احتياطاً (قد يحمل مرجع sale_id قديم بدون
+-- ON DELETE CASCADE من إصدار سابق للتصميم يمنع حذف المبيعات).
 DELETE FROM public.cashvan_settlement_click_payments;
 
 DELETE FROM public.cashvan_sale_items
