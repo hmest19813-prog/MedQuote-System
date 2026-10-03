@@ -12742,6 +12742,7 @@ function CashVanPage({ user }) {
   const [sales, setSales] = useState([]);
   const [saleItems, setSaleItems] = useState([]);
   const [settlements, setSettlements] = useState([]);
+  const [itemDeliveryRateRows, setItemDeliveryRateRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [showLoadForm, setShowLoadForm] = useState(false);
@@ -12750,6 +12751,7 @@ function CashVanPage({ user }) {
   const [editingSale, setEditingSale] = useState(null);
   const [showSettleForm, setShowSettleForm] = useState(false);
   const [editingSettle, setEditingSettle] = useState(null);
+  const [showRatesForm, setShowRatesForm] = useState(false);
   const [repFilter, setRepFilter] = useState('all');
   const [viewingRepId, setViewingRepId] = useState(null);
   const [viewingSettle, setViewingSettle] = useState(null);
@@ -12764,12 +12766,13 @@ function CashVanPage({ user }) {
     let sQuery = sb.from('cashvan_sales').select('*').order('sale_date',{ascending:false}).order('created_at',{ascending:false});
     let tQuery = sb.from('cashvan_settlements').select('*').order('settlement_date',{ascending:false}).order('created_at',{ascending:false});
     if (scopeToSelf) { lQuery = lQuery.eq('rep_id', user.id); sQuery = sQuery.eq('rep_id', user.id); tQuery = tQuery.eq('rep_id', user.id); }
-    const [pRes, erRes, lRes, siRes, sRes, saiRes, tRes] = await Promise.all([
+    const [pRes, erRes, lRes, siRes, sRes, saiRes, tRes, ridRes] = await Promise.all([
       sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name'),
       sb.from('cashvan_external_reps').select('id,full_name').eq('is_active', true).order('full_name'),
       lQuery, sb.from('cashvan_stock_load_items').select('*'),
       sQuery, sb.from('cashvan_sale_items').select('*'),
       tQuery,
+      sb.from('cashvan_item_delivery_rates').select('*'),
     ]);
     setProfiles(pRes.data || []);
     setExternalReps(erRes.data || []);
@@ -12778,6 +12781,7 @@ function CashVanPage({ user }) {
     setSales(sRes.data || []);
     setSaleItems(saiRes.data || []);
     setSettlements(tRes.data || []);
+    setItemDeliveryRateRows(ridRes.data || []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -12791,6 +12795,13 @@ function CashVanPage({ user }) {
     saleItems.forEach(i => i.item_name && s.add(i.item_name));
     return Array.from(s).sort();
   }, [loadItems, saleItems]);
+
+  /* أجرة توصيل خاصة بكل صنف (يستخدمها فورم التسوية) — item_name -> rate */
+  const itemDeliveryRates = React.useMemo(() => {
+    const out = {};
+    itemDeliveryRateRows.forEach(r => out[r.item_name] = parseFloat(r.delivery_rate) || 0);
+    return out;
+  }, [itemDeliveryRateRows]);
 
   const repIds = React.useMemo(() => {
     const s = new Set();
@@ -12865,6 +12876,26 @@ function CashVanPage({ user }) {
     createLog(user, `حذف طلبية كاش فان بتاريخ ${s.sale_date} — ${numFmt(s.total_amount)} د.أ`, 'cashvan_sale', s.id, null);
     toast('تم الحذف', 'success'); load();
   };
+  /* دمج طلبيتين منفصلتين (أُدخلتا بالغلط كسجلّين) بطلبية واحدة — بتنقل أصناف
+     الطلبية الملغاة لطلبية البقاء وبتجمع الإجماليات، لتصحيح بيانات مُدخلة مسبقاً */
+  const mergeSales = async (keepSale, mergeSale) => {
+    if (!confirm('دمج الطلبيتين؟ ستنتقل كل أصناف الطلبية الثانية إلى الأولى ويُحذف سجلّها، مع جمع الإجمالي.')) return;
+    const existingItems = saleItems.filter(si => si.sale_id === keepSale.id);
+    const moveItems = saleItems.filter(si => si.sale_id === mergeSale.id);
+    let nextOrder = existingItems.length ? Math.max(...existingItems.map(i => i.sort_order || 0)) + 1 : 0;
+    for (const it of moveItems) {
+      const { error } = await sb.from('cashvan_sale_items').update({ sale_id: keepSale.id, sort_order: nextOrder++ }).eq('id', it.id);
+      if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    }
+    const newTotal = (parseFloat(keepSale.total_amount)||0) + (parseFloat(mergeSale.total_amount)||0);
+    const { error: uErr } = await sb.from('cashvan_sales').update({ total_amount: newTotal.toFixed(3), amount_paid: newTotal.toFixed(3) }).eq('id', keepSale.id);
+    if (uErr) { toast('خطأ: '+uErr.message, 'error'); return; }
+    const { error: dErr } = await sb.from('cashvan_sales').delete().eq('id', mergeSale.id);
+    if (dErr) { toast('خطأ: '+dErr.message, 'error'); return; }
+    createLog(user, `دمج طلبيتي كاش فان بتاريخ ${keepSale.sale_date}`, 'cashvan_sale', keepSale.id, null);
+    toast('تم دمج الطلبيتين', 'success');
+    load();
+  };
   const deleteSettlement = async (t) => {
     if (!confirm(`حذف التسوية "${t.number}"؟`)) return;
     const { error } = await sb.from('cashvan_settlements').delete().eq('id', t.id);
@@ -12919,6 +12950,7 @@ function CashVanPage({ user }) {
         )}
         {tab==='loads' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingLoad(null);setShowLoadForm(true);}}>➕ تزويد جديد</button>}
         {tab==='sales' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSale(null);setShowSaleForm(true);}}>➕ تسجيل طلبيات</button>}
+        {tab==='settlements' && hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost" onClick={()=>setShowRatesForm(true)}>⚙️ أجرة التوصيل حسب الصنف</button>}
         {tab==='settlements' && hasPerm(user,'cashvan_create') && <button className="btn btn-primary" onClick={()=>{setEditingSettle(null);setShowSettleForm(true);}}>➕ تسوية جديدة</button>}
       </div>
 
@@ -13023,8 +13055,10 @@ function CashVanPage({ user }) {
         onSave={()=>{setShowLoadForm(false);load();}} onClose={()=>setShowLoadForm(false)}/>}
       {showSaleForm && <CashVanSaleForm sale={editingSale} profiles={reps} itemNames={itemNames} stockByRep={stockByRep} sales={sales} user={user}
         onSave={()=>{setShowSaleForm(false);load();}} onClose={()=>setShowSaleForm(false)}/>}
-      {showSettleForm && <CashVanSettleForm settlement={editingSettle} profiles={reps} sales={sales} saleItems={saleItems} settlements={settlements} stockByRep={stockByRep} itemNames={itemNames} user={user}
+      {showSettleForm && <CashVanSettleForm settlement={editingSettle} profiles={reps} sales={sales} saleItems={saleItems} settlements={settlements} stockByRep={stockByRep} itemNames={itemNames} itemDeliveryRates={itemDeliveryRates} user={user}
         onSaved={load} onClose={()=>setShowSettleForm(false)}/>}
+      {showRatesForm && <CashVanDeliveryRatesForm itemNames={itemNames} rates={itemDeliveryRates}
+        onSaved={()=>{setShowRatesForm(false);load();}} onClose={()=>setShowRatesForm(false)}/>}
       {viewingRepId && <CashVanRepDetail
         repId={viewingRepId} repName={cashvanRepName(reps, viewingRepId)}
         stockMap={stockByRep[viewingRepId]||{}} finance={financeByRep[viewingRepId]||{totalSales:0,cashCollected:0,cashSettled:0,salesResolved:0}}
@@ -13040,6 +13074,7 @@ function CashVanPage({ user }) {
           batch={batch} repName={cashvanRepName(reps, batch.rep_id)} saleItems={saleItems} user={user}
           onEditSale={(s)=>{setViewingSaleBatchKey(null);setEditingSale(s);setShowSaleForm(true);}}
           onDeleteSale={(s)=>deleteSale(s)}
+          onMergeSales={(keepSale,mergeSale)=>mergeSales(keepSale,mergeSale)}
           onClose={()=>setViewingSaleBatchKey(null)}/>;
       })()}
     </div>
@@ -13397,7 +13432,63 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, sales, user, o
   );
 }
 
-function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements, stockByRep, itemNames, user, onSaved, onClose }) {
+function CashVanDeliveryRatesForm({ itemNames, rates, onSaved, onClose }) {
+  const [rows, setRows] = useState(itemNames.map(name => ({ item_name: name, delivery_rate: rates[name] !== undefined ? String(rates[name]) : '' })));
+  const [saving, setSaving] = useState(false);
+  const setRate = (idx,v) => setRows(list => list.map((r,i) => i===idx ? { ...r, delivery_rate:v } : r));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const toUpsert = rows.filter(r => r.delivery_rate !== '' && !isNaN(parseFloat(r.delivery_rate)))
+        .map(r => ({ item_name: r.item_name, delivery_rate: parseFloat(r.delivery_rate) }));
+      const toDelete = rows.filter(r => r.delivery_rate === '' && rates[r.item_name] !== undefined).map(r => r.item_name);
+      if (toDelete.length) {
+        const { error } = await sb.from('cashvan_item_delivery_rates').delete().in('item_name', toDelete);
+        if (error) throw error;
+      }
+      if (toUpsert.length) {
+        const { error } = await sb.from('cashvan_item_delivery_rates').upsert(toUpsert, { onConflict: 'item_name' });
+        if (error) throw error;
+      }
+      toast('تم حفظ أجرة التوصيل', 'success');
+      onSaved();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480,maxHeight:'88vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">⚙️ أجرة التوصيل حسب الصنف</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          <div style={{fontSize:12,color:'var(--gray-500)',marginBottom:12}}>كل صنف يُباع يُحسب كتوصيلة مستقلة وقت التسوية — حدِّد أجرة التوصيل الخاصة بكل صنف. الصنف بدون قيمة هون يستخدم "الأجرة الافتراضية" المدخلة بفورم التسوية.</div>
+          <table style={{width:'100%',fontSize:13,tableLayout:'fixed'}}>
+            <colgroup><col/><col style={{width:120}}/></colgroup>
+            <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>أجرة التوصيل</th></tr></thead>
+            <tbody>
+              {rows.map((r,idx) => (
+                <tr key={r.item_name}>
+                  <td style={{padding:'4px 2px'}}>{r.item_name}</td>
+                  <td style={{padding:'4px 2px'}}><input type="number" step="0.001" className="form-control" placeholder="افتراضي" value={r.delivery_rate} onChange={e=>setRate(idx,e.target.value)}/></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements, stockByRep, itemNames, itemDeliveryRates, user, onSaved, onClose }) {
   const isEdit = !!settlement;
 
   /* بداية الفترة الافتراضية = اليوم التالي لنهاية آخر تسوية لنفس المندوب، وإلا اليوم */
@@ -13451,8 +13542,16 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
     && s.sale_date >= form.period_from && s.sale_date <= form.period_to);
   const ordersCount  = periodSales.length;
   const grossAmount  = periodSales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+  /* أجرة التوصيل صارت تُحسب لكل صنف مباع بالفترة على حدة (كل صنف = توصيلة مستقلة)
+     حسب أجرته الخاصة إن وُجدت (أجرة التوصيل حسب الصنف)، وإلا الأجرة الافتراضية أدناه */
+  const periodSaleIdSet = new Set(periodSales.map(s=>s.id));
+  const periodSaleItemsList = saleItems.filter(si => periodSaleIdSet.has(si.sale_id));
+  const itemsCount = periodSaleItemsList.length;
   const deliveryRate = parseFloat(form.delivery_rate) || 0;
-  const deliveryDeduction = ordersCount * deliveryRate;
+  const deliveryDeduction = periodSaleItemsList.reduce((s,si) => {
+    const rate = itemDeliveryRates && itemDeliveryRates[si.item_name] !== undefined ? parseFloat(itemDeliveryRates[si.item_name])||0 : deliveryRate;
+    return s + rate;
+  }, 0);
   const cleanDeductions  = deductions.filter(d => d.label.trim() && parseFloat(d.amount) > 0);
   const otherDeductions  = cleanDeductions.reduce((s,d) => s + (parseFloat(d.amount)||0), 0);
   const netAmount = grossAmount - deliveryDeduction - otherDeductions;
@@ -13640,7 +13739,7 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
           </div>
 
           <div className="form-group">
-            <label className="form-label">أجرة التوصيل للطلبية</label>
+            <label className="form-label">أجرة التوصيل الافتراضية (للأصناف غير المحدَّد لها أجرة خاصة)</label>
             <input type="number" step="0.001" className="form-control" style={{maxWidth:140}} value={form.delivery_rate} onChange={e=>setF('delivery_rate',e.target.value)}/>
           </div>
 
@@ -13664,7 +13763,7 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
           <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:16}}>
             <div style={{display:'flex',justifyContent:'space-between'}}><span>عدد الطلبيات بالفترة</span><b>{ordersCount}</b></div>
             <div style={{display:'flex',justifyContent:'space-between'}}><span>إجمالي فاتورة الفترة</span><b>{numFmt(grossAmount)} د.أ</b></div>
-            <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل ({ordersCount} × {numFmt(deliveryRate)})</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل ({itemsCount} صنف، كل صنف بأجرته الخاصة)</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
             <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصومات أخرى</span><b>− {numFmt(otherDeductions)} د.أ</b></div>
             <div style={{borderTop:'1px solid var(--gray-200)',marginTop:4,paddingTop:8,display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
               <span>الصافي المطلوب تسليمه</span><span>{numFmt(netAmount)} د.أ</span>
@@ -13852,11 +13951,19 @@ function CashVanRepDetail({ repId, repName, stockMap, finance, loads, sales, set
   );
 }
 
-function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, onDeleteSale, onClose }) {
+function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, onDeleteSale, onMergeSales, onClose }) {
   const total = batch.sales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
   const label = batch.period_from===batch.period_to ? batch.period_from : `${batch.period_from} → ${batch.period_to}`;
   const saleIds = new Set(batch.sales.map(s=>s.id));
   const saleById = {}; batch.sales.forEach(s => saleById[s.id]=s);
+  const [mergingId, setMergingId] = useState(null);
+  const [mergeTarget, setMergeTarget] = useState('');
+  const confirmMerge = (fromSale) => {
+    const target = batch.sales.find(s => s.id === mergeTarget);
+    if (!target) { toast('اختر الطلبية المطلوب الدمج معها', 'error'); return; }
+    onMergeSales(target, fromSale);
+    setMergingId(null); setMergeTarget('');
+  };
   /* لا نعتمد على ترقيم الطلبية — بس على تاريخها وأصنافها لتمييزها بالعرض */
   const itemsBySale = {};
   saleItems.filter(si => saleIds.has(si.sale_id)).forEach(si => {
@@ -13883,15 +13990,31 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
         <div className="no-print" style={{padding:'16px 20px 0'}}>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {batch.sales.map(s => (
-              <div key={s.id} style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:13}}>{(itemsBySale[s.id]||[]).map(it=>it.item_name).join('، ') || '—'}</div>
-                  <div style={{fontSize:11,color:'var(--gray-500)'}}>{s.sale_date} · {numFmt(s.total_amount)} د.أ</div>
+              <div key={s.id} style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'8px 14px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:13}}>{(itemsBySale[s.id]||[]).map(it=>it.item_name).join('، ') || '—'}</div>
+                    <div style={{fontSize:11,color:'var(--gray-500)'}}>{s.sale_date} · {numFmt(s.total_amount)} د.أ</div>
+                  </div>
+                  <div style={{display:'flex',gap:6}}>
+                    {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>onEditSale(s)}>✏️ تعديل</button>}
+                    {hasPerm(user,'cashvan_edit') && batch.sales.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>{setMergingId(mergingId===s.id?null:s.id);setMergeTarget('');}}>🔗 دمج</button>}
+                    {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>onDeleteSale(s)}>🗑️ حذف</button>}
+                  </div>
                 </div>
-                <div style={{display:'flex',gap:6}}>
-                  {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>onEditSale(s)}>✏️ تعديل</button>}
-                  {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>onDeleteSale(s)}>🗑️ حذف</button>}
-                </div>
+                {mergingId===s.id && (
+                  <div style={{display:'flex',gap:8,alignItems:'center',marginTop:8,paddingTop:8,borderTop:'1px dashed var(--gray-200)'}}>
+                    <span style={{fontSize:12,color:'var(--gray-500)'}}>دمج هذه الطلبية مع:</span>
+                    <select className="form-control" style={{flex:1}} value={mergeTarget} onChange={e=>setMergeTarget(e.target.value)}>
+                      <option value="">— اختر الطلبية —</option>
+                      {batch.sales.filter(o=>o.id!==s.id).map(o => (
+                        <option key={o.id} value={o.id}>{(itemsBySale[o.id]||[]).map(it=>it.item_name).join('، ') || '—'} ({numFmt(o.total_amount)} د.أ)</option>
+                      ))}
+                    </select>
+                    <button className="btn btn-primary btn-sm" onClick={()=>confirmMerge(s)}>تأكيد الدمج</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setMergingId(null)}>إلغاء</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -13961,7 +14084,6 @@ function CashVanSettleDetail({ settlement, repName, sales, onClose }) {
   }, []);
 
   const gross        = parseFloat(settlement.gross_amount)||0;
-  const deliveryRate  = parseFloat(settlement.delivery_rate)||0;
   const deliveryDed   = parseFloat(settlement.delivery_deduction)||0;
   const otherDed      = parseFloat(settlement.other_deductions)||0;
   const clickTotal    = parseFloat(settlement.click_total)||0;
@@ -14002,7 +14124,7 @@ function CashVanSettleDetail({ settlement, repName, sales, onClose }) {
                 <thead><tr><th>البيان</th><th>المبلغ (د.أ)</th></tr></thead>
                 <tbody>
                   <tr><td style={{textAlign:'right'}}>إجمالي فاتورة الفترة ({settlement.orders_count} طلبية)</td><td>{numFmt(gross)}</td></tr>
-                  {deliveryDed>0 && <tr><td style={{textAlign:'right'}}>خصم أجور التوصيل ({numFmt(deliveryRate)} × {settlement.orders_count})</td><td style={{color:'var(--danger)'}}>− {numFmt(deliveryDed)}</td></tr>}
+                  {deliveryDed>0 && <tr><td style={{textAlign:'right'}}>خصم أجور التوصيل (لكل صنف مباع بالفترة)</td><td style={{color:'var(--danger)'}}>− {numFmt(deliveryDed)}</td></tr>}
                   {deductions.map(d => (
                     <tr key={d.id}><td style={{textAlign:'right'}}>خصم: {d.label}</td><td style={{color:'var(--danger)'}}>− {numFmt(d.amount)}</td></tr>
                   ))}
