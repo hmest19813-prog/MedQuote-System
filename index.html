@@ -13028,91 +13028,119 @@ function CashVanPage({ user }) {
 
       {tab==='overview' && (
         repIds.length===0 ? <div className="empty-state">لا يوجد مندوبون بعد — ابدأ بتسجيل أول عملية تزويد</div> : (
-        <div style={ENTITY_GRID_STYLE}>
-          {visibleReps.map(repId => {
-            const f = financeByRep[repId] || { totalSales:0, cashCollected:0, cashSettled:0 };
-            const owed = cashOwed(repId), recv = receivables(repId);
-            return (
-              <EntityCard key={repId} onClick={()=>setViewingRepId(repId)}
-                avatar="🚐" title={cashvanRepName(reps, repId)}
-                subtitle={`${stockItemsCount(repId)} صنف متبقي معه`}
-                rows={[
-                  { icon:'📦', text: `إجمالي الكمية المتبقية معه: ${numFmt(stockQty(repId),2)}` },
-                  { icon:'🧾', text: `إجمالي مبيعاته: ${numFmt(f.totalSales)} د.أ` },
-                  { icon:'💵', text: `كاش بعهدته (غير مسوّى): ${numFmt(owed)} د.أ` },
-                  recv>0.001 && { icon:'⏳', text: `ذمم زبائن غير محصّلة: ${numFmt(recv)} د.أ` },
-                ]}
-                actions={<button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();setViewingRepId(repId);}}>📋 التفاصيل</button>}
-              />
-            );
-          })}
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th style={{textAlign:'right'}}>المندوب</th><th>عدد الأصناف</th><th>الكمية المتبقية معه</th>
+              <th>إجمالي المبيعات</th><th>كاش بعهدته (غير مسوّى)</th><th>ذمم غير محصّلة</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+              {visibleReps.map(repId => {
+                const f = financeByRep[repId] || { totalSales:0, cashCollected:0, cashSettled:0 };
+                const owed = cashOwed(repId), recv = receivables(repId);
+                return (
+                  <tr key={repId}>
+                    <td style={{textAlign:'right',fontWeight:700}}>🚐 {cashvanRepName(reps, repId)}</td>
+                    <td>{stockItemsCount(repId)}</td>
+                    <td>{numFmt(stockQty(repId),2)}</td>
+                    <td>{numFmt(f.totalSales)} د.أ</td>
+                    <td>{numFmt(owed)} د.أ</td>
+                    <td>{recv>0.001 ? numFmt(recv)+' د.أ' : '—'}</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>setViewingRepId(repId)}>📋 التفاصيل</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
         )
       )}
 
       {tab==='loads' && (
         filteredLoads.length===0 ? <div className="empty-state">لا توجد عمليات تزويد</div> : (
-        <div style={ENTITY_GRID_STYLE}>
-          {filteredLoads.map(l => (
-            <EntityCard key={l.id} avatar="📦" title={l.number} subtitle={cashvanRepName(reps, l.rep_id)}
-              rows={[
-                { icon:'📅', text: l.load_date },
-                l.is_stocktake && { icon:'📋', text: 'جرد/تصفير — رصيد حقيقي، تجاهل كل ما قبله' },
-                { icon:'🗂️', text: `${loadItems.filter(i=>i.load_id===l.id).length} صنف` },
-                { icon:'#️⃣', text: `الكمية الإجمالية: ${numFmt(loadItems.filter(i=>i.load_id===l.id).reduce((s,i)=>s+(parseFloat(i.quantity)||0),0),2)}` },
-              ]}
-              actions={<>
-                {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingLoad(l);setShowLoadForm(true);}}>✏️ تعديل</button>}
-                {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteLoad(l)}>🗑️ حذف</button>}
-              </>}
-            />
-          ))}
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th style={{textAlign:'right'}}>الرقم</th><th>المندوب</th><th>التاريخ</th><th>النوع</th><th>عدد الأصناف</th><th>الكمية الإجمالية</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+              {filteredLoads.map(l => (
+                <tr key={l.id}>
+                  <td style={{textAlign:'right',fontWeight:700,color:'var(--primary)'}}>{l.number}</td>
+                  <td>{cashvanRepName(reps, l.rep_id)}</td>
+                  <td>{l.load_date}</td>
+                  <td>{l.is_stocktake ? '📋 جرد/تصفير' : 'عادي'}</td>
+                  <td>{loadItems.filter(i=>i.load_id===l.id).length}</td>
+                  <td>{numFmt(loadItems.filter(i=>i.load_id===l.id).reduce((s,i)=>s+(parseFloat(i.quantity)||0),0),2)}</td>
+                  <td>
+                    <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+                      {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingLoad(l);setShowLoadForm(true);}}>✏️</button>}
+                      {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteLoad(l)}>🗑️</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         )
       )}
 
       {tab==='sales' && (
         saleBatches.length===0 ? <div className="empty-state">لا توجد عمليات بيع</div> : (
-        <div style={ENTITY_GRID_STYLE}>
-          {saleBatches.map(b => {
-            const key = `${b.rep_id}|${b.period_from}|${b.period_to}`;
-            const total = b.sales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
-            const label = b.period_from===b.period_to ? b.period_from : `${b.period_from} → ${b.period_to}`;
-            return (
-              <EntityCard key={key} onClick={()=>setViewingSaleBatchKey(key)}
-                avatar="🧾" title={label} subtitle={cashvanRepName(reps, b.rep_id)}
-                rows={[
-                  { icon:'📦', text: `${b.itemsCount} طلبية` },
-                  { icon:'💰', text: `الإجمالي: ${numFmt(total)} د.أ` },
-                ]}
-                actions={<button className="btn btn-ghost btn-sm" onClick={()=>setViewingSaleBatchKey(key)}>👁️ التفاصيل</button>}
-              />
-            );
-          })}
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th style={{textAlign:'right'}}>الفترة</th><th>المندوب</th><th>عدد الطلبيات</th><th>الإجمالي</th><th>إجراءات</th></tr></thead>
+            <tbody>
+              {saleBatches.map(b => {
+                const key = `${b.rep_id}|${b.period_from}|${b.period_to}`;
+                const total = b.sales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
+                const label = b.period_from===b.period_to ? b.period_from : `${b.period_from} → ${b.period_to}`;
+                return (
+                  <tr key={key}>
+                    <td style={{textAlign:'right',fontWeight:700}}>{label}</td>
+                    <td>{cashvanRepName(reps, b.rep_id)}</td>
+                    <td>{b.itemsCount}</td>
+                    <td>{numFmt(total)} د.أ</td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={()=>setViewingSaleBatchKey(key)}>👁️ التفاصيل</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
         )
       )}
 
       {tab==='settlements' && (
         filteredSettlements.length===0 ? <div className="empty-state">لا توجد تسويات</div> : (
-        <div style={ENTITY_GRID_STYLE}>
-          {filteredSettlements.map(t => (
-            <EntityCard key={t.id} avatar="💰" title={t.number} subtitle={cashvanRepName(reps, t.rep_id)}
-              rows={[
-                { icon:'📅', text: t.period_from ? `${t.period_from} → ${t.period_to}` : t.settlement_date },
-                t.orders_count>0 && { icon:'🧾', text: `${t.orders_count} طلبية — فاتورة ${numFmt(t.gross_amount)} د.أ` },
-                (t.delivery_deduction>0 || t.other_deductions>0) && { icon:'➖', text: `خصومات: ${numFmt((parseFloat(t.delivery_deduction)||0)+(parseFloat(t.other_deductions)||0))} د.أ` },
-                { icon:'💵', text: `نقداً: ${numFmt(t.amount)} د.أ (${t.method})` },
-                t.click_total>0 && { icon:'📲', text: `كليك: ${numFmt(t.click_total)} د.أ` },
-                t.notes && { icon:'📝', text: t.notes },
-              ]}
-              actions={<>
-                <button className="btn btn-ghost btn-sm" onClick={()=>setViewingSettle(t)}>👁️ اطّلاع</button>
-                {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSettle(t);setShowSettleForm(true);}}>✏️ تعديل</button>}
-                {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSettlement(t)}>🗑️ حذف</button>}
-              </>}
-            />
-          ))}
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th style={{textAlign:'right'}}>الرقم</th><th>المندوب</th><th>الفترة</th><th>الطلبيات</th><th>الخصومات</th><th>نقداً</th><th>كليك</th><th>ملاحظات</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+              {filteredSettlements.map(t => (
+                <tr key={t.id}>
+                  <td style={{textAlign:'right',fontWeight:700,color:'var(--primary)'}}>{t.number}</td>
+                  <td>{cashvanRepName(reps, t.rep_id)}</td>
+                  <td>{t.period_from ? `${t.period_from} → ${t.period_to}` : t.settlement_date}</td>
+                  <td>{t.orders_count>0 ? `${t.orders_count} — ${numFmt(t.gross_amount)} د.أ` : '—'}</td>
+                  <td>{(t.delivery_deduction>0 || t.other_deductions>0) ? numFmt((parseFloat(t.delivery_deduction)||0)+(parseFloat(t.other_deductions)||0))+' د.أ' : '—'}</td>
+                  <td>{numFmt(t.amount)} د.أ ({t.method})</td>
+                  <td>{t.click_total>0 ? numFmt(t.click_total)+' د.أ' : '—'}</td>
+                  <td>{t.notes || '—'}</td>
+                  <td>
+                    <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+                      <button className="btn btn-ghost btn-sm" onClick={()=>setViewingSettle(t)}>👁️</button>
+                      {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{setEditingSettle(t);setShowSettleForm(true);}}>✏️</button>}
+                      {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteSettlement(t)}>🗑️</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         )
       )}
@@ -14018,6 +14046,9 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
   const saleById = {}; batch.sales.forEach(s => saleById[s.id]=s);
   const [mergingId, setMergingId] = useState(null);
   const [mergeTarget, setMergeTarget] = useState('');
+  const [pages, setPages] = useState(null);
+  const measureRef = useRef(null);
+  const pagesSigRef = useRef('');
   const confirmMerge = (fromSale) => {
     const target = batch.sales.find(s => s.id === mergeTarget);
     if (!target) { toast('اختر الطلبية المطلوب الدمج معها', 'error'); return; }
@@ -14029,12 +14060,95 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
   saleItems.filter(si => saleIds.has(si.sale_id)).forEach(si => {
     (itemsBySale[si.sale_id] = itemsBySale[si.sale_id] || []).push(si);
   });
+  /* نفس الصنف ممكن ينسجل بأكتر من سطر (كل وحدة بسطرها) — نجمعهم لملخص قصير مقروء بدل تكرار الاسم */
+  const saleItemsSummary = (saleId) => {
+    const counts = new Map();
+    (itemsBySale[saleId]||[]).forEach(it => counts.set(it.item_name, (counts.get(it.item_name)||0) + (parseFloat(it.quantity)||1)));
+    return [...counts.entries()].map(([name,qty]) => qty>1 ? `${name} ×${numFmt(qty,0)}` : name).join('، ') || '—';
+  };
   const itemRows = saleItems.filter(si => saleIds.has(si.sale_id))
     .map(si => ({ ...si, sale: saleById[si.sale_id] }))
     .sort((a,b) => a.sale.sale_date.localeCompare(b.sale.sale_date));
 
   const receiptId = `cashvan-batch-print-${batch.rep_id}-${batch.period_from}-${batch.period_to}`;
   const doPrint = () => printDoc(receiptId, `طلبيات ${repName} - ${label}`);
+
+  const firstHeader = (
+    <>
+      <PqDocHeader/>
+      <div className="print-doc-title" style={{fontSize:16,letterSpacing:2}}>كشف طلبيات الفترة</div>
+      <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+        <div className="print-client-grid">
+          <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
+          <div className="field-row"><label>الفترة:</label> <strong style={{color:'var(--primary)'}}>{label}</strong></div>
+          <div className="field-row"><label>عدد الطلبيات:</label> {cashvanCountOrders(itemRows)}</div>
+          <div className="field-row"><label>تاريخ الطباعة:</label> {new Date().toLocaleDateString('ar-JO')}</div>
+        </div>
+      </div>
+    </>
+  );
+  const tableColgroup = (
+    <colgroup><col style={{width:'16%'}}/><col/><col style={{width:'13%'}}/><col style={{width:'14%'}}/><col style={{width:'15%'}}/></colgroup>
+  );
+  const tableThead = (
+    <thead><tr><th>التاريخ</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
+  );
+  const renderRow = (li) => (
+    <tr key={li.id}>
+      <td>{li.sale.sale_date}</td>
+      <td style={{textAlign:'right'}}>{li.item_name}</td>
+      <td>{numFmt(li.quantity,2)}</td>
+      <td>{numFmt(li.unit_price)}</td>
+      <td style={{fontWeight:700}}>{numFmt(li.total_price)}</td>
+    </tr>
+  );
+  const tailBlock = (
+    <div className="print-totals">
+      <table>
+        <tbody>
+          <tr><td>الإجمالي الكلي</td><td>{numFmt(total)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  );
+
+  useLayoutEffect(() => {
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const rowsTable = mEl.querySelector('.pqm-rows table');
+      const headH  = H(mEl.querySelector('.pqm-head'));
+      const theadH = H(rowsTable && rowsTable.querySelector('thead'));
+      const rowHs  = Array.from(rowsTable ? rowsTable.querySelectorAll('tbody tr') : []).map(el => el.getBoundingClientRect().height);
+      const tailH  = H(mEl.querySelector('.pqm-tail'));
+      const footH  = H(mEl.querySelector('.pqm-footer'));
+      const tableMB = rowsTable ? (parseFloat(getComputedStyle(rowsTable).marginBottom) || 0) : 0;
+
+      const reserveMm = PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      const out = [];
+      let cur = [], used = headH + theadH, first = true;
+      rowHs.forEach((rh, i) => {
+        if (used + rh > contentPx && cur.length > 0) {
+          out.push({ rows: cur, first, tail: false });
+          cur = []; used = theadH; first = false;
+        }
+        cur.push(i); used += rh;
+      });
+      if (used + (cur.length ? tableMB : 0) + tailH <= contentPx) {
+        out.push({ rows: cur, first, tail: true });
+      } else {
+        out.push({ rows: cur, first, tail: false });
+        out.push({ rows: [], first: false, tail: true });
+      }
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  });
 
   return (
     <div className="modal-overlay">
@@ -14051,12 +14165,12 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
             {batch.sales.map(s => (
               <div key={s.id} style={{border:'1.5px solid var(--gray-200)',borderRadius:10,padding:'8px 14px'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:13}}>{(itemsBySale[s.id]||[]).map(it=>it.item_name).join('، ') || '—'}</div>
-                    <div style={{fontSize:11,color:'var(--gray-500)'}}>{s.sale_date} · {numFmt(s.total_amount)} د.أ</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13,lineHeight:1.6}}>{saleItemsSummary(s.id)}</div>
+                    <div style={{fontSize:11,color:'var(--gray-500)',marginTop:2}}>{s.sale_date} · {numFmt(s.total_amount)} د.أ</div>
                   </div>
-                  <div style={{display:'flex',gap:6}}>
+                  <div style={{display:'flex',gap:6,flexShrink:0}}>
                     {hasPerm(user,'cashvan_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>onEditSale(s)}>✏️ تعديل</button>}
                     {hasPerm(user,'cashvan_edit') && batch.sales.length>1 && <button className="btn btn-ghost btn-sm" onClick={()=>{setMergingId(mergingId===s.id?null:s.id);setMergeTarget('');}}>🔗 دمج</button>}
                     {hasPerm(user,'cashvan_delete') && <button className="btn btn-danger btn-sm" onClick={()=>onDeleteSale(s)}>🗑️ حذف</button>}
@@ -14068,7 +14182,7 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
                     <select className="form-control" style={{flex:1}} value={mergeTarget} onChange={e=>setMergeTarget(e.target.value)}>
                       <option value="">— اختر الطلبية —</option>
                       {batch.sales.filter(o=>o.id!==s.id).map(o => (
-                        <option key={o.id} value={o.id}>{(itemsBySale[o.id]||[]).map(it=>it.item_name).join('، ') || '—'} ({numFmt(o.total_amount)} د.أ)</option>
+                        <option key={o.id} value={o.id}>{saleItemsSummary(o.id)} ({numFmt(o.total_amount)} د.أ)</option>
                       ))}
                     </select>
                     <button className="btn btn-primary btn-sm" onClick={()=>confirmMerge(s)}>تأكيد الدمج</button>
@@ -14081,46 +14195,38 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
         </div>
 
         <div className="modal-body pq-preview-body" id={receiptId}>
-          <div className="pq-page">
-            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
-              <PqDocHeader/>
-              <div className="print-doc-title" style={{fontSize:16,letterSpacing:2}}>كشف طلبيات الفترة</div>
-
-              <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
-                <div className="print-client-grid">
-                  <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
-                  <div className="field-row"><label>الفترة:</label> <strong style={{color:'var(--primary)'}}>{label}</strong></div>
-                  <div className="field-row"><label>عدد الطلبيات:</label> {cashvanCountOrders(itemRows)}</div>
-                  <div className="field-row"><label>تاريخ الطباعة:</label> {new Date().toLocaleDateString('ar-JO')}</div>
-                </div>
-              </div>
-
-              <table className="print-items" style={{marginTop:12}}>
-                <colgroup><col style={{width:'16%'}}/><col/><col style={{width:'13%'}}/><col style={{width:'14%'}}/><col style={{width:'15%'}}/></colgroup>
-                <thead><tr><th>التاريخ</th><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead>
-                <tbody>
-                  {itemRows.map(li => (
-                    <tr key={li.id}>
-                      <td>{li.sale.sale_date}</td>
-                      <td style={{textAlign:'right'}}>{li.item_name}</td>
-                      <td>{numFmt(li.quantity,2)}</td>
-                      <td>{numFmt(li.unit_price)}</td>
-                      <td style={{fontWeight:700}}>{numFmt(li.total_price)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="print-totals">
-                <table>
-                  <tbody>
-                    <tr><td>الإجمالي الكلي</td><td>{numFmt(total)}</td></tr>
-                  </tbody>
+          {/* حاوية قياس مخفية */}
+          <div className="pq-measure" ref={measureRef} aria-hidden="true">
+            <div className="pq-measure-inner" dir="rtl">
+              <div className="pqm-head">{firstHeader}</div>
+              <div className="pqm-rows">
+                <table className="print-items" style={{marginTop:12}}>
+                  {tableColgroup}{tableThead}
+                  <tbody>{itemRows.map(li => renderRow(li))}</tbody>
                 </table>
               </div>
+              <div className="pqm-tail">{tailBlock}</div>
+              <div className="pqm-footer"><PqFooterBar/></div>
             </div>
-            <PqFooterBar/>
           </div>
+
+          {/* الصفحات النهائية */}
+          {(pages || [{rows: itemRows.map((_,i)=>i), first:true, tail:true}]).map((pg, pi, arr) => (
+            <div className="pq-page" key={pi}>
+              <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+                {pg.first && firstHeader}
+                {pg.rows.length > 0 && (
+                  <table className="print-items" style={{marginTop: pg.first ? 12 : 0}}>
+                    {tableColgroup}{tableThead}
+                    <tbody>{pg.rows.map(i => renderRow(itemRows[i]))}</tbody>
+                  </table>
+                )}
+                {pg.tail && tailBlock}
+              </div>
+              <PqFooterBar/>
+              {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -14131,6 +14237,9 @@ function CashVanSettleDetail({ settlement, repName, sales, onClose }) {
   const [deductions, setDeductions] = useState([]);
   const [clickItems, setClickItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pages, setPages] = useState(null);
+  const measureRef = useRef(null);
+  const pagesSigRef = useRef('');
 
   useEffect(() => {
     Promise.all([
@@ -14153,6 +14262,102 @@ function CashVanSettleDetail({ settlement, repName, sales, onClose }) {
   const receiptId = `cashvan-settle-print-${settlement.id}`;
   const doPrint = () => printDoc(receiptId, `تسوية ${settlement.number||''} - ${repName}`);
 
+  const headBlock = (
+    <>
+      <PqDocHeader/>
+      <div className="print-doc-title" style={{fontSize:16,letterSpacing:2}}>إيصال تسوية الكاش فان</div>
+      <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
+        <div className="print-client-grid">
+          <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
+          <div className="field-row"><label>رقم التسوية:</label> <strong style={{color:'var(--primary)'}}>{settlement.number}</strong></div>
+          <div className="field-row"><label>الفترة:</label> {settlement.period_from ? `${settlement.period_from} → ${settlement.period_to}` : settlement.settlement_date}</div>
+          <div className="field-row"><label>طريقة الاستلام:</label> {settlement.method||'نقداً'}</div>
+        </div>
+      </div>
+    </>
+  );
+  const contHeadBlock = (
+    <div style={{textAlign:'center', fontSize:12, color:'#555', marginBottom:8}}>
+      تسوية {settlement.number} — {repName} (تتمة)
+    </div>
+  );
+
+  const blocks = [
+    <table key="main" className="print-items" style={{marginTop:12}}>
+      <colgroup><col/><col style={{width:'22%'}}/></colgroup>
+      <thead><tr><th>البيان</th><th>المبلغ (د.أ)</th></tr></thead>
+      <tbody>
+        <tr><td style={{textAlign:'right'}}>إجمالي فاتورة الفترة ({settlement.orders_count} طلبية)</td><td>{numFmt(gross)}</td></tr>
+        {deliveryDed>0 && <tr><td style={{textAlign:'right'}}>خصم أجور التوصيل ({settlement.orders_count} طلبية)</td><td style={{color:'var(--danger)'}}>− {numFmt(deliveryDed)}</td></tr>}
+        {deductions.map(d => (
+          <tr key={d.id}><td style={{textAlign:'right'}}>خصم: {d.label}</td><td style={{color:'var(--danger)'}}>− {numFmt(d.amount)}</td></tr>
+        ))}
+      </tbody>
+    </table>,
+    ...(clickItems.length>0 ? [
+      <table key="click" className="print-items" style={{marginTop:12}}>
+        <colgroup><col/><col style={{width:'15%'}}/><col style={{width:'15%'}}/><col style={{width:'20%'}}/><col style={{width:'18%'}}/></colgroup>
+        <thead><tr><th>مدفوع عبر كليك/تحويل — الصنف</th><th>الكمية</th><th>السعر</th><th>التاريخ</th><th>المبلغ (د.أ)</th></tr></thead>
+        <tbody>
+          {clickItems.map(c => (
+            <tr key={c.id}>
+              <td style={{textAlign:'right'}}>{c.item_name}</td>
+              <td>{numFmt(c.quantity,2)}</td>
+              <td>{numFmt(c.unit_price)}</td>
+              <td>{c.sale_date}</td>
+              <td style={{color:'var(--info)'}}>− {numFmt(c.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    ] : []),
+    <div key="totals" className="print-totals">
+      <table>
+        <tbody>
+          <tr><td>الصافي المستحق</td><td>{numFmt(netAmount)}</td></tr>
+          {clickTotal>0 && <tr><td>منها عبر كليك</td><td>− {numFmt(clickTotal)}</td></tr>}
+          <tr><td>المستلم نقداً ({settlement.method||'نقداً'})</td><td>{numFmt(cash)}</td></tr>
+        </tbody>
+      </table>
+    </div>,
+    ...(settlement.notes ? [<div key="notes" className="print-notes">ملاحظات: {settlement.notes}</div>] : []),
+  ];
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    const recalc = () => {
+      const mEl = measureRef.current;
+      if (!mEl) return;
+      const H = el => el ? el.getBoundingClientRect().height : 0;
+      const headH = H(mEl.querySelector('.pqm-head'));
+      const contH = H(mEl.querySelector('.pqm-conthead'));
+      const footH = H(mEl.querySelector('.pqm-footer'));
+      const bodyEl = mEl.querySelector('.pqm-body');
+      const blockHs = Array.from(bodyEl ? bodyEl.children : []).map(el => {
+        const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
+        return H(el) + mb;
+      });
+
+      const reserveMm = PQ_PAGE.footBottom + footH / PQ_MM + PQ_PAGE.footGap;
+      const contentPx = (PQ_PAGE.h - PQ_PAGE.top - reserveMm) * PQ_MM - 4;
+
+      const out = [];
+      let cur = [], used = headH, first = true;
+      blockHs.forEach((bh, i) => {
+        if (used + bh > contentPx && cur.length > 0) {
+          out.push({ blocks: cur, first });
+          cur = []; used = contH; first = false;
+        }
+        cur.push(i); used += bh;
+      });
+      out.push({ blocks: cur, first });
+      const sig = JSON.stringify(out);
+      if (sig !== pagesSigRef.current) { pagesSigRef.current = sig; setPages(out); }
+    };
+    recalc();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => recalc());
+  }, [loading, deductions, clickItems]);
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:860,maxHeight:'92vh',overflowY:'auto'}}>
@@ -14165,64 +14370,27 @@ function CashVanSettleDetail({ settlement, repName, sales, onClose }) {
         </div>
         <div className="modal-body pq-preview-body" id={receiptId}>
           {loading ? <LoadingScreen msg="جاري التحميل..."/> : (
-          <div className="pq-page">
-            <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
-              <PqDocHeader/>
-              <div className="print-doc-title" style={{fontSize:16,letterSpacing:2}}>إيصال تسوية الكاش فان</div>
-
-              <div className="print-client-box" dir="rtl" style={{direction:'rtl'}}>
-                <div className="print-client-grid">
-                  <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
-                  <div className="field-row"><label>رقم التسوية:</label> <strong style={{color:'var(--primary)'}}>{settlement.number}</strong></div>
-                  <div className="field-row"><label>الفترة:</label> {settlement.period_from ? `${settlement.period_from} → ${settlement.period_to}` : settlement.settlement_date}</div>
-                  <div className="field-row"><label>طريقة الاستلام:</label> {settlement.method||'نقداً'}</div>
-                </div>
+          <>
+            <div className="pq-measure" ref={measureRef} aria-hidden="true">
+              <div className="pq-measure-inner" dir="rtl">
+                <div className="pqm-head">{headBlock}</div>
+                <div className="pqm-conthead">{contHeadBlock}</div>
+                <div className="pqm-body">{blocks}</div>
+                <div className="pqm-footer"><PqFooterBar/></div>
               </div>
-
-              <table className="print-items" style={{marginTop:12}}>
-                <colgroup><col/><col style={{width:'22%'}}/></colgroup>
-                <thead><tr><th>البيان</th><th>المبلغ (د.أ)</th></tr></thead>
-                <tbody>
-                  <tr><td style={{textAlign:'right'}}>إجمالي فاتورة الفترة ({settlement.orders_count} طلبية)</td><td>{numFmt(gross)}</td></tr>
-                  {deliveryDed>0 && <tr><td style={{textAlign:'right'}}>خصم أجور التوصيل ({settlement.orders_count} طلبية)</td><td style={{color:'var(--danger)'}}>− {numFmt(deliveryDed)}</td></tr>}
-                  {deductions.map(d => (
-                    <tr key={d.id}><td style={{textAlign:'right'}}>خصم: {d.label}</td><td style={{color:'var(--danger)'}}>− {numFmt(d.amount)}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {clickItems.length>0 && (
-              <table className="print-items" style={{marginTop:12}}>
-                <colgroup><col/><col style={{width:'15%'}}/><col style={{width:'15%'}}/><col style={{width:'20%'}}/><col style={{width:'18%'}}/></colgroup>
-                <thead><tr><th>مدفوع عبر كليك/تحويل — الصنف</th><th>الكمية</th><th>السعر</th><th>التاريخ</th><th>المبلغ (د.أ)</th></tr></thead>
-                <tbody>
-                  {clickItems.map(c => (
-                    <tr key={c.id}>
-                      <td style={{textAlign:'right'}}>{c.item_name}</td>
-                      <td>{numFmt(c.quantity,2)}</td>
-                      <td>{numFmt(c.unit_price)}</td>
-                      <td>{c.sale_date}</td>
-                      <td style={{color:'var(--info)'}}>− {numFmt(c.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              )}
-
-              <div className="print-totals">
-                <table>
-                  <tbody>
-                    <tr><td>الصافي المستحق</td><td>{numFmt(netAmount)}</td></tr>
-                    {clickTotal>0 && <tr><td>منها عبر كليك</td><td>− {numFmt(clickTotal)}</td></tr>}
-                    <tr><td>المستلم نقداً ({settlement.method||'نقداً'})</td><td>{numFmt(cash)}</td></tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {settlement.notes && <div className="print-notes">ملاحظات: {settlement.notes}</div>}
             </div>
-            <PqFooterBar/>
-          </div>
+
+            {(pages || [{blocks: blocks.map((_,i)=>i), first:true}]).map((pg, pi, arr) => (
+              <div className="pq-page" key={pi}>
+                <div className="pq-page-inner" dir="rtl" style={{direction:'rtl'}}>
+                  {pg.first ? headBlock : contHeadBlock}
+                  {pg.blocks.map(i => blocks[i])}
+                </div>
+                <PqFooterBar/>
+                {arr.length > 1 && <div className="pq-pageno">{`صفحة ${pi+1} من ${arr.length}`}</div>}
+              </div>
+            ))}
+          </>
           )}
         </div>
       </div>
