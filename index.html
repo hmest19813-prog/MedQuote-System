@@ -12923,8 +12923,13 @@ function CashVanPage({ user }) {
       const key = `${s.rep_id}|${pf}|${pt}`;
       (groups[key] = groups[key] || { rep_id:s.rep_id, period_from:pf, period_to:pt, sales:[] }).sales.push(s);
     });
+    /* "عدد الطلبيات" الحقيقي = عدد الأصناف المباعة (كل صنف = طلبية/زيارة مستقلة)، مش عدد سجلّات cashvan_sales */
+    Object.values(groups).forEach(b => {
+      const ids = new Set(b.sales.map(s=>s.id));
+      b.itemsCount = saleItems.filter(si => ids.has(si.sale_id)).length;
+    });
     return Object.values(groups).sort((a,b) => b.period_to.localeCompare(a.period_to));
-  }, [filteredSales]);
+  }, [filteredSales, saleItems]);
 
   if (loading) return <LoadingScreen msg="جاري تحميل الكاش فان..."/>;
 
@@ -13016,7 +13021,7 @@ function CashVanPage({ user }) {
               <EntityCard key={key} onClick={()=>setViewingSaleBatchKey(key)}
                 avatar="🧾" title={label} subtitle={cashvanRepName(reps, b.rep_id)}
                 rows={[
-                  { icon:'📦', text: `${b.sales.length} طلبية` },
+                  { icon:'📦', text: `${b.itemsCount} طلبية` },
                   { icon:'💰', text: `الإجمالي: ${numFmt(total)} د.أ` },
                 ]}
                 actions={<button className="btn btn-ghost btn-sm" onClick={()=>setViewingSaleBatchKey(key)}>👁️ التفاصيل</button>}
@@ -13540,13 +13545,13 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
      ربط بطلبية محدّدة ولا خصم مخزون إضافي هون، تجنباً لتكرار الخصم. */
   const periodSales = sales.filter(s => s.rep_id===form.rep_id && form.period_from && form.period_to
     && s.sale_date >= form.period_from && s.sale_date <= form.period_to);
-  const ordersCount  = periodSales.length;
   const grossAmount  = periodSales.reduce((s,x) => s + (parseFloat(x.total_amount)||0), 0);
-  /* أجرة التوصيل صارت تُحسب لكل صنف مباع بالفترة على حدة (كل صنف = توصيلة مستقلة)
-     حسب أجرته الخاصة إن وُجدت (أجرة التوصيل حسب الصنف)، وإلا الأجرة الافتراضية أدناه */
+  /* "الطلبية" الحقيقية = كل صنف مباع (زيارة/توصيلة مستقلة لعميل)، مش سجل cashvan_sales —
+     المستخدم ممكن يسجّل أسبوع كامل بسجل واحد وكل صنف بداخله طلبية حقيقية منفصلة.
+     فعدد الطلبيات وأجرة التوصيل لازم تُحسب على مستوى الصنف لا على مستوى السجل. */
   const periodSaleIdSet = new Set(periodSales.map(s=>s.id));
   const periodSaleItemsList = saleItems.filter(si => periodSaleIdSet.has(si.sale_id));
-  const itemsCount = periodSaleItemsList.length;
+  const ordersCount = periodSaleItemsList.length;
   const deliveryRate = parseFloat(form.delivery_rate) || 0;
   const deliveryDeduction = periodSaleItemsList.reduce((s,si) => {
     const rate = itemDeliveryRates && itemDeliveryRates[si.item_name] !== undefined ? parseFloat(itemDeliveryRates[si.item_name])||0 : deliveryRate;
@@ -13763,7 +13768,7 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
           <div style={{background:'var(--gray-100)',borderRadius:10,padding:'12px 14px',display:'flex',flexDirection:'column',gap:6,fontSize:13,marginBottom:16}}>
             <div style={{display:'flex',justifyContent:'space-between'}}><span>عدد الطلبيات بالفترة</span><b>{ordersCount}</b></div>
             <div style={{display:'flex',justifyContent:'space-between'}}><span>إجمالي فاتورة الفترة</span><b>{numFmt(grossAmount)} د.أ</b></div>
-            <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل ({itemsCount} صنف، كل صنف بأجرته الخاصة)</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
+            <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصم أجور التوصيل ({ordersCount} طلبية، كل طلبية بأجرتها الخاصة)</span><b>− {numFmt(deliveryDeduction)} د.أ</b></div>
             <div style={{display:'flex',justifyContent:'space-between',color:'var(--danger)'}}><span>خصومات أخرى</span><b>− {numFmt(otherDeductions)} د.أ</b></div>
             <div style={{borderTop:'1px solid var(--gray-200)',marginTop:4,paddingTop:8,display:'flex',justifyContent:'space-between',fontSize:15,fontWeight:800,color:'var(--primary)'}}>
               <span>الصافي المطلوب تسليمه</span><span>{numFmt(netAmount)} د.أ</span>
@@ -14030,7 +14035,7 @@ function CashVanSaleBatchDetail({ batch, repName, saleItems, user, onEditSale, o
                 <div className="print-client-grid">
                   <div className="field-row"><label>المندوب:</label> <strong>{repName}</strong></div>
                   <div className="field-row"><label>الفترة:</label> <strong style={{color:'var(--primary)'}}>{label}</strong></div>
-                  <div className="field-row"><label>عدد الطلبيات:</label> {batch.sales.length}</div>
+                  <div className="field-row"><label>عدد الطلبيات:</label> {itemRows.length}</div>
                   <div className="field-row"><label>تاريخ الطباعة:</label> {new Date().toLocaleDateString('ar-JO')}</div>
                 </div>
               </div>
