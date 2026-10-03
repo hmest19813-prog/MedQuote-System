@@ -2699,11 +2699,13 @@ function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
                 <span style={{fontWeight: 700, fontSize: 14, color: quoteType==='quote' ? 'var(--primary)' : 'var(--gray-700)'}}>عرض سعر</span>
                 <span style={{fontSize: 11, color: 'var(--gray-500)'}}>عرض سعر اعتيادي</span>
               </button>
+              {hasPerm(CURRENT_USER, 'tenders_access') && (
               <button type="button" onClick={() => setQuoteType('tender')} style={card(quoteType === 'tender')}>
                 <span style={{fontSize: 30}}>📑</span>
                 <span style={{fontWeight: 700, fontSize: 14, color: quoteType==='tender' ? 'var(--primary)' : 'var(--gray-700)'}}>عطاء</span>
                 <span style={{fontSize: 11, color: 'var(--gray-500)'}}>مناقصة أو عطاء رسمي</span>
               </button>
+              )}
             </div>
           </div>
 
@@ -2992,8 +2994,8 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [showSaveCustomer, setShowSaveCustomer] = useState(false);
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null); // item ينتظر اختيار الفئة
 
-  // منظّم العرض (created_by) — تعديل/إحالة محصورة بمدير النظام فقط
-  const isAdmin = user?.role === 'admin';
+  // منظّم العرض (created_by) — تعديل/إحالة محصورة بصلاحية مخصصة
+  const isAdmin = hasPerm(user,'quotes_reassign_issuer');
   const [issuerId, setIssuerId] = useState(editQuote?.created_by || null);
   const [employeeList, setEmployeeList] = useState([]);
   useEffect(() => {
@@ -3435,7 +3437,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
               <label className="form-label">النوع</label>
               <select className="form-control" value={form.quote_type||'quote'} onChange={e=>setF('quote_type',e.target.value)}>
                 <option value="quote">عرض سعر</option>
-                <option value="tender">عطاء محلي</option>
+                {hasPerm(user,'tenders_access') && <option value="tender">عطاء محلي</option>}
               </select>
             </div>
             <div className="form-group">
@@ -4450,15 +4452,16 @@ function QuotesList({ user, quotes, onReload }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const isAltCo = q => !!q.issuer_company && q.issuer_company !== 'hayat';
-  const active = quotes.filter(q => !q.archived && !q.deleted_at);
+  const visibleQuotes = hasPerm(user,'quotes_view_all') ? quotes : quotes.filter(q => q.created_by === user?.id);
+  const active = visibleQuotes.filter(q => !q.archived && !q.deleted_at);
   const allOfficial   = active.filter(q => q.status !== 'draft' && !isAltCo(q));
   const officialQuotes = allOfficial.filter(q => q.quote_type !== 'tender');
   const tenderQuotes  = allOfficial.filter(q => q.quote_type === 'tender');
   const draftQuotes   = active.filter(q => q.status === 'draft' && !isAltCo(q));
   const altCoQuotes   = active.filter(isAltCo);
-  const archivedQuotesOnly = quotes.filter(q => q.archived && q.quote_type !== 'tender');
-  const archivedTendersOnly = quotes.filter(q => q.archived && q.quote_type === 'tender');
-  const deletedQuotes  = quotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
+  const archivedQuotesOnly = visibleQuotes.filter(q => q.archived && q.quote_type !== 'tender');
+  const archivedTendersOnly = visibleQuotes.filter(q => q.archived && q.quote_type === 'tender');
+  const deletedQuotes  = visibleQuotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const [archiveSearch, setArchiveSearch] = useState('');
   const [deletedSearch, setDeletedSearch] = useState('');
   const [archiveDateFrom, setArchiveDateFrom] = useState('');
@@ -4892,9 +4895,11 @@ function QuotesList({ user, quotes, onReload }) {
           <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:isQuotesGroup?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:isQuotesGroup?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
             عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
           </button>
+          {hasPerm(user,'tenders_access') && (
           <button onClick={()=>setTab('tenders')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:isTendersGroup?'3px solid #854d0e':'3px solid transparent',background:'none',cursor:'pointer',color:isTendersGroup?'#854d0e':'var(--gray-500)',marginBottom:-2}}>
             العطاءات <span style={{background:tenderQuotes.length?'#fef9c3':'var(--gray-100)',color:tenderQuotes.length?'#854d0e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{tenderQuotes.length}</span>
           </button>
+          )}
           <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
             المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
           </button>
@@ -5164,7 +5169,7 @@ function QuotesList({ user, quotes, onReload }) {
                     {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&!q.needs_pricing&&<button className="btn btn-ghost btn-sm" onClick={()=>setPricingTarget(q)}>🏷️ طلب تسعير</button>}
                     {q.needs_pricing&&(q.pricing_requested_to===user?.id||q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>markPriced(q)}>✅ تم التسعير</button>}
                     <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>
-                    <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>confirmDraftAsTender(q)}>📑 اعتماد كعطاء</button>
+                    {hasPerm(user,'tenders_access')&&<button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>confirmDraftAsTender(q)}>📑 اعتماد كعطاء</button>}
                     {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
                   </div>
                 </div>
@@ -5215,7 +5220,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'🏢', label:'نسخ باسم شركة أخرى', hidden:!hasPerm(user,'quotes_clone_other_company'), onClick:()=>setAltCloneTarget(q) },
                       { icon:'✅', label:'اعتماد', onClick:()=>confirmDraft(q) },
-                      { icon:'📑', label:'اعتماد كعطاء', onClick:()=>confirmDraftAsTender(q) },
+                      { icon:'📑', label:'اعتماد كعطاء', hidden:!hasPerm(user,'tenders_access'), onClick:()=>confirmDraftAsTender(q) },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
                     ]}/>
                   </td>
@@ -5417,7 +5422,7 @@ function QuotesList({ user, quotes, onReload }) {
       {editing && editing._convertToInvoice && (
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
-      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null} onConfirmDraftAsTender={previewing?.status==='draft' ? ()=>confirmDraftAsTender(previewing) : null}/>}
+      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null} onConfirmDraftAsTender={previewing?.status==='draft' && hasPerm(user,'tenders_access') ? ()=>confirmDraftAsTender(previewing) : null}/>}
       {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={(orderNo)=>{ const q=orderingQ; setOrderingQ(null); setArchiveConvertedQ({...q, _orderNo: orderNo||''}); onReload(); }} onClose={()=>setOrderingQ(null)}/>}
       {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote={`تم تحويل العرض إلى طلب${archiveConvertedQ._orderNo ? ` رقم ${archiveConvertedQ._orderNo}` : ''}`} onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
@@ -6966,10 +6971,13 @@ const ROLE_BADGE  = { admin:'badge-approved', employee:'badge-sent', user:'badge
 
 const PERM_GROUPS = [
   { label: 'عام', icon: '📊', perms: [
-    { key: 'dashboard_access', label: 'الوصول للوحة التحكم الرئيسية' },
+    { key: 'dashboard_access',    label: 'الوصول للوحة التحكم الرئيسية' },
+    { key: 'ai_assistant_access', label: 'الوصول للمساعد الذكي (استهلاك تكلفة API)' },
+    { key: 'changelog_manage',    label: 'إضافة وتعديل وحذف تحديثات دليل الاستخدام' },
   ]},
   { label: 'عروض الأسعار', icon: '📄', perms: [
     { key: 'quotes_access',          label: 'الوصول لصفحة عروض الأسعار' },
+    { key: 'tenders_access',         label: 'الوصول لتبويب العطاءات' },
     { key: 'quotes_create',          label: 'إنشاء عرض سعر جديد' },
     { key: 'quotes_clone',           label: 'نسخ عرض سعر لعميل آخر' },
     { key: 'quotes_clone_other_company', label: 'نسخ عرض سعر باسم شركة أخرى (بسعر أعلى)' },
@@ -6978,6 +6986,7 @@ const PERM_GROUPS = [
     { key: 'quotes_delete',          label: 'حذف عروض الأسعار' },
     { key: 'quotes_validity_override', label: `تعديل مدة صلاحية العرض (الافتراضي ${QUOTE_VALIDITY_DAYS} يوم)` },
     { key: 'quotes_view_issuer',     label: 'مشاهدة مصدر العرض والتصفية حسبه' },
+    { key: 'quotes_reassign_issuer', label: 'تغيير مُصدِر العرض (إحالة لموظف آخر)' },
     { key: 'deleted_quotes_access',  label: 'الوصول لعروض الأسعار المحذوفة' },
   ]},
   { label: 'الطلبات', icon: '📦', perms: [
@@ -7003,12 +7012,21 @@ const PERM_GROUPS = [
   { label: 'الفواتير والدفعات', icon: '💰', perms: [
     { key: 'accounting_access', label: 'الوصول لصفحة إدارة المحاسبة' },
     { key: 'payments_delete',   label: 'حذف الدفعات من الفواتير' },
+    { key: 'vouchers_access',   label: 'الوصول لسندات القبض والصرف' },
+    { key: 'vouchers_create',   label: 'إنشاء سند قبض/صرف جديد' },
+    { key: 'vouchers_delete',   label: 'أرشفة سند قبض/صرف' },
   ]},
   { label: 'العملاء', icon: '🏢', perms: [
     { key: 'customers_access', label: 'الوصول لقائمة العملاء' },
     { key: 'customers_create', label: 'إضافة عميل جديد' },
     { key: 'customers_edit',   label: 'تعديل بيانات العملاء' },
     { key: 'customers_delete', label: 'حذف العملاء وإدارة القوائم' },
+    { key: 'customers_approve', label: 'الموافقة/رفض تسجيل عميل جديد' },
+    { key: 'prospects_access',  label: 'الوصول لتبويب العملاء المحتملين' },
+    { key: 'prospects_create',  label: 'إضافة عميل محتمل' },
+    { key: 'prospects_edit',    label: 'تعديل عميل محتمل' },
+    { key: 'prospects_delete',  label: 'حذف عميل محتمل' },
+    { key: 'prospects_convert', label: 'تحويل عميل محتمل لعميل فعلي' },
     { key: 'export_customers_create', label: 'إضافة عميل تصدير جديد' },
     { key: 'export_customers_edit',   label: 'تعديل بيانات عملاء التصدير' },
     { key: 'export_customers_delete', label: 'حذف عملاء التصدير' },
@@ -7050,25 +7068,38 @@ const PERM_GROUPS = [
     { key: 'supply_chain_delete',       label: 'حذف ملفات التوريد' },
   ]},
   { label: 'الموارد البشرية', icon: '👥', perms: [
-    { key: 'hr_access', label: 'الوصول لقسم الموارد البشرية' },
+    { key: 'hr_access',              label: 'الوصول لقسم الموارد البشرية' },
+    { key: 'hr_employees_edit',      label: 'إضافة وتعديل وحذف ملفات الموظفين' },
+    { key: 'hr_salaries_access',     label: 'مشاهدة الرواتب الأساسية وتبويب الرواتب' },
+    { key: 'hr_salaries_edit',       label: 'تعديل/توليد/صرف الرواتب' },
+    { key: 'hr_attendance_edit',     label: 'تسجيل الحضور والغياب' },
+    { key: 'hr_periodic_tasks_edit', label: 'إدارة المهام الدورية للموظفين' },
+    { key: 'hr_letters_create',      label: 'إصدار وحذف كتب الموظفين' },
   ]},
   { label: 'التواصل الداخلي', icon: '💬', perms: [
-    { key: 'tasks_access',           label: 'الوصول لنظام المهام' },
-    { key: 'change_requests_access', label: 'الوصول لطلبات التعديل' },
-    { key: 'inbox_access',           label: 'الوصول للبريد الوارد' },
+    { key: 'tasks_access',             label: 'الوصول لنظام المهام' },
+    { key: 'tasks_manage',             label: 'إنشاء وإدارة المهام (تكليف، نقل، حذف)' },
+    { key: 'change_requests_access',   label: 'الوصول لطلبات التعديل' },
+    { key: 'change_requests_manage',   label: 'الرد وتغيير حالة وحذف طلبات التعديل (غير طلباتك)' },
+    { key: 'inbox_access',             label: 'الوصول للبريد الوارد' },
+    { key: 'inbox_manage',             label: 'تعديل/حذف عناصر البريد الوارد (غير عناصرك)' },
   ]},
 ];
 
 const DEFAULT_EMPLOYEE_PERMS = {
   dashboard_access: true,
+  ai_assistant_access: false, changelog_manage: false,
   quotes_access: true,
+  tenders_access: true,
   quotes_create: true,  quotes_clone: true,     quotes_clone_other_company: false, quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
-  quotes_validity_override: false, quotes_view_issuer: false,
+  quotes_validity_override: false, quotes_view_issuer: false, quotes_reassign_issuer: false,
   deleted_quotes_access: false,
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
   daily_orders_access: true, daily_orders_create: true, daily_orders_edit: true, daily_orders_delete: false, daily_orders_prepare: false,
   cashvan_access: false, cashvan_create: false, cashvan_edit: false, cashvan_delete: false, cashvan_view_all: false,
   customers_access: true, customers_create: true, customers_edit: false, customers_delete: false,
+  customers_approve: false,
+  prospects_access: true, prospects_create: true, prospects_edit: true, prospects_delete: true, prospects_convert: true,
   export_customers_create: true, export_customers_edit: false, export_customers_delete: false,
   catalog_access: true, catalog_edit: false,    catalog_delete: false,
   chemicals_access: false, chemicals_edit: false, chemicals_delete: false, chem_recipes_approve: false,
@@ -7076,13 +7107,18 @@ const DEFAULT_EMPLOYEE_PERMS = {
   chem_orders_create: false, chem_orders_prepare: false,
   letters_access: true, letters_manage: false,
   archive_access: true, activity_access: false,
-  accounting_access: true,
+  accounting_access: false,
   payments_delete: false,
+  vouchers_access: false, vouchers_create: false, vouchers_delete: false,
   hr_access: false,
+  hr_employees_edit: true, hr_salaries_access: false, hr_salaries_edit: false,
+  hr_attendance_edit: true, hr_periodic_tasks_edit: true, hr_letters_create: true,
   suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
   supplier_invoices_create: false, supplier_payments_create: false,
   supply_chain_access: true, supply_chain_create: true, supply_chain_edit: true, supply_chain_delete: false,
-  tasks_access: true, change_requests_access: true, inbox_access: true,
+  tasks_access: true, tasks_manage: false,
+  change_requests_access: true, change_requests_manage: false,
+  inbox_access: false, inbox_manage: false,
 };
 
 function UserForm({ editUser, currentUser, onSave, onClose }) {
@@ -8060,14 +8096,14 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
       <div className="erp-toolbar">
         <button className="btn btn-ghost btn-sm" onClick={onBack}>← رجوع للقائمة</button>
         <div style={{flex:1}}/>
-        {user?.role === 'admin' && customer.approval_status === 'pending' && <>
+        {hasPerm(user,'customers_approve') && customer.approval_status === 'pending' && <>
           <button className="btn btn-primary btn-sm" onClick={()=>onApprove(customer)}>✅ موافقة</button>
           <button className="btn btn-danger btn-sm" onClick={()=>onReject(customer)}>❌ رفض</button>
         </>}
-        {user?.role === 'admin' && customer.approval_status === 'rejected' && <>
+        {hasPerm(user,'customers_approve') && customer.approval_status === 'rejected' && <>
           <button className="btn btn-primary btn-sm" onClick={()=>onApprove(customer)}>✅ موافقة الآن</button>
         </>}
-        <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>
+        {hasPerm(user,'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>}
         <button className="btn btn-ghost btn-sm" onClick={printCustomerReport}>🖨️ طباعة</button>
       </div>
 
@@ -9415,7 +9451,7 @@ function ProspectsTab({ user, profiles, onCountChange }) {
             </select>
           </div>
         </FilterPopover>
-        <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ عميل محتمل</button>
+        {hasPerm(user,'prospects_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>➕ عميل محتمل</button>}
       </div>
 
       {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
@@ -9435,9 +9471,9 @@ function ProspectsTab({ user, profiles, onCountChange }) {
                   p.notes && {icon:'📝', text: p.notes},
                 ]}
                 actions={<>
-                  <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(p); setShowForm(true); }} title="تعديل" style={{padding:'3px 7px'}}>✏️</button>
-                  <button className="btn btn-primary btn-sm" onClick={()=>setConverting(p)} title="تحويل لعميل" style={{padding:'3px 7px',fontSize:11}}>🔄 تحويل</button>
-                  <button className="btn btn-danger btn-sm" onClick={()=>deleteProspect(p)} style={{padding:'3px 7px'}}>🗑</button>
+                  {hasPerm(user,'prospects_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(p); setShowForm(true); }} title="تعديل" style={{padding:'3px 7px'}}>✏️</button>}
+                  {hasPerm(user,'prospects_convert') && <button className="btn btn-primary btn-sm" onClick={()=>setConverting(p)} title="تحويل لعميل" style={{padding:'3px 7px',fontSize:11}}>🔄 تحويل</button>}
+                  {hasPerm(user,'prospects_delete') && <button className="btn btn-danger btn-sm" onClick={()=>deleteProspect(p)} style={{padding:'3px 7px'}}>🗑</button>}
                 </>}
               />
             ))}
@@ -10964,8 +11000,8 @@ function CustomersPage({ user }) {
       {/* Tabs */}
       <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5'}}>
         <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({visibleCustomers.length})</button>
-        {user?.role === 'admin' && <button style={tabStyle('approvals')} onClick={()=>setTab('approvals')}>⏳ بانتظار الموافقة {pendingCustomers.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{pendingCustomers.length}</span>}</button>}
-        <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>
+        {hasPerm(user,'customers_approve') && <button style={tabStyle('approvals')} onClick={()=>setTab('approvals')}>⏳ بانتظار الموافقة {pendingCustomers.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{pendingCustomers.length}</span>}</button>}
+        {hasPerm(user,'prospects_access') && <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>}
         <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
         <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
       </div>
@@ -11005,13 +11041,13 @@ function CustomersPage({ user }) {
         )}
       </>}
 
-      {tab === 'prospects' && <ProspectsTab user={user} profiles={profiles} onCountChange={setProspectCount}/>}
+      {tab === 'prospects' && hasPerm(user,'prospects_access') && <ProspectsTab user={user} profiles={profiles} onCountChange={setProspectCount}/>}
 
       {tab === 'online' && <OnlineCustomersTab user={user} onCountChange={setOnlineCount}/>}
 
       {tab === 'export' && <ExportCustomersTab user={user} profiles={profiles} onCountChange={setExportCount}/>}
 
-      {tab === 'approvals' && user?.role === 'admin' && (() => {
+      {tab === 'approvals' && hasPerm(user,'customers_approve') && (() => {
         const list = approvalsView === 'pending' ? pendingCustomers : rejectedCustomers;
         return <>
           <div style={{display:'flex',gap:8,marginBottom:14}}>
@@ -18035,7 +18071,7 @@ function CRDetail({ request, user, profiles, onBack, onUpdate }) {
   const [req, setReq]         = useState(request);
   const [showEdit, setShowEdit] = useState(false);
   const bottomRef             = useRef(null);
-  const isAdmin               = user?.role==='admin';
+  const isAdmin               = hasPerm(user,'change_requests_manage');
   const canEdit                = isAdmin || req.user_id===user?.id;
 
   useEffect(() => { loadReplies(); }, [request.id]);
@@ -18164,7 +18200,7 @@ function TasksPage({ user }) {
   const [filterBy, setFilterBy]         = useState('all');
   const [dragTaskId, setDragTaskId]     = useState(null);
   const [dragOverCol, setDragOverCol]   = useState(null);
-  const canManage = user?.role==='admin';
+  const canManage = hasPerm(user,'tasks_manage');
 
   useEffect(()=>{
     sb.from('profiles').select('id,full_name').then(({data})=>{
@@ -18695,8 +18731,7 @@ function InboxDetail({ item, user, profiles, onClose, onUpdate, onDelete }) {
   const [it, setIt]             = useState(item);
   const [showEdit, setShowEdit] = useState(false);
   const isOwner                 = it.user_id===user?.id;
-  const isAdmin                 = user?.role==='admin';
-  const canEdit                 = isOwner||isAdmin;
+  const canEdit                 = isOwner||hasPerm(user,'inbox_manage');
 
   const changeStatus=async s=>{
     const {data,error}=await sb.from('inbox_items').update({status:s,updated_at:new Date().toISOString()}).eq('id',it.id).select().single();
@@ -18897,7 +18932,7 @@ function ChangelogModal({ user, onClose }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = hasPerm(user,'changelog_manage');
 
   const load = () => {
     sb.from('changelog_entries').select('*').order('created_at', {ascending:false})
@@ -19570,7 +19605,6 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
   const [pwd, setPwd] = useState('');
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const canManageLetters = hasPerm(user, 'letters_manage');
-  const isAdmin = user?.role === 'admin';
   const rteRef = useRef(null);
 
   /* يحقن بيانات الكتاب (السادة/عناية/التاريخ/الموضوع) كنص عادي بأول صندوق التحرير —
@@ -19750,7 +19784,7 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
               <div className="form-group">
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <label className="form-label">التصنيف</label>
-                  {isAdmin && (
+                  {canManageLetters && (
                     <div style={{display:'flex',gap:5}}>
                       <button type="button" onClick={()=>renameCategory(currentMainId, currentMain?.label)} title="تعديل اسم التصنيف"
                         style={{fontSize:11,fontWeight:700,padding:'1px 7px',borderRadius:10,border:'1px solid var(--gray-300)',background:'#fff',color:'var(--gray-600)',cursor:'pointer'}}>✏️</button>
@@ -19768,11 +19802,11 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
                   {catTree.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
                 </select>
 
-                {(currentSubs.length>0 || isAdmin) && (
+                {(currentSubs.length>0 || canManageLetters) && (
                   <div style={{marginTop:10}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                       <label className="form-label">التبويب</label>
-                      {isAdmin && (() => {
+                      {canManageLetters && (() => {
                         const currentSub = currentSubs.find(s=>s.id===letterCatNormalize(form.category));
                         return (
                           <div style={{display:'flex',gap:5}}>
@@ -20874,7 +20908,7 @@ function HRPage({ user }) {
     { id: 'attendance', label: 'الحضور والغياب', icon: '📅' },
     { id: 'periodic_tasks', label: 'المهام الدورية', icon: '🗓️' },
     { id: 'letters',   label: 'الكتب',           icon: '📝' },
-    { id: 'salaries',  label: 'الرواتب',         icon: '💰' },
+    ...(hasPerm(user,'hr_salaries_access') ? [{ id: 'salaries',  label: 'الرواتب',         icon: '💰' }] : []),
   ];
   return (
     <div>
@@ -20892,7 +20926,7 @@ function HRPage({ user }) {
       {tab==='attendance' && <HRAttendance/>}
       {tab==='periodic_tasks' && <HRPeriodicTasks/>}
       {tab==='letters'   && <HRLetters user={user}/>}
-      {tab==='salaries'  && <HRSalaries/>}
+      {tab==='salaries'  && hasPerm(user,'hr_salaries_access') && <HRSalaries/>}
     </div>
   );
 }
@@ -20940,7 +20974,7 @@ function HREmployees() {
             onChange={e => setSearch(e.target.value)} style={{width:220}}/>
           <span style={{fontSize:13, color:'var(--gray-400)'}}>{filtered.length} موظف</span>
         </div>
-        <button className="btn btn-primary" onClick={() => { setEditEmp(null); setShowForm(true); }}>+ إضافة موظف</button>
+        {hasPerm(CURRENT_USER,'hr_employees_edit') && <button className="btn btn-primary" onClick={() => { setEditEmp(null); setShowForm(true); }}>+ إضافة موظف</button>}
       </div>
 
       {loading ? (
@@ -20950,7 +20984,7 @@ function HREmployees() {
           <table className="table">
             <thead><tr>
               <th>الاسم</th><th>المسمى الوظيفي</th><th>القسم</th>
-              <th>تاريخ التعيين</th><th>الراتب الأساسي</th><th>الهاتف</th><th>الحالة</th><th>إجراءات</th>
+              <th>تاريخ التعيين</th>{hasPerm(CURRENT_USER,'hr_salaries_access') && <th>الراتب الأساسي</th>}<th>الهاتف</th><th>الحالة</th><th>إجراءات</th>
             </tr></thead>
             <tbody>
               {filtered.length === 0 ? (
@@ -20961,17 +20995,21 @@ function HREmployees() {
                   <td>{emp.job_title||'—'}</td>
                   <td>{emp.department||'—'}</td>
                   <td>{emp.hire_date ? new Date(emp.hire_date).toLocaleDateString('ar') : '—'}</td>
+                  {hasPerm(CURRENT_USER,'hr_salaries_access') && (
                   <td style={{direction:'ltr', textAlign:'right', fontVariantNumeric:'tabular-nums'}}>
                     {emp.base_salary ? Number(emp.base_salary).toLocaleString('ar') + ' د.أ' : '—'}
                   </td>
+                  )}
                   <td>{emp.phone||'—'}</td>
                   <td><span className={`badge ${EMP_STATUS_BADGE[emp.status]||'badge-sent'}`}>{EMP_STATUS_LABEL[emp.status]||emp.status}</span></td>
                   <td>
+                    {hasPerm(CURRENT_USER,'hr_employees_edit') && (
                     <div style={{display:'flex', gap:6}}>
                       <button className="btn btn-sm" onClick={() => { setEditEmp(emp); setShowForm(true); }}>تعديل</button>
                       <button className="btn btn-sm" style={{background:'var(--danger-light)', color:'var(--danger)'}}
                         onClick={() => setDelConfirm(emp)}>حذف</button>
                     </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -21058,10 +21096,12 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
               <label>تاريخ التعيين</label>
               <input type="date" className="form-control" value={form.hire_date} onChange={e => upd('hire_date', e.target.value)}/>
             </div>
+            {hasPerm(CURRENT_USER,'hr_salaries_access') && (
             <div className="form-group">
               <label>الراتب الأساسي (د.أ)</label>
-              <input type="number" className="form-control" value={form.base_salary} onChange={e => upd('base_salary', e.target.value)} min="0" placeholder="0"/>
+              <input type="number" className="form-control" value={form.base_salary} onChange={e => upd('base_salary', e.target.value)} min="0" placeholder="0" disabled={!hasPerm(CURRENT_USER,'hr_salaries_edit')}/>
             </div>
+            )}
             <div className="form-group">
               <label>رقم الهاتف</label>
               <input className="form-control" value={form.phone} onChange={e => upd('phone', e.target.value)} placeholder="05XXXXXXXX"/>
@@ -21183,26 +21223,35 @@ function HRPeriodicTasks() {
               <div key={f.key} className="card" style={{padding:14}}>
                 <div style={{fontWeight:700, marginBottom:10, color:'var(--primary)'}}>{f.label}</div>
                 {list.length===0 && <div style={{fontSize:12, color:'var(--gray-400)', marginBottom:8}}>لا توجد مهام</div>}
-                {list.map((t,i) => (
+                {list.map((t,i) => {
+                  const canEditTasks = hasPerm(CURRENT_USER,'hr_periodic_tasks_edit');
+                  return (
                   <div key={t.id} style={{display:'flex', alignItems:'center', gap:6, marginBottom:6, opacity: t.is_active===false?0.5:1}}>
+                    {canEditTasks && (
                     <div style={{display:'flex', flexDirection:'column'}}>
                       <button type="button" onClick={()=>moveTask(t.id,-1)} disabled={i===0} title="نقل لأعلى" style={{border:'none',background:'none',cursor:'pointer',fontSize:10,padding:0,lineHeight:1,opacity:i===0?.3:1}}>▲</button>
                       <button type="button" onClick={()=>moveTask(t.id,1)} disabled={i===list.length-1} title="نقل لأسفل" style={{border:'none',background:'none',cursor:'pointer',fontSize:10,padding:0,lineHeight:1,opacity:i===list.length-1?.3:1}}>▼</button>
                     </div>
-                    <input className="form-control" style={{flex:1, fontSize:13, padding:'5px 8px'}} value={t.title}
+                    )}
+                    <input className="form-control" style={{flex:1, fontSize:13, padding:'5px 8px'}} value={t.title} disabled={!canEditTasks}
                       onChange={e=>setTasks(ts=>ts.map(x=>x.id===t.id?{...x,title:e.target.value}:x))}
                       onBlur={e=>updateTask(t.id,{title:e.target.value})}/>
+                    {canEditTasks && (<>
                     <button type="button" title={t.is_active===false?'تفعيل':'إيقاف مؤقت'} onClick={()=>updateTask(t.id,{is_active: t.is_active===false})}
                       style={{border:'none',background:'none',cursor:'pointer',fontSize:14}}>{t.is_active===false?'⏸️':'✅'}</button>
                     <button type="button" title="حذف" onClick={()=>deleteTask(t.id)} style={{border:'none',background:'none',cursor:'pointer',color:'var(--danger)',fontSize:14}}>🗑</button>
+                    </>)}
                   </div>
-                ))}
+                  );
+                })}
+                {hasPerm(CURRENT_USER,'hr_periodic_tasks_edit') && (
                 <div style={{display:'flex', gap:6, marginTop:8}}>
                   <input className="form-control" placeholder="+ مهمة جديدة" style={{flex:1, fontSize:13, padding:'5px 8px'}}
                     value={newTitle[f.key]||''} onChange={e=>setNewTitle(n=>({...n,[f.key]:e.target.value}))}
                     onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addTask(f.key);}}}/>
                   <button className="btn btn-ghost btn-sm" onClick={()=>addTask(f.key)}>+</button>
                 </div>
+                )}
               </div>
             );
           })}
@@ -21448,7 +21497,7 @@ function HRAttendance() {
         <select className="form-control" style={{width:90}} value={year} onChange={e => setYear(Number(e.target.value))}>
           {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        {hasPerm(CURRENT_USER,'hr_attendance_edit') && <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>}
       </div>
 
       <div style={{display:'flex', gap:10, marginBottom:16, flexWrap:'wrap'}}>
@@ -21475,7 +21524,7 @@ function HRAttendance() {
               }}>
                 <div style={{fontSize:10, color:'var(--gray-400)', marginBottom:2}}>{getDayName(day)}</div>
                 <div style={{fontSize:16, fontWeight:600, color: weekend&&!att ? 'var(--gray-400)' : 'var(--gray-700)'}}>{day}</div>
-                <select value={status} onChange={e => setDay(day, e.target.value)}
+                <select value={status} onChange={e => setDay(day, e.target.value)} disabled={!hasPerm(CURRENT_USER,'hr_attendance_edit')}
                   style={{
                     fontSize:10, borderRadius:4, cursor:'pointer', width:'100%', marginTop:4,
                     textAlign:'center', fontWeight:600, outline:'none',
@@ -21543,7 +21592,7 @@ function HRLetters({ user }) {
     <div>
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
         <span style={{fontSize:13, color:'var(--gray-400)'}}>{letters.length} كتاب مصدر</span>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ إصدار كتاب</button>
+        {hasPerm(user,'hr_letters_create') && <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ إصدار كتاب</button>}
       </div>
 
       <div className="table-container">
@@ -21561,8 +21610,8 @@ function HRLetters({ user }) {
                 <td>
                   <div style={{display:'flex', gap:6}}>
                     <button className="btn btn-sm" onClick={() => setPreview(lt)}>معاينة</button>
-                    <button className="btn btn-sm" style={{background:'var(--danger-light)', color:'var(--danger)'}}
-                      onClick={() => handleDelete(lt.id)}>حذف</button>
+                    {hasPerm(user,'hr_letters_create') && <button className="btn btn-sm" style={{background:'var(--danger-light)', color:'var(--danger)'}}
+                      onClick={() => handleDelete(lt.id)}>حذف</button>}
                   </div>
                 </td>
               </tr>
@@ -21694,7 +21743,7 @@ function HRLetterForm({ employees, user, onClose, onSave }) {
             <div className="form-group">
               <label>نوع الكتاب</label>
               <select className="form-control" value={form.letter_type} onChange={e => upd('letter_type', e.target.value)}>
-                {LETTER_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                {LETTER_TYPES.filter(t => t.key!=='salary' || hasPerm(user,'hr_salaries_access')).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
               </select>
             </div>
             <div className="form-group" style={{gridColumn:'1 / -1'}}>
@@ -21794,6 +21843,8 @@ function HRSalaries() {
     load();
   };
 
+  const canEditSalary = hasPerm(CURRENT_USER,'hr_salaries_edit');
+
   return (
     <div>
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10}}>
@@ -21805,9 +21856,9 @@ function HRSalaries() {
             {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
-        <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+        {canEditSalary && <button className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
           {generating ? 'جاري التوليد...' : '⚙ توليد مسير الرواتب'}
-        </button>
+        </button>}
       </div>
 
       <div style={{display:'flex', gap:10, marginBottom:18, flexWrap:'wrap'}}>
@@ -21849,13 +21900,14 @@ function HRSalaries() {
                 <tr key={emp.id} style={{background: status==='paid' ? '#f0fdf4' : 'inherit'}}>
                   <td style={{fontWeight:600}}>{emp.full_name}</td>
                   <td style={{fontSize:12, color:'var(--gray-500)'}}>{emp.job_title||'—'}</td>
-                  <td><SalaryCell value={base} onSave={v => upsertRow(emp.id, { base_salary: v })}/></td>
-                  <td><SalaryCell value={bonus} onSave={v => upsertRow(emp.id, { bonus: v })} color="#16a34a"/></td>
-                  <td><SalaryCell value={deductions} onSave={v => upsertRow(emp.id, { deductions: v })} color="#dc2626"/></td>
+                  <td><SalaryCell value={base} editable={canEditSalary} onSave={v => upsertRow(emp.id, { base_salary: v })}/></td>
+                  <td><SalaryCell value={bonus} editable={canEditSalary} onSave={v => upsertRow(emp.id, { bonus: v })} color="#16a34a"/></td>
+                  <td><SalaryCell value={deductions} editable={canEditSalary} onSave={v => upsertRow(emp.id, { deductions: v })} color="#dc2626"/></td>
                   <td style={{fontWeight:700, color:'#0284c7', direction:'ltr', textAlign:'right'}}>
                     {Number(net).toLocaleString('ar')} د.أ
                   </td>
                   <td>
+                    {canEditSalary ? (
                     <button className="btn btn-sm"
                       style={status==='paid'
                         ? {background:'#dcfce7', color:'#16a34a', border:'1px solid #86efac'}
@@ -21863,8 +21915,13 @@ function HRSalaries() {
                       onClick={() => togglePaid(emp.id, status)}>
                       {status==='paid' ? '✓ مصروف' : 'صرف'}
                     </button>
+                    ) : (
+                    <span className="badge" style={status==='paid' ? {background:'#dcfce7',color:'#16a34a'} : {background:'var(--gray-100)',color:'var(--gray-500)'}}>
+                      {status==='paid' ? '✓ مصروف' : 'بالانتظار'}
+                    </span>
+                    )}
                   </td>
-                  <td><SalaryNoteCell value={notes} onSave={v => upsertRow(emp.id, { notes: v })}/></td>
+                  <td><SalaryNoteCell value={notes} editable={canEditSalary} onSave={v => upsertRow(emp.id, { notes: v })}/></td>
                 </tr>
               ))}
             </tbody>
@@ -21875,7 +21932,7 @@ function HRSalaries() {
   );
 }
 
-function SalaryCell({ value, onSave, color }) {
+function SalaryCell({ value, onSave, color, editable=true }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal]         = useState(value);
   useEffect(() => { setVal(value); }, [value]);
@@ -21890,15 +21947,15 @@ function SalaryCell({ value, onSave, color }) {
       }}/>
   );
   return (
-    <span onClick={() => { setVal(value); setEditing(true); }}
-      style={{cursor:'pointer', color: color||'inherit', direction:'ltr', display:'inline-block',
-              minWidth:65, borderBottom:'1px dashed var(--gray-300)', paddingBottom:1}}>
+    <span onClick={() => { if (!editable) return; setVal(value); setEditing(true); }}
+      style={{cursor: editable?'pointer':'default', color: color||'inherit', direction:'ltr', display:'inline-block',
+              minWidth:65, borderBottom: editable?'1px dashed var(--gray-300)':'none', paddingBottom:1}}>
       {Number(value).toLocaleString('ar')} د.أ
     </span>
   );
 }
 
-function SalaryNoteCell({ value, onSave }) {
+function SalaryNoteCell({ value, onSave, editable=true }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal]         = useState(value||'');
   useEffect(() => { setVal(value||''); }, [value]);
@@ -21913,8 +21970,8 @@ function SalaryNoteCell({ value, onSave }) {
       }}/>
   );
   return (
-    <span onClick={() => { setVal(value||''); setEditing(true); }}
-      style={{cursor:'pointer', fontSize:12, color:'var(--gray-500)', borderBottom:'1px dashed var(--gray-300)', minWidth:50, display:'inline-block'}}>
+    <span onClick={() => { if (!editable) return; setVal(value||''); setEditing(true); }}
+      style={{cursor: editable?'pointer':'default', fontSize:12, color:'var(--gray-500)', borderBottom: editable?'1px dashed var(--gray-300)':'none', minWidth:50, display:'inline-block'}}>
       {val||'—'}
     </span>
   );
@@ -22242,7 +22299,7 @@ function VoucherPrintModal({ voucher, onClose }) {
 }
 
 function FormsPage({ user, quotes, onReload }) {
-  const canVouchers = hasPerm(user, 'letters_access');
+  const canVouchers = hasPerm(user, 'vouchers_access');
   const [tab, setTab]           = useState(canVouchers ? 'payment' : 'invoices');
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -22285,7 +22342,7 @@ function FormsPage({ user, quotes, onReload }) {
       <div className="flex gap-1">
         <button className="btn btn-ghost btn-sm" onClick={()=>setPrinting(v)}>🖨️</button>
         <button className="btn btn-ghost btn-sm" onClick={()=>{setEditing(v);setShowForm(true);}}>✏️</button>
-        <button className="btn btn-danger btn-sm" style={{fontSize:11}} onClick={()=>setArchiving(v)}>🗄️</button>
+        {hasPerm(user,'vouchers_delete') && <button className="btn btn-danger btn-sm" style={{fontSize:11}} onClick={()=>setArchiving(v)}>🗄️</button>}
       </div>
     )},
   ];
@@ -22309,10 +22366,10 @@ function FormsPage({ user, quotes, onReload }) {
         <input className="form-control" style={{maxWidth:280}}
           placeholder={`بحث في سندات ${tabLabel}...`}
           value={search} onChange={e=>setSearch(e.target.value)}/>
-        <button className="btn btn-primary btn-sm" style={{marginRight:'auto'}}
+        {hasPerm(user,'vouchers_create') && <button className="btn btn-primary btn-sm" style={{marginRight:'auto'}}
           onClick={()=>{setEditing(null);setShowForm(true);}}>
           ➕ {tabLabel} جديد
-        </button>
+        </button>}
       </div>
 
       {/* الجدول */}
@@ -22642,7 +22699,7 @@ function App() {
       <BottomNav user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onMoreClick={() => setMobileMenuOpen(true)}/>
       {mobileMenuOpen && <MobileSheet user={user} page={page} setPage={p => { setPage(p); setMobileMenuOpen(false); }} onClose={() => setMobileMenuOpen(false)} onLogout={handleLogout}/>}
       <ChatPanel user={user}/>
-      {user.role==='admin' && <AIAssistantPanel user={user}/>}
+      {hasPerm(user,'ai_assistant_access') && <AIAssistantPanel user={user}/>}
       <Toasts/>
     </div>
   );
