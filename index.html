@@ -5493,7 +5493,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
 
   const handleUpload = async () => {
-    if (!form.title.trim()) { toast('اكتب عنوان الملحق', 'error'); return; }
+    if (!form.title.trim() && !isSuperAdmin(user)) { toast('اكتب عنوان الملحق', 'error'); return; }
     if (!form.file) { toast('اختر ملف', 'error'); return; }
     if (form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
     setUploading(true);
@@ -5502,7 +5502,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
       const { error: upErr } = await sb.storage.from('tender-attachments').upload(path, form.file);
       if (upErr) throw upErr;
       const payload = {
-        quote_id: quote.id, category: addingCat, title: form.title.trim(),
+        quote_id: quote.id, category: addingCat, title: form.title.trim() || form.file.name,
         file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type,
         ref_number: form.ref_number.trim()||null, amount: form.amount ? parseFloat(form.amount) : null,
         issuer: form.issuer.trim()||null, issue_date: form.issue_date||null, expiry_date: form.expiry_date||null,
@@ -5510,7 +5510,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
       };
       const { error: insErr } = await sb.from('tender_attachments').insert(payload);
       if (insErr) throw insErr;
-      createLog(user, `أضاف ملحقاً (${TENDER_ATTACH_CATEGORIES.find(c=>c.key===addingCat)?.label||addingCat}) للعطاء ${quote.number}: ${form.title.trim()}`, 'quote', quote.id, quote.number);
+      createLog(user, `أضاف ملحقاً (${TENDER_ATTACH_CATEGORIES.find(c=>c.key===addingCat)?.label||addingCat}) للعطاء ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
       toast('تم رفع الملحق ✓', 'success');
       setAddingCat(null); setForm(blankForm); load();
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
