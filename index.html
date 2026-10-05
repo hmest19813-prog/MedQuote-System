@@ -4158,6 +4158,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [discussTarget, setDiscussTarget]   = useState(null);
   const [pricingTarget, setPricingTarget]   = useState(null);
+  const [attachTarget, setAttachTarget]     = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -4314,6 +4315,14 @@ function QuotesList({ user, quotes, onReload }) {
         return (isFinite(pct) && pct >= 0) ? pct : DEFAULT_TAX_PCT;
       };
 
+      // صفوف "تكميلية" بلا رقم بند وبلا سعر مو دايماً مواصفات إضافية للبند —
+      // أحياناً بتكون بداية قسم الشروط/الملاحظات بذيل الملف (كفالة، صلاحية العرض، معلومات
+      // اتصال المورد...) اللي الموردين غالباً يكتبوها بنفس عمود وصف الصنف بعد آخر بند مباشرة.
+      // نكشفها بوجود كلمات مفتاحية معروفة لهاي الفقرات أو رقم هاتف، أو طول نص غير معقول
+      // لمواصفة صنف — ولو انكشفت نوقف قراءة الملف بالكامل بدل إلحاقها بوصف آخر بند
+      const FOOTER_NOTES_RE = /كفالة|ضمان|شروط العرض|ملاحظات|صلاحية العرض|شامل الضريبة|غير شامل|نرجو عدم التردد|للاتصال|الاتصال|هاتف|جوال|validity|warranty|\d{7,}/i;
+      const looksLikeFooterNotes = (text) => text.length > 200 || FOOTER_NOTES_RE.test(text);
+
       const items = [];
       let currentItem = null;
       let currentIsBundle = false; // آخر بند مُضاف بلا سعر خاص فيه — يجمع المكوّنات التالية ضمنه
@@ -4371,6 +4380,7 @@ function QuotesList({ user, quotes, onReload }) {
             items.push(currentItem);
           }
         } else if (itemName) {
+          if (looksLikeFooterNotes(itemName)) break; // وصلنا لقسم الشروط/الملاحظات بذيل الملف — نوقف هون
           // نص مواصفات تكميلي فقط (بلا سعر) — يُلحق بوصف آخر بند
           currentItem.item_name += (currentItem.item_name ? '\n' : '') + itemName;
         }
@@ -5069,6 +5079,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
+                  <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
@@ -5118,6 +5129,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
+                      { icon:'📎', label:'ملحقات', onClick:()=>setAttachTarget(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
@@ -5344,6 +5356,7 @@ function QuotesList({ user, quotes, onReload }) {
                     <div className="flex gap-2" style={{flexWrap:'nowrap',alignItems:'center'}}>
                       <button className="btn btn-ghost btn-sm" style={{color:'#6b7280',borderColor:'#d1d5db'}} onClick={()=>setEditArchiveTarget(q)} title="تعديل سبب الأرشفة">✏️ السبب</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
+                      {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>}
                       <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
                     </div>
                   </td>
@@ -5431,6 +5444,185 @@ function QuotesList({ user, quotes, onReload }) {
       {followUpTarget && <FollowUpModal quote={followUpTarget} user={user} onClose={()=>setFollowUpTarget(null)}/>}
       {discussTarget && <QuoteDiscussionModal quote={discussTarget} user={user} onClose={()=>setDiscussTarget(null)}/>}
       {pricingTarget && <PricingRequestModal quote={pricingTarget} user={user} onClose={()=>setPricingTarget(null)} onSaved={()=>{setPricingTarget(null);onReload();}}/>}
+      {attachTarget && <TenderAttachmentsModal quote={attachTarget} user={user} onClose={()=>setAttachTarget(null)}/>}
+    </div>
+  );
+}
+
+/* ===================== ملحقات العطاء (كفالات / احالات / ملحقات أخرى) ===================== */
+const TENDER_ATTACH_CATEGORIES = [
+  { key: 'guarantee', label: '📜 كفالات', empty: 'كفالات' },
+  { key: 'award',     label: '📑 احالات', empty: 'احالات' },
+  { key: 'other',     label: '📎 ملحقات أخرى', empty: 'ملحقات أخرى' },
+];
+/* سقف 5 ميغا للملف الواحد — مساحة Storage بالباقة الحالية محدودة (1GB لكامل النظام) */
+const TENDER_ATTACH_MAX_SIZE = 5 * 1024 * 1024;
+
+function TenderAttachmentsModal({ quote, user, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [addingCat, setAddingCat] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const blankForm = { title:'', ref_number:'', amount:'', issuer:'', issue_date:'', expiry_date:'', file:null };
+  const [form, setForm] = useState(blankForm);
+
+  const canWrite = quote.created_by===user?.id || hasPerm(user,'quotes_edit_all');
+  const canDelete = hasPerm(user,'quotes_delete');
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await sb.from('tender_attachments').select('*').eq('quote_id', quote.id).order('created_at', { ascending:false });
+    if (error) toast('خطأ: '+error.message, 'error');
+    setRows(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [quote.id]);
+
+  const openAdd = (cat) => { setForm(blankForm); setAddingCat(cat); };
+  const sanitizeFileName = (name) => name.replace(/[^\w.\-؀-ۿ]+/g, '_');
+  const handleFileChange = (e) => {
+    const file = e.target.files[0] || null;
+    if (file && file.size > TENDER_ATTACH_MAX_SIZE) {
+      toast(`الملف أكبر من الحد المسموح (5 ميغا) — حجمه ${(file.size/1024/1024).toFixed(1)} ميغا`, 'error');
+      e.target.value = '';
+      setForm(f => ({ ...f, file: null }));
+      return;
+    }
+    setForm(f => ({ ...f, file }));
+  };
+  const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
+
+  const handleUpload = async () => {
+    if (!form.title.trim()) { toast('اكتب عنوان الملحق', 'error'); return; }
+    if (!form.file) { toast('اختر ملف', 'error'); return; }
+    if (form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
+    setUploading(true);
+    try {
+      const path = `${quote.id}/${Date.now()}-${sanitizeFileName(form.file.name)}`;
+      const { error: upErr } = await sb.storage.from('tender-attachments').upload(path, form.file);
+      if (upErr) throw upErr;
+      const payload = {
+        quote_id: quote.id, category: addingCat, title: form.title.trim(),
+        file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type,
+        ref_number: form.ref_number.trim()||null, amount: form.amount ? parseFloat(form.amount) : null,
+        issuer: form.issuer.trim()||null, issue_date: form.issue_date||null, expiry_date: form.expiry_date||null,
+        created_by: user?.id||null,
+      };
+      const { error: insErr } = await sb.from('tender_attachments').insert(payload);
+      if (insErr) throw insErr;
+      createLog(user, `أضاف ملحقاً (${TENDER_ATTACH_CATEGORIES.find(c=>c.key===addingCat)?.label||addingCat}) للعطاء ${quote.number}: ${form.title.trim()}`, 'quote', quote.id, quote.number);
+      toast('تم رفع الملحق ✓', 'success');
+      setAddingCat(null); setForm(blankForm); load();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
+  /* رابط موقّع مؤقت (60 ثانية) مع خيار download — يفرض على متصفح العميل تحميل الملف
+     مباشرة (Content-Disposition: attachment) بدل ما يفتحه بتاب جديد، رغم إنه البكت خاص */
+  const handleDownload = async (att) => {
+    const { data, error } = await sb.storage.from('tender-attachments')
+      .createSignedUrl(att.file_path, 60, { download: att.file_name || att.title });
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    const a = document.createElement('a');
+    a.href = data.signedUrl; a.download = att.file_name || att.title;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const handleDelete = async (att) => {
+    if (!confirm(`حذف الملحق "${att.title}"؟`)) return;
+    await sb.storage.from('tender-attachments').remove([att.file_path]);
+    const { error } = await sb.from('tender_attachments').delete().eq('id', att.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `حذف ملحق العطاء ${quote.number}: ${att.title}`, 'quote', quote.id, quote.number);
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:760,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">📎 ملحقات العطاء — {quote.number}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          {loading ? <div className="empty-state">جاري التحميل...</div> : (
+            TENDER_ATTACH_CATEGORIES.map(cat => {
+              const catRows = rows.filter(r => r.category===cat.key);
+              return (
+                <div key={cat.key} className="form-group" style={{marginBottom:24}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                    <label className="form-label" style={{margin:0}}>{cat.label}</label>
+                    {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openAdd(cat.key)}>➕ إضافة</button>}
+                  </div>
+
+                  {catRows.length===0 ? (
+                    <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد {cat.empty} بعد</div>
+                  ) : (
+                    <table style={{width:'100%',fontSize:13}}>
+                      <thead><tr>
+                        <th style={{textAlign:'right'}}>العنوان</th>
+                        {cat.key==='guarantee' && <><th>رقم الكفالة</th><th>القيمة</th><th>تنتهي</th></>}
+                        <th>الملف</th><th></th>
+                      </tr></thead>
+                      <tbody>
+                        {catRows.map(r => {
+                          const expired = r.expiry_date && new Date(r.expiry_date) < new Date();
+                          const soon = r.expiry_date && !expired && (new Date(r.expiry_date) - new Date()) < 1000*60*60*24*30;
+                          return (
+                          <tr key={r.id}>
+                            <td>{r.title}</td>
+                            {cat.key==='guarantee' && <>
+                              <td style={{textAlign:'center'}}>{r.ref_number||'—'}</td>
+                              <td style={{textAlign:'center'}}>{r.amount?numFmt(r.amount)+' د.أ':'—'}</td>
+                              <td style={{textAlign:'center',fontWeight:700,color:expired?'var(--danger)':soon?'var(--warning)':'var(--gray-500)'}}>
+                                {r.expiry_date||'—'}{expired?' ⚠️':soon?' ⏳':''}
+                              </td>
+                            </>}
+                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
+                            <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
+                              <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
+                              {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(r)}>🗑️</button>}
+                            </td>
+                          </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {addingCat===cat.key && (
+                    <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
+                      <input className="form-control" placeholder="عنوان الملحق *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+                      {cat.key==='guarantee' && (
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                          <input className="form-control" placeholder="رقم الكفالة" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
+                          <input className="form-control" placeholder="البنك المُصدر" value={form.issuer} onChange={e=>setForm({...form,issuer:e.target.value})}/>
+                          <input type="number" step="0.001" className="form-control" placeholder="القيمة (د.أ)" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+                          <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الإصدار"/>
+                          <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
+                        </div>
+                      )}
+                      {cat.key==='award' && (
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                          <input className="form-control" placeholder="رقم كتاب الاحالة" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
+                          <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الاحالة"/>
+                        </div>
+                      )}
+                      <input type="file" className="form-control" onChange={handleFileChange}/>
+                      {form.file && <div style={{fontSize:11,color:'var(--gray-500)'}}>{form.file.name} ({(form.file.size/1024/1024).toFixed(2)} ميغا)</div>}
+                      <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
+                      <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingCat(null);setForm(blankForm);}}>إلغاء</button>
+                        <button className="btn btn-primary btn-sm" disabled={uploading} onClick={handleUpload}>{uploading?'...جاري الرفع':'رفع الملحق'}</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -12805,6 +12997,7 @@ function CashVanPage({ user }) {
   const [editingSettle, setEditingSettle] = useState(null);
   const [repFilter, setRepFilter] = useState('all');
   const [viewingRepId, setViewingRepId] = useState(null);
+  const [viewingStockRepId, setViewingStockRepId] = useState(null);
   const [viewingSettle, setViewingSettle] = useState(null);
   const [viewingSaleBatchKey, setViewingSaleBatchKey] = useState(null);
 
@@ -13046,7 +13239,12 @@ function CashVanPage({ user }) {
                     <td>{numFmt(f.totalSales)} د.أ</td>
                     <td>{numFmt(owed)} د.أ</td>
                     <td>{recv>0.001 ? numFmt(recv)+' د.أ' : '—'}</td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={()=>setViewingRepId(repId)}>📋 التفاصيل</button></td>
+                    <td>
+                      <div style={{display:'flex',gap:6,justifyContent:'center'}}>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setViewingRepId(repId)}>📋 التفاصيل</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setViewingStockRepId(repId)}>📦 المخزون المتبقي</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -13156,6 +13354,9 @@ function CashVanPage({ user }) {
         stockMap={stockByRep[viewingRepId]||{}} finance={financeByRep[viewingRepId]||{totalSales:0,cashCollected:0,cashSettled:0,salesResolved:0}}
         loads={loads.filter(l=>l.rep_id===viewingRepId)} sales={sales.filter(s=>s.rep_id===viewingRepId)} settlements={settlements.filter(t=>t.rep_id===viewingRepId)}
         onClose={()=>setViewingRepId(null)}/>}
+      {viewingStockRepId && <CashVanStockDetail
+        repName={cashvanRepName(reps, viewingStockRepId)} stockMap={stockByRep[viewingStockRepId]||{}}
+        onClose={()=>setViewingStockRepId(null)}/>}
       {viewingSettle && <CashVanSettleDetail
         settlement={viewingSettle} repName={cashvanRepName(reps, viewingSettle.rep_id)} sales={sales}
         onClose={()=>setViewingSettle(null)}/>}
@@ -14033,6 +14234,81 @@ function CashVanRepDetail({ repId, repName, stockMap, finance, loads, sales, set
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* عرض مبسّط + قابل للطباعة للمخزون المتبقي فقط مع المندوب — بدون مبيعات أو ماليات،
+   يفيد وقت الجرد الميداني أو تسليم البضاعة */
+function CashVanStockDetail({ repName, stockMap, onClose }) {
+  const stockRows = Object.entries(stockMap)
+    .map(([name, v]) => ({ name, remaining: (parseFloat(v.loaded)||0) - (parseFloat(v.sold)||0) }))
+    .filter(r => r.remaining > 0.001)
+    .sort((a,b) => a.name.localeCompare(b.name, 'ar'));
+
+  const printStock = () => {
+    const rows = stockRows.map(r => `
+      <tr><td>${r.name}</td><td style="font-weight:800;color:#1C6A99">${numFmt(r.remaining,2)}</td></tr>`).join('');
+
+    const body = document.body;
+    const allChildren = Array.from(body.children);
+    const originalStyles = allChildren.map(c => c.style.cssText);
+    allChildren.forEach(c => { c.style.cssText = 'display:none !important;'; });
+
+    const printDiv = document.createElement('div');
+    printDiv.id = 'temp-print-div';
+    printDiv.style.cssText = 'position:static;width:100%;padding:12mm 15mm;box-sizing:border-box;background:white;font-family:Arial,sans-serif;font-size:13px;color:#1a2e3d;direction:rtl;';
+    printDiv.innerHTML = `
+      <style>
+        h2{color:#1C6A99;margin:0 0 2px;font-size:20px;font-weight:900}
+        .sub{color:#888;font-size:11px;margin-bottom:14px}
+        table{width:100%;border-collapse:collapse;margin-top:4px}
+        th{background:#1C6A99;color:#fff;padding:7px 10px;font-size:12px;text-align:right}
+        td{padding:6px 10px;border-bottom:1px solid #e8edf2;font-size:12px}
+        tr:nth-child(even) td{background:#f9fbfc}
+        .ft{margin-top:16px;font-size:10px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:8px}
+      </style>
+      <div class="sub">${COMPANY.name_ar}</div>
+      <h2>📦 المخزون المتبقي — ${repName}</h2>
+      <div class="sub">تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</div>
+      <table>
+        <thead><tr><th>الصنف</th><th style="width:120px">الكمية المتبقية</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="2" style="text-align:center;color:#aaa;padding:16px">لا يوجد مخزون متبقٍ</td></tr>'}</tbody>
+      </table>
+      <div class="ft">${COMPANY.name_ar} — ${COMPANY.website}</div>`;
+
+    body.appendChild(printDiv);
+    window.print();
+    body.removeChild(printDiv);
+    allChildren.forEach((c,i) => { c.style.cssText = originalStyles[i]; });
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">📦 المخزون المتبقي — {repName}</span>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="btn btn-ghost btn-sm" onClick={printStock}>🖨️ طباعة</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div style={{padding:20}}>
+          {stockRows.length===0 ? <div className="empty-state">لا يوجد مخزون متبقٍ</div> : (
+            <table style={{width:'100%',fontSize:13}}>
+              <thead><tr><th style={{textAlign:'right'}}>الصنف</th><th>الكمية المتبقية</th></tr></thead>
+              <tbody>
+                {stockRows.map(r => (
+                  <tr key={r.name}>
+                    <td>{r.name}</td>
+                    <td style={{fontWeight:700,color:'var(--primary)'}}>{numFmt(r.remaining,2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
