@@ -5817,8 +5817,14 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                         <input className="form-control" placeholder="الرقم (كفالة/شيك)" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
                         <input className="form-control" placeholder="البنك" value={form.bank} onChange={e=>setForm({...form,bank:e.target.value})}/>
                         <input type="number" step="0.001" className="form-control" placeholder="القيمة (د.أ)" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
-                        <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الإصدار"/>
-                        <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
+                        <div>
+                          <div style={{fontSize:11,color:'var(--gray-400)',marginBottom:3}}>تاريخ الإصدار</div>
+                          <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الإصدار"/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:11,color:'var(--gray-400)',marginBottom:3}}>تاريخ الانتهاء</div>
+                          <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
+                        </div>
                       </div>
                       <input className="form-control" placeholder="ملاحظة (اختياري)" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/>
                       <input type="file" className="form-control" onChange={handleFileChange}/>
