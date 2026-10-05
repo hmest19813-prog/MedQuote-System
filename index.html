@@ -5707,7 +5707,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
                         <td style={{fontSize:15,fontWeight:600,whiteSpace:'nowrap'}}>{r.title}</td>
                         <td style={{textAlign:'center',fontSize:10,color:'var(--gray-400)',maxWidth:130,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={r.file_name}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
                         <td style={{textAlign:'center'}}>
-                          <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
+                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,justifyItems:'center'}}>
                             <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(r)}>👁 معاينة</button>
                             <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
                             {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openEdit(r)}>✏️ تعديل</button>}
@@ -5962,7 +5962,7 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                             </td>
                             <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:130}} title={g.file_name}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
                             <td style={{textAlign:'center'}}>
-                              <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
+                              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,justifyItems:'center'}}>
                                 <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁 معاينة</button>
                                 <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️ تحميل</button>
                                 {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openEditGuarantee(g)}>✏️ تعديل</button>}
@@ -8511,9 +8511,9 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
               <ErpField label="الموقع الإلكتروني" value={form.website} onChange={v=>setF('website',v)} placeholder="www.company.com"/>
               <ErpSelect label="المحافظة" value={form.city} onChange={v=>{ setF('city',v); setF('district',''); }} options={CUST_GOVS} placeholder="اختر المحافظة"/>
               {form.city && (dbDistricts[form.city]||CUST_DISTRICTS[form.city]) && (
-                <ErpDatalist label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} listId="gov-districts" options={dbDistricts[form.city]||CUST_DISTRICTS[form.city]} placeholder="اختر أو اكتب المنطقة"/>
+                <ErpSelect label="المنطقة / الحي" value={form.district||''} onChange={v=>setF('district',v)} options={dbDistricts[form.city]||CUST_DISTRICTS[form.city]} placeholder="اختر المنطقة"/>
               )}
-              <ErpDatalist label="التصنيف" value={form.category} onChange={v=>setF('category',v)} listId="cust-cats-list" options={dbCats} placeholder="اختر أو اكتب التصنيف"/>
+              <ErpSelect label="التصنيف" value={form.category} onChange={v=>setF('category',v)} options={dbCats} placeholder="اختر التصنيف"/>
               <ErpField label="ملاحظات عامة" value={form.notes} onChange={v=>setF('notes',v)} type="textarea" placeholder="ملاحظات عن العميل..." span/>
             </div>
 
