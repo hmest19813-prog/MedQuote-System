@@ -5545,7 +5545,7 @@ function FilePreviewModal({ bucket, path, fileName, mimeType, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{maxWidth:isPdf?'min(900px,92vw)':600,width:'100%',maxHeight:'92vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:(isPdf||isImage)?'min(1400px,95vw)':600,width:'100%',height: (isPdf||isImage) ? '95vh' : 'auto',maxHeight:'95vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">👁 {fileName||'معاينة الملف'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -5556,9 +5556,9 @@ function FilePreviewModal({ bucket, path, fileName, mimeType, onClose }) {
           ) : !url ? (
             <div className="empty-state">جاري التحميل...</div>
           ) : isPdf ? (
-            <iframe src={url} title={fileName} style={{width:'100%',height:'80vh',border:'none'}}/>
+            <iframe src={url} title={fileName} style={{width:'100%',height:'100%',border:'none'}}/>
           ) : isImage ? (
-            <img src={url} alt={fileName} style={{maxWidth:'100%',maxHeight:'80vh',objectFit:'contain'}}/>
+            <img src={url} alt={fileName} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}}/>
           ) : (
             <div style={{textAlign:'center'}}>
               <div style={{marginBottom:12,color:'var(--gray-500)'}}>لا يمكن معاينة هذا النوع من الملفات داخل المتصفح</div>
@@ -5581,6 +5581,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewTarget, setPreviewTarget] = useState(null);
+  const [editingAtt, setEditingAtt] = useState(null);
   const blankForm = { title:'', file:null };
   const [form, setForm] = useState(blankForm);
 
@@ -5632,6 +5633,30 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
     finally { setUploading(false); }
   };
 
+  const openEdit = (att) => { setAdding(false); setForm({ title: att.title, file: null }); setEditingAtt(att); };
+
+  const handleUpdate = async () => {
+    if (!form.title.trim() && !isSuperAdmin(user)) { toast('اكتب عنوان الملحق', 'error'); return; }
+    if (form.file && form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
+    setUploading(true);
+    try {
+      let payload = { title: form.title.trim() || editingAtt.title };
+      if (form.file) {
+        const path = `${quote.id}/${Date.now()}-${sanitizeFileName(form.file.name)}`;
+        const { error: upErr } = await sb.storage.from('tender-attachments').upload(path, form.file);
+        if (upErr) throw upErr;
+        await sb.storage.from('tender-attachments').remove([editingAtt.file_path]);
+        payload = { ...payload, file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type };
+      }
+      const { error: updErr } = await sb.from('tender_attachments').update(payload).eq('id', editingAtt.id);
+      if (updErr) throw updErr;
+      createLog(user, `عدّل ملحق العطاء ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
+      toast('تم التعديل ✓', 'success');
+      setEditingAtt(null); setForm(blankForm); load();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
   /* رابط موقّع مؤقت (60 ثانية) مع خيار download — يفرض على متصفح العميل تحميل الملف
      مباشرة (Content-Disposition: attachment) بدل ما يفتحه بتاب جديد، رغم إنه البكت خاص */
   const handleDownload = async (att) => {
@@ -5664,42 +5689,50 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
             <div className="form-group" style={{marginBottom:0}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <label className="form-label" style={{margin:0}}>الملحقات</label>
-                {canWrite && !adding && <button className="btn btn-ghost btn-sm" onClick={()=>{setForm(blankForm);setAdding(true);}}>➕ إضافة</button>}
+                {canWrite && !adding && !editingAtt && <button className="btn btn-ghost btn-sm" onClick={()=>{setForm(blankForm);setAdding(true);}}>➕ إضافة</button>}
               </div>
 
               {rows.length===0 ? (
                 <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد ملحقات بعد</div>
               ) : (
+                <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',fontSize:13}}>
                   <thead><tr>
-                    <th style={{textAlign:'right'}}>العنوان</th>
-                    <th>الملف</th><th></th>
+                    <th style={{textAlign:'right',fontSize:14}}>العنوان</th>
+                    <th style={{fontSize:11}}>الملف</th><th></th>
                   </tr></thead>
                   <tbody>
                     {rows.map(r => (
                       <tr key={r.id}>
-                        <td>{r.title}</td>
-                        <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
-                        <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
-                          <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(r)}>👁 معاينة</button>
-                          <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
-                          {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(r)}>🗑️</button>}
+                        <td style={{fontSize:15,fontWeight:600,whiteSpace:'nowrap'}}>{r.title}</td>
+                        <td style={{textAlign:'center',fontSize:10,color:'var(--gray-400)',maxWidth:130,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={r.file_name}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
+                        <td style={{textAlign:'center'}}>
+                          <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
+                            <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(r)}>👁 معاينة</button>
+                            <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
+                            {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openEdit(r)}>✏️ تعديل</button>}
+                            {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(r)}>🗑️</button>}
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               )}
 
-              {adding && (
+              {(adding || editingAtt) && (
                 <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
+                  {editingAtt && <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)'}}>تعديل الملحق</div>}
                   <input className="form-control" placeholder="عنوان الملحق *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+                  {editingAtt && <div style={{fontSize:11,color:'var(--gray-500)'}}>الملف الحالي: {editingAtt.file_name}</div>}
                   <input type="file" className="form-control" onChange={handleFileChange}/>
+                  {editingAtt && <div style={{fontSize:11,color:'var(--gray-400)'}}>اختر ملفاً جديداً فقط لو بدك تستبدل الملف الحالي</div>}
                   {form.file && <div style={{fontSize:11,color:'var(--gray-500)'}}>{form.file.name} ({(form.file.size/1024/1024).toFixed(2)} ميغا)</div>}
                   <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
                   <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-                    <button className="btn btn-ghost btn-sm" onClick={()=>{setAdding(false);setForm(blankForm);}}>إلغاء</button>
-                    <button className="btn btn-primary btn-sm" disabled={uploading} onClick={handleUpload}>{uploading?'...جاري الرفع':'رفع الملحق'}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{setAdding(false);setEditingAtt(null);setForm(blankForm);}}>إلغاء</button>
+                    <button className="btn btn-primary btn-sm" disabled={uploading} onClick={editingAtt?handleUpdate:handleUpload}>{uploading?'...جاري الحفظ':editingAtt?'حفظ التعديل':'رفع الملحق'}</button>
                   </div>
                 </div>
               )}
@@ -5724,6 +5757,7 @@ const TENDER_GUARANTEE_INSTRUMENTS = [
   { key: 'uncertified_check', label: '📝 شيك غير مصدق' },
 ];
 const tgInstrumentLabel = (key) => TENDER_GUARANTEE_INSTRUMENTS.find(i=>i.key===key)?.label || key;
+const TENDER_GUARANTEE_BANKS = ['بنك الاتحاد', 'البنك الأردني'];
 
 function TenderGuaranteesModal({ quote, user, onClose }) {
   const [rows, setRows] = useState([]);
@@ -5733,6 +5767,8 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
   const [returningId, setReturningId] = useState(null);
   const [returnDateInput, setReturnDateInput] = useState('');
   const [previewTarget, setPreviewTarget] = useState(null);
+  const [editingGuarantee, setEditingGuarantee] = useState(null);
+  const [bankOther, setBankOther] = useState(false);
   const blankForm = { instrument:'bank_guarantee', ref_number:'', amount:'', bank:'', issue_date:'', expiry_date:'', notes:'', file:null };
   const [form, setForm] = useState(blankForm);
 
@@ -5748,7 +5784,16 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
   };
   useEffect(() => { load(); }, [quote.id]);
 
-  const openAdd = (type) => { setForm(blankForm); setAddingType(type); };
+  const openAdd = (type) => { setEditingGuarantee(null); setForm(blankForm); setBankOther(false); setAddingType(type); };
+  const openEditGuarantee = (g) => {
+    setEditingGuarantee(g);
+    setForm({
+      instrument: g.instrument, ref_number: g.ref_number||'', amount: g.amount!=null?String(g.amount):'',
+      bank: g.bank||'', issue_date: g.issue_date||'', expiry_date: g.expiry_date||'', notes: g.notes||'', file:null,
+    });
+    setBankOther(!!g.bank && !TENDER_GUARANTEE_BANKS.includes(g.bank));
+    setAddingType(g.guarantee_type);
+  };
   const sanitizeFileName = (name) => name.replace(/[^\w.\-]+/g, '_');
   const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
   const handleFileChange = (e) => {
@@ -5782,7 +5827,33 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
       if (insErr) throw insErr;
       createLog(user, `أضاف ${TENDER_GUARANTEE_TYPES.find(t=>t.key===addingType)?.empty} (${tgInstrumentLabel(form.instrument)}) للعطاء ${quote.number}`, 'quote', quote.id, quote.number);
       toast('تم رفع الكفالة ✓', 'success');
-      setAddingType(null); setForm(blankForm); load();
+      setAddingType(null); setForm(blankForm); setBankOther(false); load();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
+  const handleUpdateGuarantee = async () => {
+    if (form.file && form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
+    setUploading(true);
+    try {
+      let payload = {
+        instrument: form.instrument, ref_number: form.ref_number.trim()||null,
+        amount: form.amount ? parseFloat(form.amount) : null, bank: form.bank.trim()||null,
+        issue_date: form.issue_date||null, expiry_date: form.instrument==='bank_guarantee'?(form.expiry_date||null):null,
+        notes: form.notes.trim()||null,
+      };
+      if (form.file) {
+        const path = `${quote.id}/${Date.now()}-${sanitizeFileName(form.file.name)}`;
+        const { error: upErr } = await sb.storage.from('tender-attachments').upload(path, form.file);
+        if (upErr) throw upErr;
+        await sb.storage.from('tender-attachments').remove([editingGuarantee.file_path]);
+        payload = { ...payload, file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type };
+      }
+      const { error: updErr } = await sb.from('tender_guarantees').update(payload).eq('id', editingGuarantee.id);
+      if (updErr) throw updErr;
+      createLog(user, `عدّل كفالة (${tgInstrumentLabel(form.instrument)}) للعطاء ${quote.number}`, 'quote', quote.id, quote.number);
+      toast('تم التعديل ✓', 'success');
+      setAddingType(null); setEditingGuarantee(null); setForm(blankForm); setBankOther(false); load();
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
     finally { setUploading(false); }
   };
@@ -5846,6 +5917,7 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                   {typeRows.length===0 ? (
                     <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد {t.empty} بعد</div>
                   ) : (
+                    <div style={{overflowX:'auto'}}>
                     <table style={{width:'100%',fontSize:13}}>
                       <thead><tr>
                         <th style={{textAlign:'right'}}>الوسيلة</th><th>الرقم</th><th>القيمة</th><th>البنك</th><th>تنتهي</th><th style={{minWidth:130}}>الإرجاع</th><th>الملف</th><th></th>
@@ -5856,11 +5928,11 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                           const soon = !g.returned && g.expiry_date && !expired && (new Date(g.expiry_date) - new Date()) < 1000*60*60*24*30;
                           return (
                           <tr key={g.id}>
-                            <td>{tgInstrumentLabel(g.instrument)}{g.notes?<div style={{fontSize:11,color:'var(--gray-400)'}}>{g.notes}</div>:null}</td>
-                            <td style={{textAlign:'center'}}>{g.ref_number||'—'}</td>
-                            <td style={{textAlign:'center'}}>{g.amount?numFmt(g.amount)+' د.أ':'—'}</td>
-                            <td style={{textAlign:'center'}}>{g.bank||'—'}</td>
-                            <td style={{textAlign:'center',fontWeight:700,color:expired?'var(--danger)':soon?'var(--warning)':'var(--gray-500)'}}>
+                            <td style={{whiteSpace:'nowrap'}}>{tgInstrumentLabel(g.instrument)}{g.notes?<div style={{fontSize:11,color:'var(--gray-400)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:160}} title={g.notes}>{g.notes}</div>:null}</td>
+                            <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.ref_number||'—'}</td>
+                            <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.amount?numFmt(g.amount)+' د.أ':'—'}</td>
+                            <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.bank||'—'}</td>
+                            <td style={{textAlign:'center',fontWeight:700,whiteSpace:'nowrap',color:expired?'var(--danger)':soon?'var(--warning)':'var(--gray-500)'}}>
                               {g.expiry_date||'—'}{expired?' ⚠️':soon?' ⏳':''}
                             </td>
                             <td style={{textAlign:'center',padding:'6px 4px'}}>
@@ -5888,21 +5960,26 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                                 <button className="btn btn-ghost btn-sm" onClick={()=>openReturnEditor(g)}>↩️ تسجيل إرجاع</button>
                               ) : <span style={{color:'var(--gray-400)'}}>—</span>}
                             </td>
-                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
-                            <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
-                              <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁 معاينة</button>
-                              <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️ تحميل</button>
-                              {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(g)}>🗑️</button>}
+                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:130}} title={g.file_name}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
+                            <td style={{textAlign:'center'}}>
+                              <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
+                                <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁 معاينة</button>
+                                <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️ تحميل</button>
+                                {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openEditGuarantee(g)}>✏️ تعديل</button>}
+                                {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(g)}>🗑️</button>}
+                              </div>
                             </td>
                           </tr>
                           );
                         })}
                       </tbody>
                     </table>
+                    </div>
                   )}
 
                   {addingType===t.key && (
                     <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
+                      {editingGuarantee && <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)'}}>تعديل الكفالة</div>}
                       <div className="form-group" style={{margin:0}}>
                         <label className="form-label">وسيلة الكفالة *</label>
                         <select className="form-control" value={form.instrument} onChange={e=>setForm({...form,instrument:e.target.value,expiry_date:e.target.value==='bank_guarantee'?form.expiry_date:''})}>
@@ -5911,7 +5988,17 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                         <input className="form-control" placeholder="الرقم (كفالة/شيك)" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
-                        <input className="form-control" placeholder="البنك" value={form.bank} onChange={e=>setForm({...form,bank:e.target.value})}/>
+                        <div>
+                          <select className="form-control" value={bankOther?'other':form.bank} onChange={e=>{
+                            if (e.target.value==='other') { setBankOther(true); setForm({...form,bank:''}); }
+                            else { setBankOther(false); setForm({...form,bank:e.target.value}); }
+                          }}>
+                            <option value="">اختر البنك</option>
+                            {TENDER_GUARANTEE_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+                            <option value="other">أخرى</option>
+                          </select>
+                          {bankOther && <input className="form-control" style={{marginTop:6}} placeholder="اسم البنك" value={form.bank} onChange={e=>setForm({...form,bank:e.target.value})}/>}
+                        </div>
                         <input type="number" step="0.001" className="form-control" placeholder="القيمة (د.أ)" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
                         <div style={{position:'relative'}}>
                           {!form.issue_date && <span style={{position:'absolute',right:30,top:'50%',transform:'translateY(-50%)',fontSize:13,color:'var(--gray-400)',pointerEvents:'none'}}>تاريخ الإصدار</span>}
@@ -5925,12 +6012,14 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                         )}
                       </div>
                       <input className="form-control" placeholder="ملاحظة (اختياري)" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/>
+                      {editingGuarantee && <div style={{fontSize:11,color:'var(--gray-500)'}}>الملف الحالي: {editingGuarantee.file_name}</div>}
                       <input type="file" className="form-control" onChange={handleFileChange}/>
+                      {editingGuarantee && <div style={{fontSize:11,color:'var(--gray-400)'}}>اختر ملفاً جديداً فقط لو بدك تستبدل الملف الحالي</div>}
                       {form.file && <div style={{fontSize:11,color:'var(--gray-500)'}}>{form.file.name} ({(form.file.size/1024/1024).toFixed(2)} ميغا)</div>}
                       <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
                       <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingType(null);setForm(blankForm);}}>إلغاء</button>
-                        <button className="btn btn-primary btn-sm" disabled={uploading} onClick={handleUpload}>{uploading?'...جاري الرفع':'رفع الكفالة'}</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingType(null);setEditingGuarantee(null);setForm(blankForm);setBankOther(false);}}>إلغاء</button>
+                        <button className="btn btn-primary btn-sm" disabled={uploading} onClick={editingGuarantee?handleUpdateGuarantee:handleUpload}>{uploading?'...جاري الحفظ':editingGuarantee?'حفظ التعديل':'رفع الكفالة'}</button>
                       </div>
                     </div>
                   )}
