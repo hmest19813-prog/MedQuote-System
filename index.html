@@ -4224,6 +4224,7 @@ function QuotesList({ user, quotes, onReload }) {
   const [discussTarget, setDiscussTarget]   = useState(null);
   const [pricingTarget, setPricingTarget]   = useState(null);
   const [attachTarget, setAttachTarget]     = useState(null);
+  const [guaranteeTarget, setGuaranteeTarget] = useState(null);
   const [previewing, setPreviewQ] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -5145,6 +5146,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>
+                  <button className="btn btn-ghost btn-sm" style={{color:'#0f766e',borderColor:'#0f766e'}} onClick={()=>setGuaranteeTarget(q)}>📜 كفالات</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
@@ -5195,6 +5197,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'📎', label:'ملحقات', onClick:()=>setAttachTarget(q) },
+                      { icon:'📜', label:'كفالات', onClick:()=>setGuaranteeTarget(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
@@ -5422,6 +5425,7 @@ function QuotesList({ user, quotes, onReload }) {
                       <button className="btn btn-ghost btn-sm" style={{color:'#6b7280',borderColor:'#d1d5db'}} onClick={()=>setEditArchiveTarget(q)} title="تعديل سبب الأرشفة">✏️ السبب</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
                       {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>}
+                      {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#0f766e',borderColor:'#0f766e'}} onClick={()=>setGuaranteeTarget(q)}>📜 كفالات</button>}
                       <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
                     </div>
                   </td>
@@ -5510,25 +5514,21 @@ function QuotesList({ user, quotes, onReload }) {
       {discussTarget && <QuoteDiscussionModal quote={discussTarget} user={user} onClose={()=>setDiscussTarget(null)}/>}
       {pricingTarget && <PricingRequestModal quote={pricingTarget} user={user} onClose={()=>setPricingTarget(null)} onSaved={()=>{setPricingTarget(null);onReload();}}/>}
       {attachTarget && <TenderAttachmentsModal quote={attachTarget} user={user} onClose={()=>setAttachTarget(null)}/>}
+      {guaranteeTarget && <TenderGuaranteesModal quote={guaranteeTarget} user={user} onClose={()=>setGuaranteeTarget(null)}/>}
     </div>
   );
 }
 
-/* ===================== ملحقات العطاء (كفالات / احالات / ملحقات أخرى) ===================== */
-const TENDER_ATTACH_CATEGORIES = [
-  { key: 'guarantee', label: '📜 كفالات', empty: 'كفالات' },
-  { key: 'award',     label: '📑 احالات', empty: 'احالات' },
-  { key: 'other',     label: '📎 ملحقات أخرى', empty: 'ملحقات أخرى' },
-];
+/* ===================== ملحقات العطاء (قائمة واحدة بدون تصنيف — احالات وغيرها) ===================== */
 /* سقف 5 ميغا للملف الواحد — مساحة Storage بالباقة الحالية محدودة (1GB لكامل النظام) */
 const TENDER_ATTACH_MAX_SIZE = 5 * 1024 * 1024;
 
 function TenderAttachmentsModal({ quote, user, onClose }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [addingCat, setAddingCat] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const blankForm = { title:'', ref_number:'', amount:'', issuer:'', issue_date:'', expiry_date:'', file:null };
+  const blankForm = { title:'', file:null };
   const [form, setForm] = useState(blankForm);
 
   const canWrite = quote.created_by===user?.id || hasPerm(user,'quotes_edit_all');
@@ -5543,7 +5543,6 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   };
   useEffect(() => { load(); }, [quote.id]);
 
-  const openAdd = (cat) => { setForm(blankForm); setAddingCat(cat); };
   const sanitizeFileName = (name) => name.replace(/[^\w.\-؀-ۿ]+/g, '_');
   const handleFileChange = (e) => {
     const file = e.target.files[0] || null;
@@ -5567,17 +5566,15 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
       const { error: upErr } = await sb.storage.from('tender-attachments').upload(path, form.file);
       if (upErr) throw upErr;
       const payload = {
-        quote_id: quote.id, category: addingCat, title: form.title.trim() || form.file.name,
+        quote_id: quote.id, category: 'other', title: form.title.trim() || form.file.name,
         file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type,
-        ref_number: form.ref_number.trim()||null, amount: form.amount ? parseFloat(form.amount) : null,
-        issuer: form.issuer.trim()||null, issue_date: form.issue_date||null, expiry_date: form.expiry_date||null,
         created_by: user?.id||null,
       };
       const { error: insErr } = await sb.from('tender_attachments').insert(payload);
       if (insErr) throw insErr;
-      createLog(user, `أضاف ملحقاً (${TENDER_ATTACH_CATEGORIES.find(c=>c.key===addingCat)?.label||addingCat}) للعطاء ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
+      createLog(user, `أضاف ملحقاً للعطاء ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
       toast('تم رفع الملحق ✓', 'success');
-      setAddingCat(null); setForm(blankForm); load();
+      setAdding(false); setForm(blankForm); load();
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
     finally { setUploading(false); }
   };
@@ -5604,49 +5601,194 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{maxWidth:760,maxHeight:'90vh',overflowY:'auto'}}>
+      <div className="modal" style={{maxWidth:600,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header">
           <span className="modal-title">📎 ملحقات العطاء — {quote.number}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div style={{padding:20}}>
           {loading ? <div className="empty-state">جاري التحميل...</div> : (
-            TENDER_ATTACH_CATEGORIES.map(cat => {
-              const catRows = rows.filter(r => r.category===cat.key);
+            <div className="form-group" style={{marginBottom:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <label className="form-label" style={{margin:0}}>الملحقات</label>
+                {canWrite && !adding && <button className="btn btn-ghost btn-sm" onClick={()=>{setForm(blankForm);setAdding(true);}}>➕ إضافة</button>}
+              </div>
+
+              {rows.length===0 ? (
+                <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد ملحقات بعد</div>
+              ) : (
+                <table style={{width:'100%',fontSize:13}}>
+                  <thead><tr>
+                    <th style={{textAlign:'right'}}>العنوان</th>
+                    <th>الملف</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.id}>
+                        <td>{r.title}</td>
+                        <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
+                        <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
+                          <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
+                          {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(r)}>🗑️</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {adding && (
+                <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
+                  <input className="form-control" placeholder="عنوان الملحق *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+                  <input type="file" className="form-control" onChange={handleFileChange}/>
+                  {form.file && <div style={{fontSize:11,color:'var(--gray-500)'}}>{form.file.name} ({(form.file.size/1024/1024).toFixed(2)} ميغا)</div>}
+                  <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
+                  <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{setAdding(false);setForm(blankForm);}}>إلغاء</button>
+                    <button className="btn btn-primary btn-sm" disabled={uploading} onClick={handleUpload}>{uploading?'...جاري الرفع':'رفع الملحق'}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== كفالات العطاء ===================== */
+const TENDER_GUARANTEE_TYPES = [
+  { key: 'bid',         label: '📥 كفالة دخول',       empty: 'كفالة دخول' },
+  { key: 'performance', label: '🛠️ كفالة حسن تنفيذ', empty: 'كفالة حسن تنفيذ' },
+  { key: 'maintenance', label: '🔧 كفالة صيانة',      empty: 'كفالة صيانة' },
+];
+const TENDER_GUARANTEE_INSTRUMENTS = [
+  { key: 'bank_guarantee',    label: '🏦 كفالة بنكية' },
+  { key: 'certified_check',   label: '✅ شيك مصدق' },
+  { key: 'uncertified_check', label: '📝 شيك غير مصدق' },
+];
+const tgInstrumentLabel = (key) => TENDER_GUARANTEE_INSTRUMENTS.find(i=>i.key===key)?.label || key;
+
+function TenderGuaranteesModal({ quote, user, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [addingType, setAddingType] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const blankForm = { instrument:'bank_guarantee', ref_number:'', amount:'', bank:'', issue_date:'', expiry_date:'', notes:'', file:null };
+  const [form, setForm] = useState(blankForm);
+
+  const canWrite = quote.created_by===user?.id || hasPerm(user,'quotes_edit_all');
+  const canDelete = hasPerm(user,'quotes_delete');
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await sb.from('tender_guarantees').select('*').eq('quote_id', quote.id).order('created_at', { ascending:false });
+    if (error) toast('خطأ: '+error.message, 'error');
+    setRows(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [quote.id]);
+
+  const openAdd = (type) => { setForm(blankForm); setAddingType(type); };
+  const sanitizeFileName = (name) => name.replace(/[^\w.\-؀-ۿ]+/g, '_');
+  const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
+  const handleFileChange = (e) => {
+    const file = e.target.files[0] || null;
+    if (file && file.size > TENDER_ATTACH_MAX_SIZE) {
+      toast(`الملف أكبر من الحد المسموح (5 ميغا) — حجمه ${(file.size/1024/1024).toFixed(1)} ميغا`, 'error');
+      e.target.value = '';
+      setForm(f => ({ ...f, file: null }));
+      return;
+    }
+    setForm(f => ({ ...f, file }));
+  };
+
+  const handleUpload = async () => {
+    if (!form.file) { toast('اختر ملف', 'error'); return; }
+    if (form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
+    setUploading(true);
+    try {
+      const path = `${quote.id}/${Date.now()}-${sanitizeFileName(form.file.name)}`;
+      const { error: upErr } = await sb.storage.from('tender-attachments').upload(path, form.file);
+      if (upErr) throw upErr;
+      const payload = {
+        quote_id: quote.id, guarantee_type: addingType, instrument: form.instrument,
+        ref_number: form.ref_number.trim()||null, amount: form.amount ? parseFloat(form.amount) : null,
+        bank: form.bank.trim()||null, issue_date: form.issue_date||null, expiry_date: form.expiry_date||null,
+        notes: form.notes.trim()||null,
+        file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type,
+        created_by: user?.id||null,
+      };
+      const { error: insErr } = await sb.from('tender_guarantees').insert(payload);
+      if (insErr) throw insErr;
+      createLog(user, `أضاف ${TENDER_GUARANTEE_TYPES.find(t=>t.key===addingType)?.empty} (${tgInstrumentLabel(form.instrument)}) للعطاء ${quote.number}`, 'quote', quote.id, quote.number);
+      toast('تم رفع الكفالة ✓', 'success');
+      setAddingType(null); setForm(blankForm); load();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
+  const handleDownload = async (g) => {
+    const { data, error } = await sb.storage.from('tender-attachments')
+      .createSignedUrl(g.file_path, 60, { download: g.file_name || 'كفالة' });
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    const a = document.createElement('a');
+    a.href = data.signedUrl; a.download = g.file_name || 'كفالة';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const handleDelete = async (g) => {
+    if (!confirm(`حذف هذه الكفالة (${tgInstrumentLabel(g.instrument)})؟`)) return;
+    await sb.storage.from('tender-attachments').remove([g.file_path]);
+    const { error } = await sb.from('tender_guarantees').delete().eq('id', g.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `حذف كفالة من العطاء ${quote.number}`, 'quote', quote.id, quote.number);
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:820,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title">📜 كفالات العطاء — {quote.number}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          {loading ? <div className="empty-state">جاري التحميل...</div> : (
+            TENDER_GUARANTEE_TYPES.map(t => {
+              const typeRows = rows.filter(r => r.guarantee_type===t.key);
               return (
-                <div key={cat.key} className="form-group" style={{marginBottom:24}}>
+                <div key={t.key} className="form-group" style={{marginBottom:24}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                    <label className="form-label" style={{margin:0}}>{cat.label}</label>
-                    {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openAdd(cat.key)}>➕ إضافة</button>}
+                    <label className="form-label" style={{margin:0}}>{t.label}</label>
+                    {canWrite && <button className="btn btn-ghost btn-sm" onClick={()=>openAdd(t.key)}>➕ إضافة</button>}
                   </div>
 
-                  {catRows.length===0 ? (
-                    <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد {cat.empty} بعد</div>
+                  {typeRows.length===0 ? (
+                    <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد {t.empty} بعد</div>
                   ) : (
                     <table style={{width:'100%',fontSize:13}}>
                       <thead><tr>
-                        <th style={{textAlign:'right'}}>العنوان</th>
-                        {cat.key==='guarantee' && <><th>رقم الكفالة</th><th>القيمة</th><th>تنتهي</th></>}
-                        <th>الملف</th><th></th>
+                        <th style={{textAlign:'right'}}>الوسيلة</th><th>الرقم</th><th>القيمة</th><th>البنك</th><th>تنتهي</th><th>الملف</th><th></th>
                       </tr></thead>
                       <tbody>
-                        {catRows.map(r => {
-                          const expired = r.expiry_date && new Date(r.expiry_date) < new Date();
-                          const soon = r.expiry_date && !expired && (new Date(r.expiry_date) - new Date()) < 1000*60*60*24*30;
+                        {typeRows.map(g => {
+                          const expired = g.expiry_date && new Date(g.expiry_date) < new Date();
+                          const soon = g.expiry_date && !expired && (new Date(g.expiry_date) - new Date()) < 1000*60*60*24*30;
                           return (
-                          <tr key={r.id}>
-                            <td>{r.title}</td>
-                            {cat.key==='guarantee' && <>
-                              <td style={{textAlign:'center'}}>{r.ref_number||'—'}</td>
-                              <td style={{textAlign:'center'}}>{r.amount?numFmt(r.amount)+' د.أ':'—'}</td>
-                              <td style={{textAlign:'center',fontWeight:700,color:expired?'var(--danger)':soon?'var(--warning)':'var(--gray-500)'}}>
-                                {r.expiry_date||'—'}{expired?' ⚠️':soon?' ⏳':''}
-                              </td>
-                            </>}
-                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
+                          <tr key={g.id}>
+                            <td>{tgInstrumentLabel(g.instrument)}{g.notes?<div style={{fontSize:11,color:'var(--gray-400)'}}>{g.notes}</div>:null}</td>
+                            <td style={{textAlign:'center'}}>{g.ref_number||'—'}</td>
+                            <td style={{textAlign:'center'}}>{g.amount?numFmt(g.amount)+' د.أ':'—'}</td>
+                            <td style={{textAlign:'center'}}>{g.bank||'—'}</td>
+                            <td style={{textAlign:'center',fontWeight:700,color:expired?'var(--danger)':soon?'var(--warning)':'var(--gray-500)'}}>
+                              {g.expiry_date||'—'}{expired?' ⚠️':soon?' ⏳':''}
+                            </td>
+                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
                             <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
-                              <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
-                              {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(r)}>🗑️</button>}
+                              <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️ تحميل</button>
+                              {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(g)}>🗑️</button>}
                             </td>
                           </tr>
                           );
@@ -5655,30 +5797,28 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
                     </table>
                   )}
 
-                  {addingCat===cat.key && (
+                  {addingType===t.key && (
                     <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
-                      <input className="form-control" placeholder="عنوان الملحق *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
-                      {cat.key==='guarantee' && (
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                          <input className="form-control" placeholder="رقم الكفالة" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
-                          <input className="form-control" placeholder="البنك المُصدر" value={form.issuer} onChange={e=>setForm({...form,issuer:e.target.value})}/>
-                          <input type="number" step="0.001" className="form-control" placeholder="القيمة (د.أ)" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
-                          <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الإصدار"/>
-                          <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
-                        </div>
-                      )}
-                      {cat.key==='award' && (
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                          <input className="form-control" placeholder="رقم كتاب الاحالة" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
-                          <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الاحالة"/>
-                        </div>
-                      )}
+                      <div className="form-group" style={{margin:0}}>
+                        <label className="form-label">وسيلة الكفالة *</label>
+                        <select className="form-control" value={form.instrument} onChange={e=>setForm({...form,instrument:e.target.value})}>
+                          {TENDER_GUARANTEE_INSTRUMENTS.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
+                        </select>
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                        <input className="form-control" placeholder="الرقم (كفالة/شيك)" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
+                        <input className="form-control" placeholder="البنك" value={form.bank} onChange={e=>setForm({...form,bank:e.target.value})}/>
+                        <input type="number" step="0.001" className="form-control" placeholder="القيمة (د.أ)" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
+                        <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الإصدار"/>
+                        <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
+                      </div>
+                      <input className="form-control" placeholder="ملاحظة (اختياري)" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/>
                       <input type="file" className="form-control" onChange={handleFileChange}/>
                       {form.file && <div style={{fontSize:11,color:'var(--gray-500)'}}>{form.file.name} ({(form.file.size/1024/1024).toFixed(2)} ميغا)</div>}
                       <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
                       <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingCat(null);setForm(blankForm);}}>إلغاء</button>
-                        <button className="btn btn-primary btn-sm" disabled={uploading} onClick={handleUpload}>{uploading?'...جاري الرفع':'رفع الملحق'}</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>{setAddingType(null);setForm(blankForm);}}>إلغاء</button>
+                        <button className="btn btn-primary btn-sm" disabled={uploading} onClick={handleUpload}>{uploading?'...جاري الرفع':'رفع الكفالة'}</button>
                       </div>
                     </div>
                   )}
