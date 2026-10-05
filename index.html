@@ -2133,6 +2133,9 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft, onCo
     window.addEventListener('pointerup', onUp);
   };
 
+  // عروض/عطاءات بحالة "مسودة" لسا ما اعتُمدت رسمياً — ممنوع إخراجها كمستند منسّق
+  // (طباعة/PDF/إيميل/واتساب) قبل الاعتماد، تفادياً لإرسال سعر غير نهائي بالغلط للعميل
+  const isDraft = docType === 'quote' && doc.status === 'draft';
   // نوع العرض: مفصّل (بأعمدة الضريبة) أو مبسّط
   const detailed = doc.detailed_layout !== false;
   // لغة العرض: ar = عربي RTL | en = إنجليزي LTR
@@ -2527,10 +2530,14 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft, onCo
             </button>
             {onConfirmDraft && <button className="btn btn-success btn-sm" onClick={onConfirmDraft}>✅ اعتماد العرض</button>}
             {onConfirmDraftAsTender && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={onConfirmDraftAsTender}>📑 اعتماد كعطاء</button>}
+            {isDraft && !isSuperAdmin() ? (
+              <span style={{fontSize:11,color:'var(--gray-400)',fontWeight:700,alignSelf:'center',whiteSpace:'nowrap'}} title="اعتمد المسودة أولاً لتتمكن من طباعتها أو إرسالها">🔒 اعتمد المسودة أولاً للطباعة</span>
+            ) : (<>
             <button className="btn btn-primary btn-sm" onClick={()=>{ const t=`${doc.customer_name||'عميل'} - ${doc.number||''}`; printDoc('print-content',t); }}>🖨️ طباعة / PDF</button>
             <button className="btn btn-ghost btn-sm" onClick={exportToExcel} title="تصدير بيانات المستند إلى ملف Excel">📊 Excel</button>
             <button className="btn btn-ghost btn-sm" onClick={sendViaOutlook} title="احفظ الملف كـ PDF من نافذة الطباعة ثم سيفتح Outlook تلقائياً">📧 إرسال بالإيميل</button>
             <button className="btn btn-whatsapp btn-sm" onClick={sendViaWhatsApp} title="احفظ PDF من نافذة الطباعة ثم سيفتح واتساب مع رسالة جاهزة — أرفق الملف يدوياً">💬 واتساب</button>
+            </>)}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -3837,24 +3844,72 @@ function FollowUpModal({ quote, user, onClose }) {
   const [newNote, setNewNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [profiles, setProfiles] = useState({});
+  const [profileList, setProfileList] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');
+  const [mentionQ, setMentionQ]       = useState('');
+  const [mentionAt, setMentionAt]     = useState(-1);
+  const [showMention, setShowMention] = useState(false);
+  const noteInputRef = useRef(null);
 
   useEffect(() => {
     sb.from('quote_followups').select('*').eq('quotation_id', quote.id).order('created_at', {ascending:false})
       .then(({data}) => setNotes(data||[]));
     sb.from('profiles').select('id,full_name').then(({data}) => {
       const m = {}; (data||[]).forEach(p => m[p.id] = p.full_name); setProfiles(m);
+      setProfileList(data||[]);
     });
   }, [quote.id]);
+
+  const handleNoteInput = (e) => {
+    const val = e.target.value; setNewNote(val);
+    const cur = e.target.selectionStart, before = val.slice(0, cur);
+    const idx = before.lastIndexOf('@');
+    if (idx !== -1) { const q = before.slice(idx+1); if (!q.includes(' ') && q.length < 20) { setMentionQ(q.toLowerCase()); setMentionAt(idx); setShowMention(true); return; } }
+    setShowMention(false);
+  };
+  const filteredMentions = profileList.filter(p => p.full_name.toLowerCase().includes(mentionQ) && p.id !== user?.id).slice(0, 5);
+  const insertMention = (name) => {
+    const fn = name.split(' ')[0];
+    setNewNote(newNote.slice(0, mentionAt) + '@' + fn + ' ' + newNote.slice(mentionAt+1+mentionQ.length));
+    setShowMention(false); setTimeout(()=>noteInputRef.current?.focus(), 30);
+  };
+  const renderNoteBody = (text) => {
+    if (!text || !profileList.length) return text;
+    return text.split(/(@\S+)/g).map((part, i) => {
+      if (part.startsWith('@')) {
+        const nm = part.slice(1);
+        if (profileList.some(p => p.full_name.split(' ')[0]===nm || p.full_name===nm)) return <span key={i} className="mention-tag">{part}</span>;
+      }
+      return part || null;
+    });
+  };
+
+  /* يشعر صاحب العرض بمتابعة جديدة (إلا لو هو نفسه كاتبها)، وأي شخص انذكر بـ@ صراحة
+     بالنص — بإشعار مخصص ليميّزه عن إشعار "متابعة جديدة" العام */
+  const notifyFollowUp = async (text) => {
+    const mentionedIds = new Set();
+    (text.match(/@(\S+)/g) || []).forEach(m => {
+      const nm = m.slice(1);
+      const target = profileList.find(p => p.full_name.split(' ')[0]===nm || p.full_name===nm);
+      if (target && target.id !== user?.id) mentionedIds.add(target.id);
+    });
+    if (quote.created_by && quote.created_by !== user?.id && !mentionedIds.has(quote.created_by)) {
+      await createNotif({ userId: quote.created_by, title: `📌 متابعة جديدة على العرض ${quote.number}`, body: text.slice(0,100), type:'info', linkType:'quote', linkId: quote.id });
+    }
+    for (const id of mentionedIds) {
+      await createNotif({ userId: id, title: `📢 منشن بمتابعة العرض ${quote.number}`, body: text.slice(0,100), type:'info', linkType:'quote', linkId: quote.id });
+    }
+  };
 
   const addNote = async () => {
     if (!newNote.trim()) return;
     setLoading(true);
+    const text = newNote.trim();
     const {data, error} = await sb.from('quote_followups').insert({
-      quotation_id: quote.id, note: newNote.trim(), created_by: user?.id,
+      quotation_id: quote.id, note: text, created_by: user?.id,
     }).select().single();
-    if (!error) { setNotes(n => [data, ...n]); setNewNote(''); }
+    if (!error) { setNotes(n => [data, ...n]); setNewNote(''); setShowMention(false); notifyFollowUp(text); }
     else toast('خطأ: ' + error.message, 'error');
     setLoading(false);
   };
@@ -3918,19 +3973,29 @@ function FollowUpModal({ quote, user, onClose }) {
                       </div>
                     </div>
                   ) : (
-                    <div style={{fontSize:13, color:'var(--gray-800)', whiteSpace:'pre-wrap'}}>{n.note}</div>
+                    <div style={{fontSize:13, color:'var(--gray-800)', whiteSpace:'pre-wrap'}}>{renderNoteBody(n.note)}</div>
                   )}
                 </div>
               ))}
             </div>
           )}
           {notes.length === 0 && <p style={{color:'var(--gray-400)', fontSize:13, marginBottom:16, textAlign:'center'}}>لا توجد ملاحظات متابعة بعد</p>}
-          <div className="form-group" style={{marginBottom:0}}>
+          <div className="form-group" style={{marginBottom:0,position:'relative'}}>
             <label className="form-label">ملاحظة جديدة</label>
-            <textarea className="form-control" rows={3} value={newNote} onChange={e=>setNewNote(e.target.value)}
-              placeholder="أضف ملاحظة متابعة..." style={{resize:'vertical'}}
-              onKeyDown={e=>{if(e.ctrlKey&&e.key==='Enter')addNote();}}/>
-            <span style={{fontSize:11,color:'var(--gray-400)'}}>Ctrl+Enter للإضافة السريعة</span>
+            <textarea ref={noteInputRef} className="form-control" rows={3} value={newNote} onChange={handleNoteInput}
+              placeholder="أضف ملاحظة متابعة... استخدم @ لمنشنة أحد" style={{resize:'vertical'}}
+              onKeyDown={e=>{if(e.key==='Escape'&&showMention){setShowMention(false);return;} if(e.ctrlKey&&e.key==='Enter')addNote();}}/>
+            {showMention && filteredMentions.length>0 && (
+              <div className="mention-dropdown">
+                {filteredMentions.map(p => (
+                  <div key={p.id} className="mention-row" onClick={()=>insertMention(p.full_name)}>
+                    <div className="mention-av">{p.full_name.charAt(0)}</div>
+                    <span>{p.full_name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <span style={{fontSize:11,color:'var(--gray-400)'}}>Ctrl+Enter للإضافة السريعة · @ لمنشنة أحد الزملاء</span>
           </div>
         </div>
         <div className="modal-footer">
@@ -18291,8 +18356,14 @@ function QuoteDiscussionModal({ quote, user, onClose }) {
   const send = async () => {
     if (!body.trim()||sending) return;
     setSending(true);
-    const {error} = await sb.from('quote_discussions').insert({quotation_id:quote.id,user_id:user?.id,body:body.trim()});
-    if (error) toast('خطأ في الإرسال','error'); else setBody('');
+    const text = body.trim();
+    const {error} = await sb.from('quote_discussions').insert({quotation_id:quote.id,user_id:user?.id,body:text});
+    if (error) { toast('خطأ في الإرسال','error'); setSending(false); return; }
+    setBody('');
+    // يشعر صاحب العرض بتعليق جديد — إلا لو هو نفسه كاتبه
+    if (quote.created_by && quote.created_by !== user?.id) {
+      createNotif({ userId: quote.created_by, title: `🗨️ تعليق جديد على العرض ${quote.number}`, body: text.slice(0,100), type:'info', linkType:'quote', linkId: quote.id });
+    }
     setSending(false);
   };
 
