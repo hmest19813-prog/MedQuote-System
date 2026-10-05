@@ -5197,8 +5197,6 @@ function QuotesList({ user, quotes, onReload }) {
                     <ActionMenu actions={[
                       { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
                       { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
-                      { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
-                      { icon:'🏢', label:'نسخ باسم شركة أخرى', hidden:!hasPerm(user,'quotes_clone_other_company'), onClick:()=>setAltCloneTarget(q) },
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
@@ -5527,6 +5525,52 @@ function QuotesList({ user, quotes, onReload }) {
   );
 }
 
+/* ===================== معاينة ملف (PDF/صورة) بدون تحميل ===================== */
+function FilePreviewModal({ bucket, path, fileName, mimeType, onClose }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    setUrl(null); setError(null);
+    sb.storage.from(bucket).createSignedUrl(path, 300).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) setError(error.message); else setUrl(data.signedUrl);
+    });
+    return () => { alive = false; };
+  }, [bucket, path]);
+
+  const isPdf = mimeType === 'application/pdf' || /\.pdf$/i.test(fileName||'');
+  const isImage = (mimeType||'').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(fileName||'');
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:isPdf?'min(900px,92vw)':600,width:'100%',maxHeight:'92vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">👁 {fileName||'معاينة الملف'}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{flex:1,minHeight:300,display:'flex',alignItems:'center',justifyContent:'center',padding: isPdf||isImage ? 0 : 20,overflow:'auto'}}>
+          {error ? (
+            <div className="empty-state">خطأ: {error}</div>
+          ) : !url ? (
+            <div className="empty-state">جاري التحميل...</div>
+          ) : isPdf ? (
+            <iframe src={url} title={fileName} style={{width:'100%',height:'80vh',border:'none'}}/>
+          ) : isImage ? (
+            <img src={url} alt={fileName} style={{maxWidth:'100%',maxHeight:'80vh',objectFit:'contain'}}/>
+          ) : (
+            <div style={{textAlign:'center'}}>
+              <div style={{marginBottom:12,color:'var(--gray-500)'}}>لا يمكن معاينة هذا النوع من الملفات داخل المتصفح</div>
+              <a className="btn btn-primary btn-sm" href={url} target="_blank" rel="noopener noreferrer">فتح الملف بتاب جديد</a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== ملحقات العطاء (قائمة واحدة بدون تصنيف — احالات وغيرها) ===================== */
 /* سقف 5 ميغا للملف الواحد — مساحة Storage بالباقة الحالية محدودة (1GB لكامل النظام) */
 const TENDER_ATTACH_MAX_SIZE = 5 * 1024 * 1024;
@@ -5536,6 +5580,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState(null);
   const blankForm = { title:'', file:null };
   const [form, setForm] = useState(blankForm);
 
@@ -5551,7 +5596,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   };
   useEffect(() => { load(); }, [quote.id]);
 
-  const sanitizeFileName = (name) => name.replace(/[^\w.\-؀-ۿ]+/g, '_');
+  const sanitizeFileName = (name) => name.replace(/[^\w.\-]+/g, '_');
   const handleFileChange = (e) => {
     const file = e.target.files[0] || null;
     if (file && file.size > TENDER_ATTACH_MAX_SIZE) {
@@ -5636,6 +5681,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
                         <td>{r.title}</td>
                         <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
                         <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
+                          <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(r)}>👁 معاينة</button>
                           <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(r)}>⬇️ تحميل</button>
                           {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(r)}>🗑️</button>}
                         </td>
@@ -5661,6 +5707,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
           )}
         </div>
       </div>
+      {previewTarget && <FilePreviewModal bucket="tender-attachments" path={previewTarget.file_path} fileName={previewTarget.file_name} mimeType={previewTarget.mime_type} onClose={()=>setPreviewTarget(null)}/>}
     </div>
   );
 }
@@ -5683,6 +5730,9 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
   const [loading, setLoading] = useState(true);
   const [addingType, setAddingType] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [returningId, setReturningId] = useState(null);
+  const [returnDateInput, setReturnDateInput] = useState('');
+  const [previewTarget, setPreviewTarget] = useState(null);
   const blankForm = { instrument:'bank_guarantee', ref_number:'', amount:'', bank:'', issue_date:'', expiry_date:'', notes:'', file:null };
   const [form, setForm] = useState(blankForm);
 
@@ -5699,7 +5749,7 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
   useEffect(() => { load(); }, [quote.id]);
 
   const openAdd = (type) => { setForm(blankForm); setAddingType(type); };
-  const sanitizeFileName = (name) => name.replace(/[^\w.\-؀-ۿ]+/g, '_');
+  const sanitizeFileName = (name) => name.replace(/[^\w.\-]+/g, '_');
   const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
   const handleFileChange = (e) => {
     const file = e.target.files[0] || null;
@@ -5755,6 +5805,26 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
     toast('تم الحذف', 'success'); load();
   };
 
+  const openReturnEditor = (g) => { setReturningId(g.id); setReturnDateInput(g.return_date || new Date().toISOString().slice(0,10)); };
+  const cancelReturnEditor = () => setReturningId(null);
+
+  const confirmReturn = async (g) => {
+    if (!returnDateInput) { toast('اختر تاريخ الإرجاع', 'error'); return; }
+    const { error } = await sb.from('tender_guarantees').update({ returned: true, return_date: returnDateInput }).eq('id', g.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `أرجع كفالة (${tgInstrumentLabel(g.instrument)}) للعطاء ${quote.number} بتاريخ ${returnDateInput}`, 'quote', quote.id, quote.number);
+    toast('تم تسجيل الإرجاع ✓', 'success');
+    setReturningId(null); load();
+  };
+
+  const handleUnreturn = async (g) => {
+    if (!confirm('إلغاء تسجيل إرجاع هذه الكفالة؟')) return;
+    const { error } = await sb.from('tender_guarantees').update({ returned: false, return_date: null }).eq('id', g.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    createLog(user, `ألغى إرجاع كفالة (${tgInstrumentLabel(g.instrument)}) للعطاء ${quote.number}`, 'quote', quote.id, quote.number);
+    load();
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:820,maxHeight:'90vh',overflowY:'auto'}}>
@@ -5778,12 +5848,12 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                   ) : (
                     <table style={{width:'100%',fontSize:13}}>
                       <thead><tr>
-                        <th style={{textAlign:'right'}}>الوسيلة</th><th>الرقم</th><th>القيمة</th><th>البنك</th><th>تنتهي</th><th>الملف</th><th></th>
+                        <th style={{textAlign:'right'}}>الوسيلة</th><th>الرقم</th><th>القيمة</th><th>البنك</th><th>تنتهي</th><th style={{minWidth:130}}>الإرجاع</th><th>الملف</th><th></th>
                       </tr></thead>
                       <tbody>
                         {typeRows.map(g => {
-                          const expired = g.expiry_date && new Date(g.expiry_date) < new Date();
-                          const soon = g.expiry_date && !expired && (new Date(g.expiry_date) - new Date()) < 1000*60*60*24*30;
+                          const expired = !g.returned && g.expiry_date && new Date(g.expiry_date) < new Date();
+                          const soon = !g.returned && g.expiry_date && !expired && (new Date(g.expiry_date) - new Date()) < 1000*60*60*24*30;
                           return (
                           <tr key={g.id}>
                             <td>{tgInstrumentLabel(g.instrument)}{g.notes?<div style={{fontSize:11,color:'var(--gray-400)'}}>{g.notes}</div>:null}</td>
@@ -5793,8 +5863,34 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                             <td style={{textAlign:'center',fontWeight:700,color:expired?'var(--danger)':soon?'var(--warning)':'var(--gray-500)'}}>
                               {g.expiry_date||'—'}{expired?' ⚠️':soon?' ⏳':''}
                             </td>
+                            <td style={{textAlign:'center',padding:'6px 4px'}}>
+                              {returningId===g.id ? (
+                                <div style={{display:'flex',flexDirection:'column',gap:4,alignItems:'center'}}>
+                                  <input type="date" className="form-control" style={{fontSize:12,padding:'3px 6px',width:130}}
+                                    value={returnDateInput} onChange={e=>setReturnDateInput(e.target.value)}/>
+                                  <div style={{display:'flex',gap:4}}>
+                                    <button className="btn btn-primary btn-sm" style={{padding:'2px 10px',fontSize:11}} onClick={()=>confirmReturn(g)}>✓ تأكيد</button>
+                                    <button className="btn btn-ghost btn-sm" style={{padding:'2px 10px',fontSize:11}} onClick={cancelReturnEditor}>إلغاء</button>
+                                  </div>
+                                </div>
+                              ) : g.returned ? (
+                                <div>
+                                  <div style={{fontSize:12,color:'var(--success)',fontWeight:700}}>✅ أُرجعت</div>
+                                  <div style={{fontSize:11,color:'var(--gray-500)',marginTop:1}}>{g.return_date||'—'}</div>
+                                  {canWrite && (
+                                    <div style={{display:'flex',gap:8,justifyContent:'center',marginTop:3}}>
+                                      <button style={{fontSize:11,background:'none',border:'none',color:'var(--primary)',cursor:'pointer',padding:0}} onClick={()=>openReturnEditor(g)}>✏️ تعديل</button>
+                                      <button style={{fontSize:11,background:'none',border:'none',color:'var(--danger)',cursor:'pointer',padding:0}} onClick={()=>handleUnreturn(g)}>إلغاء الإرجاع</button>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : canWrite ? (
+                                <button className="btn btn-ghost btn-sm" onClick={()=>openReturnEditor(g)}>↩️ تسجيل إرجاع</button>
+                              ) : <span style={{color:'var(--gray-400)'}}>—</span>}
+                            </td>
                             <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)'}}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
                             <td style={{whiteSpace:'nowrap',textAlign:'center'}}>
+                              <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁 معاينة</button>
                               <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️ تحميل</button>
                               {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>handleDelete(g)}>🗑️</button>}
                             </td>
@@ -5809,7 +5905,7 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                     <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
                       <div className="form-group" style={{margin:0}}>
                         <label className="form-label">وسيلة الكفالة *</label>
-                        <select className="form-control" value={form.instrument} onChange={e=>setForm({...form,instrument:e.target.value})}>
+                        <select className="form-control" value={form.instrument} onChange={e=>setForm({...form,instrument:e.target.value,expiry_date:e.target.value==='bank_guarantee'?form.expiry_date:''})}>
                           {TENDER_GUARANTEE_INSTRUMENTS.map(i => <option key={i.key} value={i.key}>{i.label}</option>)}
                         </select>
                       </div>
@@ -5817,14 +5913,16 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                         <input className="form-control" placeholder="الرقم (كفالة/شيك)" value={form.ref_number} onChange={e=>setForm({...form,ref_number:e.target.value})}/>
                         <input className="form-control" placeholder="البنك" value={form.bank} onChange={e=>setForm({...form,bank:e.target.value})}/>
                         <input type="number" step="0.001" className="form-control" placeholder="القيمة (د.أ)" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})}/>
-                        <div>
-                          <div style={{fontSize:11,color:'var(--gray-400)',marginBottom:3}}>تاريخ الإصدار</div>
+                        <div style={{position:'relative'}}>
+                          {!form.issue_date && <span style={{position:'absolute',right:30,top:'50%',transform:'translateY(-50%)',fontSize:13,color:'var(--gray-400)',pointerEvents:'none'}}>تاريخ الإصدار</span>}
                           <input type="date" className="form-control" value={form.issue_date} onChange={e=>setForm({...form,issue_date:e.target.value})} title="تاريخ الإصدار"/>
                         </div>
-                        <div>
-                          <div style={{fontSize:11,color:'var(--gray-400)',marginBottom:3}}>تاريخ الانتهاء</div>
-                          <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
-                        </div>
+                        {form.instrument==='bank_guarantee' && (
+                          <div style={{position:'relative'}}>
+                            {!form.expiry_date && <span style={{position:'absolute',right:30,top:'50%',transform:'translateY(-50%)',fontSize:13,color:'var(--gray-400)',pointerEvents:'none'}}>تاريخ الانتهاء</span>}
+                            <input type="date" className="form-control" value={form.expiry_date} onChange={e=>setForm({...form,expiry_date:e.target.value})} title="تاريخ الانتهاء"/>
+                          </div>
+                        )}
                       </div>
                       <input className="form-control" placeholder="ملاحظة (اختياري)" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/>
                       <input type="file" className="form-control" onChange={handleFileChange}/>
@@ -5842,6 +5940,7 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
           )}
         </div>
       </div>
+      {previewTarget && <FilePreviewModal bucket="tender-attachments" path={previewTarget.file_path} fileName={previewTarget.file_name} mimeType={previewTarget.mime_type} onClose={()=>setPreviewTarget(null)}/>}
     </div>
   );
 }
