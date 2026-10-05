@@ -242,6 +242,8 @@ th:last-child, td:last-child { border-left: none; }
 .badge-expired { background: #f3f4f6; color: #374151; }
 .badge-pending { background: var(--warning-light); color: var(--warning); }
 .badge-partial_referral { background: #e0f2fe; color: #0369a1; }
+.badge-in_progress { background: #ffedd5; color: #c2410c; }
+.badge-financial_followup { background: #d1fae5; color: #065f46; }
 .badge-type-quote { background: #ede9fe; color: #6d28d9; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .badge-type-tender { background: #fef9c3; color: #854d0e; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; }
 .sig-toggle-btn { background: #f0fdf4; border: 1.5px solid #86efac; color: #15803d; border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
@@ -1364,8 +1366,12 @@ const SL = {
   draft: 'مسودة', sent: 'قيد الدراسة', approved: 'مُعتمد',
   partial_referral: 'إحالة جزئية',
   rejected: 'مرفوض', converted: 'محوّل لطلب', invoiced: 'تم إصدار فاتورة',
+  in_progress: 'قيد التنفيذ', financial_followup: 'متابعة مالية',
   cancelled: 'ملغي', expired: 'منتهي'
 };
+/* حالات العطاءات حصراً — دورة حياة مختلفة عن عروض الأسعار العادية (دراسة → تنفيذ →
+   متابعة مالية، بدل مسار مسودة/اعتماد/تحويل لطلب/فوترة الخاص بالعروض) */
+const TENDER_STATUS_KEYS = ['sent', 'in_progress', 'financial_followup', 'cancelled', 'expired'];
 const QT = { quote: 'عرض سعر', tender: 'عطاء محلي' };
 const OL = {
   processing: 'قيد التنفيذ',
@@ -5136,7 +5142,7 @@ function QuotesList({ user, quotes, onReload }) {
                 <div className="qcard-status-row">
                   <span style={{fontSize:12,fontWeight:600,color:'var(--gray-600)',whiteSpace:'nowrap'}}>تغيير الحالة:</span>
                   <select value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
-                    {Object.entries(SL).filter(([k])=>!['draft','approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                    {TENDER_STATUS_KEYS.map(k=><option key={k} value={k}>{SL[k]}</option>)}
                   </select>
                 </div>
                 <div className="qcard-actions">
@@ -5184,7 +5190,7 @@ function QuotesList({ user, quotes, onReload }) {
                   <td style={{textAlign:'center',padding:'8px 6px'}}>
                     <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}}
                       value={q.status} onChange={e=>changeStatus(q,e.target.value)}>
-                      {Object.entries(SL).filter(([k])=>!['draft','approved','invoiced'].includes(k)).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+                      {TENDER_STATUS_KEYS.map(k => <option key={k} value={k}>{SL[k]}</option>)}
                     </select>
                   </td>
                   <td style={{textAlign:'center',padding:'8px 6px',whiteSpace:'nowrap'}}>
@@ -5413,7 +5419,9 @@ function QuotesList({ user, quotes, onReload }) {
                   <td>
                     {hasPerm(user,'quotes_edit_all')
                       ? <select className="form-control" style={{fontSize:11,padding:'3px 7px',width:'auto'}} value={q.status} onChange={e=>changeArchiveStatus(q,e.target.value)}>
-                          {Object.entries(SL).filter(([k])=>!['approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                          {tab==='archive_tenders'
+                            ? TENDER_STATUS_KEYS.map(k=><option key={k} value={k}>{SL[k]}</option>)
+                            : Object.entries(SL).filter(([k])=>!['approved','invoiced'].includes(k)).map(([k,v])=><option key={k} value={k}>{v}</option>)}
                         </select>
                       : <SBadge status={q.status}/>}
                   </td>
