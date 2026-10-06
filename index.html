@@ -1535,13 +1535,13 @@ function AuthPage({ onLogin }) {
 const NAV = [
   { id: 'dashboard', label: 'لوحة التحكم',   icon: '📊', perm: 'dashboard_access' },
   { id: 'quotes',    label: 'عروض الأسعار',  icon: '📋', perm: 'quotes_access' },
+  { id: 'tenders',   label: 'إدارة العطاءات', icon: '📑', perm: 'tenders_access' },
   { id: 'orders',    label: 'إدارة الطلبات',        icon: '📦', visible: (u) => hasPerm(u,'orders_access') || hasPerm(u,'daily_orders_access') || hasPerm(u,'daily_orders_prepare') },
   { id: 'accounting', label: 'إدارة المحاسبة', icon: '💰', perm: 'accounting_access' },
   { id: 'procurement', label: 'إدارة المشتريات',   icon: '🏭', perm: 'suppliers_access' },
   { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
   { id: 'hr',        label: 'إدارة الموارد البشرية', icon: '👥', perm: 'hr_access' },
-  { id: 'letters',   label: 'الكتب الرسمية الصادرة', icon: '📝', perm: 'letters_access' },
-  { id: 'inbox', label: 'البريد الوارد', icon: '📥', perm: 'inbox_access' },
+  { id: 'correspondence', label: 'إدارة الديوان والأرشيف', icon: '📨', visible: (u) => hasPerm(u,'letters_access') || hasPerm(u,'inbox_access') },
   { id: 'catalog',   label: 'إدارة الأصناف',       icon: '🗂️', perm: 'catalog_access' },
   { id: 'chemicals', label: 'إدارة الكيماويات', icon: '🧪', perm: 'chemicals_access' },
   { id: 'properties', label: 'إدارة الأصول', icon: '🏘️', visible: isPropertiesUser },
@@ -2309,11 +2309,11 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft, onCo
           </table>
         </div>
       </div>
-      {doc.notes && (
+      {(isEn ? doc.notes_en : doc.notes) && (
         <div className="print-notes">
           <strong>{isEn ? 'Notes: ' : 'ملاحظات: '}</strong>
           <ul style={{margin:'4px 0 0 0', paddingRight:18, paddingLeft:0}}>
-            {doc.notes.split('\n').filter(l=>l.trim()).map((line,i)=>(
+            {(isEn ? doc.notes_en : doc.notes).split('\n').filter(l=>l.trim()).map((line,i)=>(
               <li key={i} style={{marginBottom:2}}>{line}</li>
             ))}
           </ul>
@@ -2641,10 +2641,10 @@ function ComboInput({ value, onChange, suggestions, placeholder, className }) {
 }
 
 /* ===================== QUOTE TYPE SELECTION DIALOG ===================== */
-function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
+function QuoteTypeSelectionDialog({ onConfirm, onClose, scope='quotes' }) {
   const [layout, setLayout]         = useState('simple');
   const [lang, setLang]             = useState('ar');
-  const [quoteType, setQuoteType]   = useState('quote');
+  const quoteType = scope === 'tenders' ? 'tender' : 'quote';
 
   const card = (active) => ({
     flex: 1, padding: '16px 12px', border: `2px solid ${active ? 'var(--primary)' : 'var(--gray-200)'}`,
@@ -2658,7 +2658,7 @@ function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth: 460}}>
         <div className="modal-header">
-          <span className="modal-title" style={{fontSize: 16, fontWeight: 800}}>📋 عرض سعر جديد</span>
+          <span className="modal-title" style={{fontSize: 16, fontWeight: 800}}>{scope==='tenders' ? '📑 عطاء جديد' : '📋 عرض سعر جديد'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{padding: '24px 26px', display:'flex', flexDirection:'column', gap:22}}>
@@ -2701,32 +2701,11 @@ function QuoteTypeSelectionDialog({ onConfirm, onClose }) {
             </div>
           </div>
 
-          {/* تصنيف الوثيقة */}
-          <div>
-            <div style={{fontSize: 13, fontWeight: 800, color: 'var(--gray-600)', marginBottom: 12, display:'flex', alignItems:'center', gap: 7}}>
-              <span>🏷️</span> تصنيف الوثيقة
-            </div>
-            <div style={{display: 'flex', gap: 12}}>
-              <button type="button" onClick={() => setQuoteType('quote')} style={card(quoteType === 'quote')}>
-                <span style={{fontSize: 30}}>📋</span>
-                <span style={{fontWeight: 700, fontSize: 14, color: quoteType==='quote' ? 'var(--primary)' : 'var(--gray-700)'}}>عرض سعر</span>
-                <span style={{fontSize: 11, color: 'var(--gray-500)'}}>عرض سعر اعتيادي</span>
-              </button>
-              {hasPerm(CURRENT_USER, 'tenders_access') && (
-              <button type="button" onClick={() => setQuoteType('tender')} style={card(quoteType === 'tender')}>
-                <span style={{fontSize: 30}}>📑</span>
-                <span style={{fontWeight: 700, fontSize: 14, color: quoteType==='tender' ? 'var(--primary)' : 'var(--gray-700)'}}>عطاء</span>
-                <span style={{fontSize: 11, color: 'var(--gray-500)'}}>مناقصة أو عطاء رسمي</span>
-              </button>
-              )}
-            </div>
-          </div>
-
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>إلغاء</button>
           <button type="button" className="btn btn-primary" onClick={() => onConfirm({ layout, lang, quoteType })}>
-            إنشاء العرض ←
+            {scope==='tenders' ? 'إنشاء العطاء ←' : 'إنشاء العرض ←'}
           </button>
         </div>
       </div>
@@ -2785,18 +2764,22 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
   const [name, setName] = useState(prefillName||'');
   const [phone, setPhone] = useState(prefillPhone||'');
   const [contactName, setContactName] = useState('');
+  const [contactTitle, setContactTitle] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [category, setCategory] = useState('');
   const [city, setCity] = useState('');
   const [dbCats, setDbCats] = useState(CUST_CATS);
+  const [dbTitles, setDbTitles] = useState(CUST_TITLES);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     sb.from('customer_categories').select('name').order('sort_order').order('name')
       .then(({data})=>{ if(data?.length) setDbCats(data.map(c=>c.name)); });
+    sb.from('customer_job_titles').select('name').order('sort_order').order('name')
+      .then(({data})=>{ if(data?.length) setDbTitles(data.map(t=>t.name)); });
   }, []);
 
-  const missingRequired = !name.trim() || !phone.trim() || !contactName.trim() || !contactPhone.trim() || !category.trim() || !city.trim();
+  const missingRequired = !name.trim() || !phone.trim() || !contactName.trim() || !contactTitle.trim() || !contactPhone.trim() || !category.trim() || !city.trim();
 
   const handleSave = async () => {
     if (missingRequired && !isSuperAdmin(user)) { toast('كل الحقول إلزامية — رجاءً عبّي جميع الخانات', 'error'); return; }
@@ -2807,7 +2790,7 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
       const approvalStatus = 'pending'; // كل عميل جديد يروح لقيد الموافقة، حتى لو أضافه مدير النظام
       const payload = {
         name: name.trim(), phone: phone.trim()||null,
-        contact1_name: contactName.trim()||null, contact1_phone: contactPhone.trim()||null,
+        contact1_name: contactName.trim()||null, contact1_title: contactTitle.trim()||null, contact1_phone: contactPhone.trim()||null,
         category: category.trim()||null, city: city.trim()||null,
         customer_code: genCode, created_by: user?.id||null,
         approval_status: approvalStatus,
@@ -2853,6 +2836,13 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
             <label className="form-label">اسم عميل المتابعة <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" value={contactName} onChange={e=>setContactName(e.target.value)} placeholder="الشخص المسؤول للمتابعة معه"/>
           </div>
+          <div className="form-group mb-3">
+            <label className="form-label">المسمى الوظيفي <span style={{color:'var(--danger)'}}>*</span></label>
+            <select className="form-control" value={contactTitle} onChange={e=>setContactTitle(e.target.value)}>
+              <option value="">اختر المسمى الوظيفي</option>
+              {dbTitles.map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
           <div className="form-group">
             <label className="form-label">رقم هاتف عميل المتابعة <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" dir="ltr" value={contactPhone} onChange={e=>setContactPhone(e.target.value)}/>
@@ -2873,7 +2863,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     const base = {
       customer_name:'', attention:'قسم المشتريات المحترمين', phone:'', email:'', address:'',
       date: today(), reference:'', currency:'JOD',
-      delivery:'PROMPT', notes:'', terms:'', valid_until:'',
+      delivery:'PROMPT', notes:'', notes_en:'', terms:'', valid_until:'',
       discount_pct: 0, tax_pct: 16, discount_type: 'pct', discount_fixed: 0,
       quote_type: 'quote', detailed_layout: false, quote_lang: 'ar',
       requester_name:'', requester_phone:'', requester_phone2:'',
@@ -3090,6 +3080,16 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
     });
   };
 
+  // تبديل لغة العرض — لو "الملاحظات الثابتة" لسا على نصها الافتراضي (ما تعدّلت يدوياً)، تنقلب تلقائياً لنفس النص بلغة العرض الجديدة
+  const switchQuoteLang = (newLang) => {
+    if (newLang === form.quote_lang) return;
+    const current = (form.terms||'').trim();
+    if (current === DEFAULT_QUOTE_TERMS_AR.trim() || current === DEFAULT_QUOTE_TERMS_EN.trim()) {
+      setF('terms', newLang === 'en' ? DEFAULT_QUOTE_TERMS_EN : DEFAULT_QUOTE_TERMS_AR);
+    }
+    setF('quote_lang', newLang);
+  };
+
   const handleSave = async (status='draft') => {
     const validUntil = canOverrideValidity ? form.valid_until : addDays(form.date || today(), QUOTE_VALIDITY_DAYS);
     if (!isSuperAdmin(user)) {
@@ -3281,11 +3281,11 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
             {/* اللغة */}
             <span style={{fontSize:13,fontWeight:800,color:'var(--primary)'}}>اللغة:</span>
             <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)'}}>
-              <button type="button" onClick={()=>setF('quote_lang','ar')}
+              <button type="button" onClick={()=>switchQuoteLang('ar')}
                 style={{padding:'6px 13px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.quote_lang!=='en'?'var(--primary)':'#fff',color:form.quote_lang!=='en'?'#fff':'var(--primary)'}}>
                 🇯🇴 عربي
               </button>
-              <button type="button" onClick={()=>setF('quote_lang','en')}
+              <button type="button" onClick={()=>switchQuoteLang('en')}
                 style={{padding:'6px 13px',fontSize:12,fontWeight:700,border:'none',cursor:'pointer',background:form.quote_lang==='en'?'var(--primary)':'#fff',color:form.quote_lang==='en'?'#fff':'var(--primary)'}}>
                 🇬🇧 English
               </button>
@@ -3572,8 +3572,15 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">ملاحظات</label>
-                <textarea className="form-control" rows="2" value={form.notes} onChange={e=>setF('notes',e.target.value)} placeholder="أي ملاحظات..."/>
+                <label className="form-label">
+                  {form.quote_lang==='en' ? 'Notes (English)' : 'ملاحظات (عربي)'}
+                  <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11}}> — {form.quote_lang==='en' ? 'تظهر بالعرض فقط لما اللغة إنجليزي' : 'تظهر بالعرض فقط لما اللغة عربي'}</span>
+                </label>
+                {form.quote_lang==='en' ? (
+                  <textarea className="form-control" dir="ltr" rows="2" value={form.notes_en||''} onChange={e=>setF('notes_en',e.target.value)} placeholder="Any notes..."/>
+                ) : (
+                  <textarea className="form-control" rows="2" value={form.notes||''} onChange={e=>setF('notes',e.target.value)} placeholder="أي ملاحظات..."/>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">الملاحظات الثابتة <span style={{fontWeight:400,color:'var(--gray-400)',fontSize:11}}>(تظهر أسفل عرض السعر المطبوع — كل سطر نقطة مستقلة)</span></label>
@@ -4206,7 +4213,8 @@ function AltCompanyCloneModal({ quote, onConfirm, onClose }) {
 }
 
 /* ===================== QUOTES LIST ===================== */
-function QuotesList({ user, quotes, onReload }) {
+function QuotesList({ user, quotes, onReload, scope='quotes' }) {
+  const isTenderScope = scope === 'tenders';
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
 
@@ -4271,13 +4279,13 @@ function QuotesList({ user, quotes, onReload }) {
       requester_name: q.requester_name, requester_phone: q.requester_phone, requester_phone2: q.requester_phone2,
       quote_type: q.quote_type, detailed_layout: q.detailed_layout, quote_lang: q.quote_lang,
       tax_pct: q.tax_pct, discount_pct: q.discount_pct, discount_type: q.discount_type, discount_fixed: q.discount_fixed,
-      currency: q.currency, notes: q.notes, terms: q.terms,
+      currency: q.currency, notes: q.notes, notes_en: q.notes_en, terms: q.terms,
       issuer_company: companyKey, price_markup_pct: pct, cloned_from_id: q.id,
     });
     setAltCloneTarget(null);
   };
 
-  const [tab, setTab] = useState('official'); // 'official' | 'drafts'
+  const [tab, setTab] = useState(isTenderScope ? 'tenders' : 'official'); // 'official' | 'tenders' | 'drafts' | 'deleted' | 'altco'
   const [importLoading, setImportLoading] = useState(false);
   const importFileRef = useRef(null);
   const [showFilter, setShowFilter] = useState(false);
@@ -4539,11 +4547,11 @@ function QuotesList({ user, quotes, onReload }) {
   const allOfficial   = active.filter(q => q.status !== 'draft' && !isAltCo(q));
   const officialQuotes = allOfficial.filter(q => q.quote_type !== 'tender');
   const tenderQuotes  = allOfficial.filter(q => q.quote_type === 'tender');
-  const draftQuotes   = active.filter(q => q.status === 'draft' && !isAltCo(q));
+  const draftQuotes   = active.filter(q => q.status === 'draft' && !isAltCo(q) && (isTenderScope ? q.quote_type === 'tender' : q.quote_type !== 'tender'));
   const altCoQuotes   = active.filter(isAltCo);
   const archivedQuotesOnly = visibleQuotes.filter(q => q.archived && q.quote_type !== 'tender');
   const archivedTendersOnly = visibleQuotes.filter(q => q.archived && q.quote_type === 'tender');
-  const deletedQuotes  = visibleQuotes.filter(q => q.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
+  const deletedQuotes  = visibleQuotes.filter(q => q.deleted_at && (isTenderScope ? q.quote_type === 'tender' : q.quote_type !== 'tender')).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const [archiveSearch, setArchiveSearch] = useState('');
   const [deletedSearch, setDeletedSearch] = useState('');
   const [archiveDateFrom, setArchiveDateFrom] = useState('');
@@ -4959,14 +4967,14 @@ function QuotesList({ user, quotes, onReload }) {
         />
       )}
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
-        <h2 style={{fontSize:20,fontWeight:800}}>عروض الأسعار</h2>
+        <h2 style={{fontSize:20,fontWeight:800}}>{isTenderScope ? 'إدارة العطاءات' : 'عروض الأسعار'}</h2>
         {hasPerm(user, 'quotes_create') && (
           <div className="flex gap-2">
             <input ref={importFileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
             <button className="btn btn-ghost" style={{border:'1.5px solid var(--primary)',color:'var(--primary)',display:'flex',alignItems:'center',gap:6}} onClick={()=>importFileRef.current?.click()} disabled={importLoading}>
               {importLoading ? '⏳ جاري الاستيراد...' : '📥 استيراد Excel'}
             </button>
-            <button className="btn btn-primary" onClick={()=>setShowTypeDialog(true)}>+ عرض جديد</button>
+            <button className="btn btn-primary" onClick={()=>setShowTypeDialog(true)}>{isTenderScope ? '+ عطاء جديد' : '+ عرض جديد'}</button>
           </div>
         )}
       </div>
@@ -4974,10 +4982,12 @@ function QuotesList({ user, quotes, onReload }) {
       {/* تبويبات */}
       <div className="qtabs-row" style={{marginBottom:16}}>
         <div style={{display:'flex',gap:0,borderBottom:'2px solid var(--gray-200)'}}>
+          {!isTenderScope && (
           <button onClick={()=>setTab('official')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:isQuotesGroup?'3px solid var(--primary)':'3px solid transparent',background:'none',cursor:'pointer',color:isQuotesGroup?'var(--primary)':'var(--gray-500)',marginBottom:-2}}>
             عروض الأسعار <span style={{background:'var(--gray-100)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{officialQuotes.length}</span>
           </button>
-          {hasPerm(user,'tenders_access') && (
+          )}
+          {isTenderScope && (
           <button onClick={()=>setTab('tenders')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:isTendersGroup?'3px solid #854d0e':'3px solid transparent',background:'none',cursor:'pointer',color:isTendersGroup?'#854d0e':'var(--gray-500)',marginBottom:-2}}>
             العطاءات <span style={{background:tenderQuotes.length?'#fef9c3':'var(--gray-100)',color:tenderQuotes.length?'#854d0e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{tenderQuotes.length}</span>
           </button>
@@ -4988,13 +4998,13 @@ function QuotesList({ user, quotes, onReload }) {
           <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',marginBottom:-2}}>
             المحذوفة <span style={{background:deletedQuotes.length?'#fee2e2':'var(--gray-100)',color:deletedQuotes.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deletedQuotes.length}</span>
           </button>
-          {hasPerm(user,'quotes_clone_other_company') && (
+          {!isTenderScope && hasPerm(user,'quotes_clone_other_company') && (
           <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
             🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
           </button>
           )}
         </div>
-        {isQuotesGroup && (
+        {!isTenderScope && isQuotesGroup && (
         <div style={{display:'flex',gap:8,padding:'8px 20px 0'}}>
           <button onClick={()=>setTab('official')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='official'?'var(--primary)':'#e5e7eb',background:tab==='official'?'var(--primary)':'#f9fafb',color:tab==='official'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
             عروض قائمة
@@ -5004,7 +5014,7 @@ function QuotesList({ user, quotes, onReload }) {
           </button>
         </div>
         )}
-        {isTendersGroup && (
+        {isTenderScope && isTendersGroup && (
         <div style={{display:'flex',gap:8,padding:'8px 20px 0'}}>
           <button onClick={()=>setTab('tenders')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='tenders'?'#854d0e':'#e5e7eb',background:tab==='tenders'?'#854d0e':'#f9fafb',color:tab==='tenders'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
             عطاءات قائمة
@@ -5253,7 +5263,7 @@ function QuotesList({ user, quotes, onReload }) {
                     {(q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&!q.needs_pricing&&<button className="btn btn-ghost btn-sm" onClick={()=>setPricingTarget(q)}>🏷️ طلب تسعير</button>}
                     {q.needs_pricing&&(q.pricing_requested_to===user?.id||q.created_by===user?.id||hasPerm(user,'quotes_edit_all'))&&<button className="btn btn-ghost btn-sm" onClick={()=>markPriced(q)}>✅ تم التسعير</button>}
                     <button className="btn btn-success btn-sm" onClick={()=>confirmDraft(q)}>✅ اعتماد</button>
-                    {hasPerm(user,'tenders_access')&&<button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>confirmDraftAsTender(q)}>📑 اعتماد كعطاء</button>}
+                    {!isTenderScope && hasPerm(user,'tenders_access')&&<button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>confirmDraftAsTender(q)}>📑 اعتماد كعطاء</button>}
                     {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(q)}>🗑️ حذف</button>}
                   </div>
                 </div>
@@ -5304,7 +5314,7 @@ function QuotesList({ user, quotes, onReload }) {
                       { icon:'📋', label:'نسخ لعميل آخر', hidden:!hasPerm(user,'quotes_clone'), onClick:()=>cloneQuote(q) },
                       { icon:'🏢', label:'نسخ باسم شركة أخرى', hidden:!hasPerm(user,'quotes_clone_other_company'), onClick:()=>setAltCloneTarget(q) },
                       { icon:'✅', label:'اعتماد', onClick:()=>confirmDraft(q) },
-                      { icon:'📑', label:'اعتماد كعطاء', hidden:!hasPerm(user,'tenders_access'), onClick:()=>confirmDraftAsTender(q) },
+                      { icon:'📑', label:'اعتماد كعطاء', hidden:isTenderScope||!hasPerm(user,'tenders_access'), onClick:()=>confirmDraftAsTender(q) },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>setDeleteTarget(q) },
                     ]}/>
                   </td>
@@ -5450,7 +5460,7 @@ function QuotesList({ user, quotes, onReload }) {
         {deletedQuotes.length === 0 ? (
           <div style={{textAlign:'center',padding:60,color:'var(--gray-400)'}}>
             <div style={{fontSize:48,marginBottom:12}}>✅</div>
-            <div style={{fontWeight:600}}>لا توجد عروض محذوفة</div>
+            <div style={{fontWeight:600}}>{isTenderScope ? 'لا توجد عطاءات محذوفة' : 'لا توجد عروض محذوفة'}</div>
           </div>
         ) : (<>
           <div className="filter-bar">
@@ -5493,6 +5503,7 @@ function QuotesList({ user, quotes, onReload }) {
 
       {showTypeDialog && (
         <QuoteTypeSelectionDialog
+          scope={scope}
           onConfirm={({layout, lang, quoteType}) => {
             setNewQuoteDefaults({ detailed_layout: layout === 'detailed', quote_lang: lang, quote_type: quoteType });
             setShowTypeDialog(false);
@@ -5510,7 +5521,7 @@ function QuotesList({ user, quotes, onReload }) {
       {editing && editing._convertToInvoice && (
         <InvoiceEditModal user={user} quote={editing} onSave={()=>{setEditing(null);onReload();}} onClose={()=>setEditing(null)}/>
       )}
-      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null} onConfirmDraftAsTender={previewing?.status==='draft' && hasPerm(user,'tenders_access') ? ()=>confirmDraftAsTender(previewing) : null}/>}
+      {previewing && <DocPreview doc={previewing} items={previewItems} docType="quote" onClose={()=>setPreviewQ(null)} onConfirmDraft={previewing?.status==='draft' ? ()=>confirmDraft(previewing) : null} onConfirmDraftAsTender={!isTenderScope && previewing?.status==='draft' && hasPerm(user,'tenders_access') ? ()=>confirmDraftAsTender(previewing) : null}/>}
       {orderingQ && <OrderEditModal user={user} quote={orderingQ} onSave={(orderNo)=>{ const q=orderingQ; setOrderingQ(null); setArchiveConvertedQ({...q, _orderNo: orderNo||''}); onReload(); }} onClose={()=>setOrderingQ(null)}/>}
       {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote={`تم تحويل العرض إلى طلب${archiveConvertedQ._orderNo ? ` رقم ${archiveConvertedQ._orderNo}` : ''}`} onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
@@ -5960,7 +5971,7 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
                                 <button className="btn btn-ghost btn-sm" onClick={()=>openReturnEditor(g)}>↩️ تسجيل إرجاع</button>
                               ) : <span style={{color:'var(--gray-400)'}}>—</span>}
                             </td>
-                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:130}} title={g.file_name}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
+                            <td style={{textAlign:'center',fontSize:11,color:'var(--gray-500)',whiteSpace:'normal',wordBreak:'break-word',maxWidth:160}}>{g.file_name}{g.file_size?` (${fmtSize(g.file_size)})`:''}</td>
                             <td style={{textAlign:'center'}}>
                               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,justifyItems:'center'}}>
                                 <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁 معاينة</button>
@@ -8373,6 +8384,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
   const [profiles, setProfiles] = useState(profilesProp||[]);
   const [dbCats, setDbCats] = useState(CUST_CATS);
   const [dbDistricts, setDbDistricts] = useState(CUST_DISTRICTS);
+  const [dbTitles, setDbTitles] = useState(CUST_TITLES);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
 
   useEffect(() => {
@@ -8386,9 +8398,11 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
         if (name) setF('rep_name', name);
       }
     });
-    // تحميل التصنيفات والمناطق من DB
+    // تحميل التصنيفات والمناطق والمسمى الوظيفي من DB
     sb.from('customer_categories').select('name').order('sort_order').order('name')
       .then(({data})=>{ if(data?.length) setDbCats(data.map(c=>c.name)); });
+    sb.from('customer_job_titles').select('name').order('sort_order').order('name')
+      .then(({data})=>{ if(data?.length) setDbTitles(data.map(t=>t.name)); });
     sb.from('customer_districts').select('governorate,name').order('sort_order').order('name')
       .then(({data})=>{
         if (data?.length) {
@@ -8520,7 +8534,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الأول</div>
               <ErpField label="الاسم الكامل" value={form.contact1_name} onChange={v=>setF('contact1_name',v)} placeholder="الاسم الأول"/>
-              <ErpDatalist label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} listId="job-t1" options={CUST_TITLES} placeholder="مدير المشتريات"/>
+              <ErpSelect label="المسمى الوظيفي" value={form.contact1_title} onChange={v=>setF('contact1_title',v)} options={dbTitles} placeholder="اختر المسمى الوظيفي"/>
               <ErpField label="رقم موبايل أساسي" value={form.contact1_phone} onChange={v=>setF('contact1_phone',v)} placeholder="+962-7-..."/>
               <ErpField label="رقم موبايل ثانوي" value={form.contact1_mobile2||''} onChange={v=>setF('contact1_mobile2',v)} placeholder="+962-7-..."/>
               <ErpField label="تحويلة EXT" value={form.contact1_ext} onChange={v=>setF('contact1_ext',v)} placeholder="123"/>
@@ -8531,7 +8545,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
             <div className="erp-card contact-card">
               <div className="erp-section-header" style={{color:'#1C6A99'}}>الشخص المسؤول الثاني</div>
               <ErpField label="الاسم الكامل" value={form.contact2_name} onChange={v=>setF('contact2_name',v)} placeholder="الاسم الأول"/>
-              <ErpDatalist label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} listId="job-t2" options={CUST_TITLES} placeholder="المحاسب / المشرف"/>
+              <ErpSelect label="المسمى الوظيفي" value={form.contact2_title} onChange={v=>setF('contact2_title',v)} options={dbTitles} placeholder="اختر المسمى الوظيفي"/>
               <ErpField label="رقم موبايل أساسي" value={form.contact2_phone} onChange={v=>setF('contact2_phone',v)} placeholder="+962-7-..."/>
               <ErpField label="رقم موبايل ثانوي" value={form.contact2_mobile2||''} onChange={v=>setF('contact2_mobile2',v)} placeholder="+962-7-..."/>
               <ErpField label="تحويلة EXT" value={form.contact2_ext} onChange={v=>setF('contact2_ext',v)} placeholder="456"/>
@@ -9460,9 +9474,10 @@ function ExportCustomersTab({ user, profiles, onCountChange }) {
 
 /* ---- CustomerListsManager (admin only) — تصنيفات العملاء + مناطق المحافظات ---- */
 function CustomerListsManager({ user, onClose }) {
-  const [tab, setTab] = React.useState('cats'); // 'cats' | 'districts'
+  const [tab, setTab] = React.useState('cats'); // 'cats' | 'districts' | 'titles'
   const [cats, setCats] = React.useState([]);
   const [districts, setDistricts] = React.useState([]);
+  const [titles, setTitles] = React.useState([]);
   const [selGov, setSelGov] = React.useState('عمان');
   const [newName, setNewName] = React.useState('');
   const [editing, setEditing] = React.useState(null);
@@ -9470,20 +9485,21 @@ function CustomerListsManager({ user, onClose }) {
 
   const loadCats = () => sb.from('customer_categories').select('*').order('sort_order').order('name').then(({data})=>setCats(data||[]));
   const loadDist = (gov) => sb.from('customer_districts').select('*').eq('governorate',gov||selGov).order('sort_order').order('name').then(({data})=>setDistricts(data||[]));
+  const loadTitles = () => sb.from('customer_job_titles').select('*').order('sort_order').order('name').then(({data})=>setTitles(data||[]));
 
-  React.useEffect(()=>{ loadCats(); loadDist('عمان'); },[]);
+  React.useEffect(()=>{ loadCats(); loadDist('عمان'); loadTitles(); },[]);
   React.useEffect(()=>{ loadDist(selGov); setNewName(''); setEditing(null); },[selGov]);
 
-  const table = tab==='cats' ? 'customer_categories' : 'customer_districts';
-  const list  = tab==='cats' ? cats : districts;
-  const reload = tab==='cats' ? loadCats : ()=>loadDist(selGov);
+  const table = tab==='cats' ? 'customer_categories' : tab==='titles' ? 'customer_job_titles' : 'customer_districts';
+  const list  = tab==='cats' ? cats : tab==='titles' ? titles : districts;
+  const reload = tab==='cats' ? loadCats : tab==='titles' ? loadTitles : ()=>loadDist(selGov);
 
   const add = async () => {
     if (!newName.trim()) return;
     setSaving(true);
-    const payload = tab==='cats'
-      ? { name:newName.trim(), sort_order:list.length+1 }
-      : { governorate:selGov, name:newName.trim(), sort_order:list.length+1 };
+    const payload = tab==='districts'
+      ? { governorate:selGov, name:newName.trim(), sort_order:list.length+1 }
+      : { name:newName.trim(), sort_order:list.length+1 };
     const {error} = await sb.from(table).insert(payload);
     setSaving(false);
     if (error) { toast('خطأ: '+error.message,'error'); return; }
@@ -9524,6 +9540,7 @@ function CustomerListsManager({ user, onClose }) {
           <div style={{display:'flex',gap:8,marginBottom:16}}>
             <button style={tabStyle('cats')} onClick={()=>{setTab('cats');setNewName('');setEditing(null);}}>🏷️ تصنيفات العملاء</button>
             <button style={tabStyle('districts')} onClick={()=>{setTab('districts');setNewName('');setEditing(null);}}>📍 مناطق المحافظات</button>
+            <button style={tabStyle('titles')} onClick={()=>{setTab('titles');setNewName('');setEditing(null);}}>💼 المسمى الوظيفي</button>
           </div>
 
           {/* محافظة selector للمناطق */}
@@ -9536,7 +9553,7 @@ function CustomerListsManager({ user, onClose }) {
           {/* إضافة جديد */}
           <div style={{display:'flex',gap:8,marginBottom:14}}>
             <input className="form-control" value={newName} onChange={e=>setNewName(e.target.value)}
-              placeholder={tab==='cats' ? 'تصنيف جديد...' : `منطقة جديدة في ${selGov}...`}
+              placeholder={tab==='cats' ? 'تصنيف جديد...' : tab==='titles' ? 'مسمى وظيفي جديد...' : `منطقة جديدة في ${selGov}...`}
               onKeyDown={e=>e.key==='Enter'&&add()} style={{flex:1}}/>
             <button className="btn btn-primary btn-sm" onClick={add} disabled={saving||!newName.trim()}>➕ إضافة</button>
           </div>
@@ -20267,6 +20284,30 @@ function LettersPage({ user }) {
   );
 }
 
+/* ===================== إدارة الديوان والأرشيف (الكتب الصادرة + البريد الوارد) ===================== */
+function CorrespondenceArchivePage({ user }) {
+  const canLetters = hasPerm(user,'letters_access');
+  const canInbox = hasPerm(user,'inbox_access');
+  const [tab, setTab] = useState(canLetters ? 'letters' : 'inbox');
+
+  const tabStyle = (t) => ({
+    padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',cursor:'pointer',
+    borderBottom: tab===t ? '3px solid var(--primary)' : '3px solid transparent',
+    background:'none', color: tab===t ? 'var(--primary)' : 'var(--gray-500)', marginBottom:-2,
+  });
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:0,borderBottom:'2px solid var(--gray-200)',marginBottom:16}}>
+        {canLetters && <button onClick={()=>setTab('letters')} style={tabStyle('letters')}>📝 الكتب الرسمية الصادرة</button>}
+        {canInbox && <button onClick={()=>setTab('inbox')} style={tabStyle('inbox')}>📥 البريد الوارد</button>}
+      </div>
+      {tab==='letters' && canLetters && <LettersPage user={user}/>}
+      {tab==='inbox' && canInbox && <InboxPage user={user}/>}
+    </div>
+  );
+}
+
 /* ===================== LETTER DELETE REASON MODAL ===================== */
 function LetterDeleteReasonModal({ letter, onConfirm, onClose }) {
   const [reason, setReason] = useState('');
@@ -23518,7 +23559,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'inbox':'البريد الوارد', properties:'إدارة الأصول', chemicals:'إدارة الكيماويات' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'correspondence':'إدارة الديوان والأرشيف', properties:'إدارة الأصول', chemicals:'إدارة الكيماويات' };
 
   return (
     <div className="app-layout">
@@ -23534,14 +23575,15 @@ function App() {
         </div>
         <div className="content">
           {page==='dashboard' && hasPerm(user,'dashboard_access') && <Dashboard quotes={quotes} orders={orders} logs={logs} user={user}/>}
-          {page==='quotes' && hasPerm(user,'quotes_access') && <QuotesList user={user} quotes={quotes} onReload={reload}/>}
+          {page==='quotes' && hasPerm(user,'quotes_access') && <QuotesList user={user} quotes={quotes} onReload={reload} scope="quotes"/>}
+          {page==='tenders' && hasPerm(user,'tenders_access') && <QuotesList user={user} quotes={quotes} onReload={reload} scope="tenders"/>}
           {page==='accounting' && hasPerm(user,'accounting_access') && <FormsPage user={user} quotes={quotes} onReload={reload}/>}
           {page==='orders' && <OrdersSection user={user} orders={orders} onReload={reload}/>}
           {page==='procurement' && hasPerm(user,'suppliers_access') && <ProcurementPage user={user}/>}
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
           {page==='chemicals' && hasPerm(user,'chemicals_access') && <ChemicalsPage user={user}/>}
-          {page==='letters' && hasPerm(user,'letters_access') && <LettersPage user={user}/>}
+          {page==='correspondence' && (hasPerm(user,'letters_access')||hasPerm(user,'inbox_access')) && <CorrespondenceArchivePage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
           {page==='deleted-quotes' && hasPerm(user,'deleted_quotes_access') && <DeletedQuotesPage user={user} quotes={quotes} onReload={reload}/>}
@@ -23549,7 +23591,6 @@ function App() {
           {page==='hr' && hasPerm(user,'hr_access') && <HRPage user={user}/>}
           {page==='tasks' && hasPerm(user,'tasks_access') && <TasksPage user={user}/>}
           {page==='change-requests' && hasPerm(user,'change_requests_access') && <ChangeRequestsPage user={user}/>}
-          {page==='inbox' && hasPerm(user,'inbox_access') && <InboxPage user={user}/>}
           {page==='properties' && isPropertiesUser(user) && <PropertiesPage user={user}/>}
         </div>
       </div>
