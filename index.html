@@ -5540,28 +5540,43 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
 function FilePreviewModal({ bucket, path, fileName, mimeType, onClose }) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
+  const [docxHtml, setDocxHtml] = useState(null);
+
+  const isPdf = mimeType === 'application/pdf' || /\.pdf$/i.test(fileName||'');
+  const isImage = (mimeType||'').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(fileName||'');
+  const isDocx = /\.(docx|docm|dotx)$/i.test(fileName||'') || /wordprocessingml/i.test(mimeType||'');
 
   useEffect(() => {
     let alive = true;
-    setUrl(null); setError(null);
-    sb.storage.from(bucket).createSignedUrl(path, 300).then(({ data, error }) => {
+    setUrl(null); setError(null); setDocxHtml(null);
+    sb.storage.from(bucket).createSignedUrl(path, 300).then(async ({ data, error }) => {
       if (!alive) return;
-      if (error) setError(error.message); else setUrl(data.signedUrl);
+      if (error) { setError(error.message); return; }
+      setUrl(data.signedUrl);
+      if (isDocx) {
+        try {
+          const resp = await fetch(data.signedUrl);
+          const arrayBuffer = await resp.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer });
+          if (alive) setDocxHtml(result.value);
+        } catch (e) {
+          if (alive) setError('تعذرت معاينة ملف Word: ' + e.message);
+        }
+      }
     });
     return () => { alive = false; };
   }, [bucket, path]);
 
-  const isPdf = mimeType === 'application/pdf' || /\.pdf$/i.test(fileName||'');
-  const isImage = (mimeType||'').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(fileName||'');
+  const isWide = isPdf || isImage || isDocx;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{maxWidth:(isPdf||isImage)?'min(1400px,95vw)':600,width:'100%',height: (isPdf||isImage) ? '95vh' : 'auto',maxHeight:'95vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:isWide?'min(1400px,95vw)':600,width:'100%',height: isWide ? '95vh' : 'auto',maxHeight:'95vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <span className="modal-title">👁 {fileName||'معاينة الملف'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div style={{flex:1,minHeight:300,display:'flex',alignItems:'center',justifyContent:'center',padding: isPdf||isImage ? 0 : 20,overflow:'auto'}}>
+        <div style={{flex:1,minHeight:300,display:'flex',alignItems:isWide?'stretch':'center',justifyContent:isWide?'stretch':'center',padding: isPdf||isImage ? 0 : 20,overflow:'auto'}}>
           {error ? (
             <div className="empty-state">خطأ: {error}</div>
           ) : !url ? (
@@ -5570,6 +5585,12 @@ function FilePreviewModal({ bucket, path, fileName, mimeType, onClose }) {
             <iframe src={url} title={fileName} style={{width:'100%',height:'100%',border:'none'}}/>
           ) : isImage ? (
             <img src={url} alt={fileName} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}}/>
+          ) : isDocx ? (
+            docxHtml ? (
+              <div style={{width:'100%',background:'#fff',color:'#111',padding:'32px 40px',borderRadius:4,lineHeight:1.6}} dangerouslySetInnerHTML={{__html: docxHtml}}/>
+            ) : (
+              <div className="empty-state">جاري تحويل ملف Word للمعاينة...</div>
+            )
           ) : (
             <div style={{textAlign:'center'}}>
               <div style={{marginBottom:12,color:'var(--gray-500)'}}>لا يمكن معاينة هذا النوع من الملفات داخل المتصفح</div>
