@@ -5145,7 +5145,8 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
   };
 
   const isQuotesGroup = tab === 'official' || tab === 'archive_official';
-  const isTendersGroup = tab === 'tenders' || tab === 'archive_tenders';
+  // بسكوب العطاءات، المسودات والمحذوفة صاروا تبويبات فرعية تحت "العطاءات" (مو مستقلين بالصف الأول)
+  const isTendersGroup = tab === 'tenders' || tab === 'archive_tenders' || (isTenderScope && (tab === 'drafts' || tab === 'deleted'));
 
   return (
     <div>
@@ -5182,12 +5183,21 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
             العطاءات <span style={{background:tenderQuotes.length?'#fef9c3':'var(--gray-100)',color:tenderQuotes.length?'#854d0e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{tenderQuotes.length}</span>
           </button>
           )}
+          {isTenderScope && (
+          <button onClick={()=>setTab('guarantees_report')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='guarantees_report'?'3px solid #0f766e':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='guarantees_report'?'#0f766e':'var(--gray-500)',marginBottom:-2}}>
+            📜 تقرير الكفالات
+          </button>
+          )}
+          {!isTenderScope && (
           <button onClick={()=>setTab('drafts')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='drafts'?'3px solid #f59e0b':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='drafts'?'#f59e0b':'var(--gray-500)',marginBottom:-2}}>
             المسودات <span style={{background:draftQuotes.length?'#fef3c7':'var(--gray-100)',color:draftQuotes.length?'#92400e':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{draftQuotes.length}</span>
           </button>
+          )}
+          {!isTenderScope && (
           <button onClick={()=>setTab('deleted')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='deleted'?'3px solid var(--danger)':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='deleted'?'var(--danger)':'var(--gray-500)',marginBottom:-2}}>
             المحذوفة <span style={{background:deletedQuotes.length?'#fee2e2':'var(--gray-100)',color:deletedQuotes.length?'var(--danger)':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{deletedQuotes.length}</span>
           </button>
+          )}
           {!isTenderScope && hasPerm(user,'quotes_clone_other_company') && (
           <button onClick={()=>setTab('altco')} style={{padding:'8px 20px',fontWeight:700,fontSize:14,border:'none',borderBottom:tab==='altco'?'3px solid #6d28d9':'3px solid transparent',background:'none',cursor:'pointer',color:tab==='altco'?'#6d28d9':'var(--gray-500)',marginBottom:-2}}>
             🏢 شركات أخرى <span style={{background:altCoQuotes.length?'#ede9fe':'var(--gray-100)',color:altCoQuotes.length?'#6d28d9':'var(--gray-500)',borderRadius:99,padding:'1px 8px',fontSize:12,marginRight:4}}>{altCoQuotes.length}</span>
@@ -5212,9 +5222,20 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
           <button onClick={()=>setTab('archive_tenders')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='archive_tenders'?'#854d0e':'#e5e7eb',background:tab==='archive_tenders'?'#854d0e':'#f9fafb',color:tab==='archive_tenders'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
             مؤرشفة <span style={{opacity:.8}}>({archivedTendersOnly.length})</span>
           </button>
+          <button onClick={()=>setTab('drafts')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='drafts'?'#f59e0b':'#e5e7eb',background:tab==='drafts'?'#f59e0b':'#f9fafb',color:tab==='drafts'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            المسودات <span style={{opacity:.8}}>({draftQuotes.length})</span>
+          </button>
+          <button onClick={()=>setTab('deleted')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='deleted'?'var(--danger)':'#e5e7eb',background:tab==='deleted'?'var(--danger)':'#f9fafb',color:tab==='deleted'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            المحذوفة <span style={{opacity:.8}}>({deletedQuotes.length})</span>
+          </button>
         </div>
         )}
       </div>
+
+      {/* تقرير الكفالات */}
+      {tab === 'guarantees_report' && (
+        <TenderGuaranteesReport quotes={visibleQuotes} isMobile={isMobile} onOpenTender={(q)=>setGuaranteeTarget(q)}/>
+      )}
 
       {/* قائمة العروض الرسمية */}
       {tab === 'official' && (
@@ -6252,6 +6273,210 @@ function TenderGuaranteesModal({ quote, user, onClose }) {
           )}
         </div>
       </div>
+      {previewTarget && <FilePreviewModal bucket="tender-attachments" path={previewTarget.file_path} fileName={previewTarget.file_name} mimeType={previewTarget.mime_type} onClose={()=>setPreviewTarget(null)}/>}
+    </div>
+  );
+}
+
+/* ===================== تقرير الكفالات (كل العطاءات مجمّعة بمكان واحد) ===================== */
+const tgGuaranteeStatus = (g) => {
+  if (g.returned) return { key:'returned', label:'✅ أُرجعت', color:'#16a34a', bg:'#dcfce7' };
+  if (g.expiry_date) {
+    const diff = new Date(g.expiry_date) - new Date();
+    if (diff < 0) return { key:'expired', label:'⚠️ منتهية', color:'var(--danger)', bg:'#fee2e2' };
+    if (diff < 1000*60*60*24*30) return { key:'soon', label:'⏳ قريبة الانتهاء', color:'var(--warning)', bg:'#fef3c7' };
+  }
+  return { key:'active', label:'🟢 سارية', color:'#0f766e', bg:'#e6fffa' };
+};
+const TG_STATUS_OPTS = [
+  { key:'all', label:'كل الحالات' },
+  { key:'active', label:'🟢 سارية' },
+  { key:'soon', label:'⏳ قريبة الانتهاء' },
+  { key:'expired', label:'⚠️ منتهية' },
+  { key:'returned', label:'✅ أُرجعت' },
+];
+
+function TenderGuaranteesReport({ quotes, isMobile, onOpenTender }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showFilter, setShowFilter] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState(null);
+  const filterRef = useRef(null);
+
+  const tenderQuotes = quotes.filter(q => q.quote_type === 'tender');
+  const quoteById = Object.fromEntries(tenderQuotes.map(q => [q.id, q]));
+  const tenderIds = tenderQuotes.map(q => q.id);
+  const tenderIdsKey = tenderIds.join(',');
+
+  const load = async () => {
+    setLoading(true);
+    if (!tenderIds.length) { setRows([]); setLoading(false); return; }
+    const { data, error } = await sb.from('tender_guarantees').select('*').in('quote_id', tenderIds);
+    if (error) toast('خطأ: '+error.message, 'error');
+    setRows(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [tenderIdsKey]);
+
+  useEffect(() => {
+    const onClick = (e) => { if (filterRef.current && !filterRef.current.contains(e.target)) setShowFilter(false); };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const handleDownload = async (g) => {
+    const { data, error } = await sb.storage.from('tender-attachments')
+      .createSignedUrl(g.file_path, 60, { download: g.file_name || 'كفالة' });
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    const a = document.createElement('a');
+    a.href = data.signedUrl; a.download = g.file_name || 'كفالة';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const counts = rows.reduce((acc,g) => { const s = tgGuaranteeStatus(g).key; acc[s] = (acc[s]||0)+1; return acc; }, {});
+  const outstandingTotal = rows.filter(g=>!g.returned).reduce((s,g)=>s+(parseFloat(g.amount)||0), 0);
+  const activeFilterCount = (typeFilter!=='all'?1:0) + (statusFilter!=='all'?1:0);
+
+  const q = search.trim().toLowerCase();
+  const filtered = rows.filter(g => {
+    if (typeFilter!=='all' && g.guarantee_type!==typeFilter) return false;
+    if (statusFilter!=='all' && tgGuaranteeStatus(g).key!==statusFilter) return false;
+    if (q) {
+      const quote = quoteById[g.quote_id];
+      const hay = [quote?.number, quote?.customer_name, g.ref_number, g.bank, g.notes].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }).sort((a,b) => {
+    if (!!a.returned !== !!b.returned) return a.returned ? 1 : -1;
+    const ea = a.expiry_date ? new Date(a.expiry_date).getTime() : Infinity;
+    const eb = b.expiry_date ? new Date(b.expiry_date).getTime() : Infinity;
+    return ea - eb;
+  });
+
+  const SummaryChip = ({ k, label, color, bg }) => (
+    <button onClick={()=>setStatusFilter(statusFilter===k?'all':k)}
+      style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'10px 16px',borderRadius:10,border:'1.5px solid',borderColor:statusFilter===k?color:'transparent',background:bg,cursor:'pointer',minWidth:92}}>
+      <span style={{fontSize:20,fontWeight:800,color}}>{counts[k]||0}</span>
+      <span style={{fontSize:11,fontWeight:700,color}}>{label}</span>
+    </button>
+  );
+
+  return (
+    <div className="card">
+      <div style={{display:'flex',flexWrap:'wrap',gap:10,padding:'16px 16px 0'}}>
+        <SummaryChip k="active" label="سارية" color="#0f766e" bg="#e6fffa"/>
+        <SummaryChip k="soon" label="قريبة الانتهاء" color="#92400e" bg="#fef3c7"/>
+        <SummaryChip k="expired" label="منتهية" color="var(--danger)" bg="#fee2e2"/>
+        <SummaryChip k="returned" label="أُرجعت" color="#16a34a" bg="#dcfce7"/>
+        <div style={{display:'flex',flexDirection:'column',justifyContent:'center',padding:'10px 16px',marginRight:'auto'}}>
+          <span style={{fontSize:11,color:'var(--gray-500)',fontWeight:700}}>إجمالي القيمة القائمة (غير المُرجعة)</span>
+          <span style={{fontSize:18,fontWeight:800,color:'#111'}}>{numFmt(outstandingTotal)} د.أ</span>
+        </div>
+      </div>
+      <div className="filter-bar">
+        <input className="search-input" placeholder="بحث برقم العطاء، العميل، الرقم، البنك..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div ref={filterRef} style={{position:'relative'}}>
+          <button onClick={()=>setShowFilter(o=>!o)}
+            style={{display:'flex',alignItems:'center',gap:6,padding:'6px 14px',border:'1.5px solid',borderColor:activeFilterCount?'var(--primary)':'#d1d5db',borderRadius:8,background:activeFilterCount?'#eff6ff':'#fff',cursor:'pointer',fontWeight:700,fontSize:13,color:activeFilterCount?'var(--primary)':'#374151',whiteSpace:'nowrap'}}>
+            🔽 فلتر {activeFilterCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:99,fontSize:11,padding:'1px 7px',marginRight:2}}>{activeFilterCount}</span>}
+          </button>
+          {showFilter && (
+            <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:300,background:'#fff',border:'1px solid #e5e7eb',borderRadius:14,boxShadow:'0 8px 32px rgba(0,0,0,.15)',padding:18,minWidth:260}}>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:6}}>نوع الكفالة</div>
+                <select className="form-control" value={typeFilter} onChange={e=>setTypeFilter(e.target.value)} style={{width:'100%',fontSize:13}}>
+                  <option value="all">كل الأنواع</option>
+                  {TENDER_GUARANTEE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:'var(--gray-500)',marginBottom:6}}>الحالة</div>
+                <select className="form-control" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={{width:'100%',fontSize:13}}>
+                  {TG_STATUS_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </div>
+              {activeFilterCount>0 && (
+                <button className="btn btn-ghost btn-sm" style={{width:'100%'}} onClick={()=>{setTypeFilter('all');setStatusFilter('all');}}>✕ مسح الفلاتر</button>
+              )}
+            </div>
+          )}
+        </div>
+        <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{filtered.length} كفالة</span>
+      </div>
+
+      {loading ? <div className="empty-state">جاري التحميل...</div>
+      : filtered.length===0 ? <div className="empty-state">لا توجد كفالات مطابقة</div>
+      : isMobile ? (
+        <div style={{padding:12,display:'flex',flexDirection:'column',gap:10}}>
+          {filtered.map(g => {
+            const quote = quoteById[g.quote_id];
+            const st = tgGuaranteeStatus(g);
+            return (
+              <div key={g.id} style={{border:'1px solid #e5e7eb',borderRadius:12,padding:12}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}}>
+                  <div>
+                    <div style={{fontWeight:800,fontSize:14}}>{TENDER_GUARANTEE_TYPES.find(t=>t.key===g.guarantee_type)?.label||g.guarantee_type}</div>
+                    <div style={{fontSize:12,color:'var(--gray-500)'}}>{quote?.number||'—'} · {quote?.customer_name||'—'}</div>
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:99,background:st.bg,color:st.color,whiteSpace:'nowrap'}}>{st.label}</span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:12,color:'var(--gray-500)',marginBottom:8}}>
+                  <div>{tgInstrumentLabel(g.instrument)}</div>
+                  <div>{g.ref_number||'—'}</div>
+                  <div>{g.amount?numFmt(g.amount)+' د.أ':'—'}</div>
+                  <div>{g.bank||'—'}</div>
+                  <div>تنتهي: {g.expiry_date||'—'}</div>
+                  {g.returned && <div>أُرجعت: {g.return_date||'—'}</div>}
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  {g.file_path && <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁 معاينة</button>}
+                  {g.file_path && <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️ تحميل</button>}
+                  {quote && onOpenTender && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenTender(quote)}>🔗 فتح العطاء</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{overflowX:'auto',padding:'0 16px 16px'}}>
+          <table style={{width:'100%',fontSize:13}}>
+            <thead><tr>
+              <th style={{textAlign:'right'}}>النوع</th><th>رقم العطاء</th><th>العميل</th><th>الوسيلة</th><th>الرقم</th>
+              <th>القيمة</th><th>البنك</th><th>تنتهي</th><th>الحالة</th><th></th>
+            </tr></thead>
+            <tbody>
+              {filtered.map(g => {
+                const quote = quoteById[g.quote_id];
+                const st = tgGuaranteeStatus(g);
+                return (
+                  <tr key={g.id}>
+                    <td style={{whiteSpace:'nowrap'}}>{TENDER_GUARANTEE_TYPES.find(t=>t.key===g.guarantee_type)?.label||g.guarantee_type}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{quote?.number||'—'}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis'}} title={quote?.customer_name}>{quote?.customer_name||'—'}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{tgInstrumentLabel(g.instrument)}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.ref_number||'—'}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.amount?numFmt(g.amount)+' د.أ':'—'}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.bank||'—'}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>{g.expiry_date||'—'}</td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}><span style={{fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:99,background:st.bg,color:st.color}}>{st.label}</span></td>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>
+                      <div style={{display:'flex',gap:4,justifyContent:'center'}}>
+                        {g.file_path && <button className="btn btn-ghost btn-sm" onClick={()=>setPreviewTarget(g)}>👁</button>}
+                        {g.file_path && <button className="btn btn-ghost btn-sm" onClick={()=>handleDownload(g)}>⬇️</button>}
+                        {quote && onOpenTender && <button className="btn btn-ghost btn-sm" onClick={()=>onOpenTender(quote)}>🔗</button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
       {previewTarget && <FilePreviewModal bucket="tender-attachments" path={previewTarget.file_path} fileName={previewTarget.file_name} mimeType={previewTarget.mime_type} onClose={()=>setPreviewTarget(null)}/>}
     </div>
   );
