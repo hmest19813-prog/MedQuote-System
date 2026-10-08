@@ -1949,7 +1949,33 @@ function splitLongDescription(text) {
     }
   });
   pushChunk();
-  return chunks;
+  return reflowFormatMarkers(chunks);
+}
+
+/* القص فوق بيتم على حدود كلمة/جملة بدون أي وعي بعلامات **عريض**/__تسطير__ — لو وقعت
+   نقطة القص داخل مدى تنسيق، كل جزء بيصير فيه علامة وحيدة غير متزاوجة فتطبع حرفياً
+   (**) بدل ما تتحول لتنسيق. هالدالة تدمج الأجزاء المتتالية تلقائياً طالما آخر جزء
+   مجموع لسا فيه علامة مفتوحة بدون إغلاق، فتضمن كل جزء نهائي يطلع متزاوج العلامات */
+function reflowFormatMarkers(chunks) {
+  const hasOpenMarker = (s) => {
+    let bold = false, underline = false, i = 0;
+    while (i < s.length) {
+      if (s.startsWith('**', i)) { bold = !bold; i += 2; }
+      else if (s.startsWith('__', i)) { underline = !underline; i += 2; }
+      else i++;
+    }
+    return bold || underline;
+  };
+  const out = [];
+  let pending = '';
+  chunks.forEach(chunk => {
+    // الفاصل (مسافة/سطر) بين جزءين بينكسر غالباً أثناء القص — نعوّضه بمسافة وحدة
+    // عشان يضل بين العلامتين محتوى فعلي تقدر regex التنسيق تمسكه (** ** مو ****)
+    pending = pending ? pending + ' ' + chunk : chunk;
+    if (!hasOpenMarker(pending)) { out.push(pending); pending = ''; }
+  });
+  if (pending) out.push(pending);
+  return out;
 }
 
 /* ===== نظام الترقيم الحقيقي للصفحات (True Pagination) =====
