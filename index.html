@@ -299,6 +299,8 @@ th:last-child, td:last-child { border-left: none; }
 .items-table tbody tr:nth-child(even) select,
 .items-table tbody tr:nth-child(even) textarea { background: #e8f4fc; }
 
+.item-desc-editor[data-placeholder]:empty:before { content: attr(data-placeholder); color: var(--gray-400); }
+
 /* ===================== QUOTE/INVOICE PRINT ===================== */
 /* ===== نظام الصفحات الحقيقية (True Pagination) =====
    كل .pq-page = ورقة A4 فعلية 210×297mm. البنود تُوزَّع على الصفحات بالقياس
@@ -1179,8 +1181,12 @@ const createLog = (user, action, targetType='', targetId=null, targetNumber='') 
   }).then(()=>{});
 };
 
+// يشيل علامات التنسيق الخفيفة (**عريض**، __تسطير__) ويرجّع النص الصافي — يُستخدم بأي مكان
+// لازم يبقى فيه اسم الصنف نصاً عادياً (سجل البحث، الكتالوج، التصدير...)
+const stripMarkdown = (str) => str ? str.replace(/\*\*([^*]+?)\*\*/g, '$1').replace(/__([^_]+?)__/g, '$1') : str;
+
 const upsertItemHistory = (names) => {
-  const valid = [...new Set(names.map(n => n?.trim()).filter(Boolean))];
+  const valid = [...new Set(names.map(n => stripMarkdown(n?.trim())).filter(Boolean))];
   if (!valid.length) return;
   sb.from('item_name_history').upsert(
     valid.map(name => ({ name, last_used_at: new Date().toISOString() })),
@@ -1890,6 +1896,24 @@ function itemsGroupMeta(items) {
   });
 }
 
+/* تنسيق جزئي (عريض/تسطير) داخل اسم الصنف — يُكتب بصيغة Markdown خفيفة (**عريض**، __تسطير__)
+   حتى يبقى الحقل نصاً عادياً بكل مكان آخر (البحث بالكتالوج، سجل الأسماء، التصدير...) ولا يتحوّل
+   لـHTML إلا لحظة العرض بالمطبوع فقط */
+function parseFormattedText(str) {
+  if (!str) return str;
+  const nodes = [];
+  const re = /\*\*([^*]+?)\*\*|__([^_]+?)__/g;
+  let last = 0, m, key = 0;
+  while ((m = re.exec(str))) {
+    if (m.index > last) nodes.push(str.slice(last, m.index));
+    if (m[1] !== undefined) nodes.push(<strong key={key++}>{m[1]}</strong>);
+    else nodes.push(<u key={key++}>{m[2]}</u>);
+    last = re.lastIndex;
+  }
+  if (last < str.length) nodes.push(str.slice(last));
+  return nodes.length ? nodes : str;
+}
+
 /* وصف صنف أطول من صفحة A4 وحدة (نسخ كامل من كتالوج مورد مثلاً) بينقسم لأجزاء
    آمنة الحجم على حدود فقرة/جملة/كلمة (مو قص عشوائي بالنص) — كل جزء بيصير "صف
    افتراضي" مستقل يدخل بنظام الترقيم الحقيقي فيتوزع فعلياً على الصفحات اللازمة
@@ -2181,9 +2205,10 @@ function DocPreview({ doc, items, docType='quote', onClose, onConfirmDraft, onCo
         <td>{isCont ? '' : (m.no ?? '↳')}</td>
         <td className="item-name">
           {!isCont && grouped && m.isAlt && <span style={{color:'#b45309',fontWeight:700}}>{isEn ? 'Alternative — ' : 'خيار بديل — '}</span>}
-          <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{text}</span>
+          <span style={unavail ? {textDecoration:'line-through', color:'#9ca3af'} : {}}>{parseFormattedText(text)}</span>
           {!isCont && unavail && <span style={{color:'#dc2626',fontWeight:800,fontSize:11}}> — {isEn ? 'NOT AVAILABLE' : 'غير متوفر'}</span>}
           {!isCont && grouped && counted && <span style={{color:'#15803d',fontWeight:700}}> ✓</span>}
+          {!isCont && item.description && renderDescriptionBullets(item.description, isEn)}
           {!isCont && item.product_url && (
             <div>
               <a href={item.product_url} target="_blank" rel="noopener noreferrer" style={{fontSize:10,fontWeight:700,color:'#fff',background:'#2563eb',textDecoration:'none',borderRadius:4,padding:'1px 7px',display:'inline-block',marginTop:2}}>
@@ -2857,6 +2882,113 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
   );
 }
 
+/* يحوّل وصف الصنف المنسّق (HTML بسيط: bold/underline) إلى نص عادي — يُستخدم عند تصدير الوصف لأماكن لا تدعم التنسيق كالكتالوج */
+function stripHtmlToText(html) {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html.replace(/<br\s*\/?>/gi, '\n');
+  return tmp.textContent || tmp.innerText || '';
+}
+
+/* يفصّل HTML وصف الصنف (من المحرر contentEditable) لأسطر مستقلة — كل سطر (مهما كانت طريقة
+   الفصل بالمتصفح: div أو br) بيصير نقطة مستقلة بالعرض المطبوع */
+function splitDescriptionLines(html) {
+  if (!html) return [];
+  const normalized = html
+    .replace(/<div[^>]*>/gi, '')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n');
+  return normalized.split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+/* يعرض وصف الصنف كنقاط تحت خط فاصل رفيع — كل نقطة تبدأ من أول السطر باتجاهها الصحيح
+   تلقائياً (عربي = من اليمين، إنجليزي = من اليسار)، بغض النظر عن محاذاة باقي الخلية */
+function renderDescriptionBullets(html, isEn) {
+  const lines = splitDescriptionLines(html);
+  if (!lines.length) return null;
+  return (
+    <div style={{marginTop:4,paddingTop:4,borderTop:'1px dashed #d8e4ec'}}>
+      <div style={{fontSize:9,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'.03em',marginBottom:2,textAlign:isEn?'left':'right'}}>
+        {isEn ? 'Description' : 'الوصف'}
+      </div>
+      {lines.map((line, i) => {
+        const dir = /[؀-ۿ]/.test(stripHtmlToText(line)) ? 'rtl' : 'ltr';
+        return (
+          <div key={i} dir={dir} style={{fontSize:11,color:'var(--gray-500)',lineHeight:1.5,textAlign: dir==='rtl' ? 'right' : 'left'}}>
+            <span style={{fontWeight:700,marginInlineEnd:4}}>•</span>
+            <span dangerouslySetInnerHTML={{__html: line}}/>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* محرر وصف الصنف — تنسيق عريض/تسطير بسيط بدون مكتبات خارجية؛ يظهر تحت اسم المنتج بالعرض المطبوع */
+function ItemDescriptionEditor({ value, onChange }) {
+  const editorRef = useRef(null);
+  const [active, setActive] = useState({ bold:false, underline:false });
+
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    if (/<[a-z][\s\S]*>/i.test(value||'')) el.innerHTML = value;
+    else el.textContent = value||'';
+  }, []); // تُعبّأ مرة واحدة عند فتح الصندوق — بعدها القراءة والكتابة من DOM مباشرة لتجنّب تصفير مكان المؤشر
+
+  const syncActive = () => {
+    try { setActive({ bold: document.queryCommandState('bold'), underline: document.queryCommandState('underline') }); }
+    catch (e) {}
+  };
+
+  const applyFormat = (cmd) => {
+    const el = editorRef.current;
+    if (!el) return;
+    if (document.activeElement !== el) {
+      el.focus();
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount === 0) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+    document.execCommand(cmd);
+    onChange(el.innerHTML);
+    syncActive();
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+    onChange(editorRef.current.innerHTML);
+  };
+
+  const btnStyle = (isActive) => ({
+    width:26, height:22, border:'1px solid #D8B4FE', borderRadius:5, fontSize:12, cursor:'pointer', lineHeight:1,
+    background: isActive ? '#7c3aed' : '#fff', color: isActive ? '#fff' : '#7c3aed',
+  });
+
+  return (
+    <div>
+      <div style={{display:'flex',gap:4,marginBottom:5}}>
+        <button type="button" title="عريض" onMouseDown={e=>e.preventDefault()} onClick={()=>applyFormat('bold')} style={{...btnStyle(active.bold), fontWeight:900}}>B</button>
+        <button type="button" title="تسطير" onMouseDown={e=>e.preventDefault()} onClick={()=>applyFormat('underline')} style={{...btnStyle(active.underline), fontWeight:700, textDecoration:'underline'}}>U</button>
+      </div>
+      <div ref={editorRef} contentEditable suppressContentEditableWarning className="item-desc-editor"
+        data-placeholder="أضف تفاصيل أو مواصفات عن الصنف — تظهر تحت اسم المنتج بالعرض المطبوع..."
+        onInput={e=>onChange(e.currentTarget.innerHTML)}
+        onPaste={handlePaste}
+        onKeyUp={syncActive} onMouseUp={syncActive} onFocus={syncActive}
+        style={{width:'100%',minHeight:56,fontSize:12,padding:'7px 9px',border:'1px solid #D8B4FE',borderRadius:6,background:'#fff',lineHeight:1.6,whiteSpace:'pre-wrap',outline:'none',boxSizing:'border-box'}}
+      />
+    </div>
+  );
+}
+
 /* ===================== QUOTE FORM (عرض + فاتورة) ===================== */
 function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave, onClose }) {
   const [form, setForm] = useState(() => {
@@ -3034,6 +3166,10 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   });
   const setItem = (idx, k, v) => setItems(i => i.map((it,j) => j===idx ? {...it,[k]:v} : it));
 
+  // وصف تفصيلي داخلي للصنف — لا يظهر بالعرض المطبوع، مجرد ملاحظة/مواصفات للرجوع إليها لاحقاً
+  const [openDesc, setOpenDesc] = useState(() => new Set());
+  const toggleDesc = (idx) => setOpenDesc(s => { const n = new Set(s); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
+
   const applyCatalogItem = (idx, cat) => {
     setItems(i => i.map((it,j) => j===idx ? {
       ...it,
@@ -3066,12 +3202,13 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
 
   const saveItemToCatalog = async (item) => {
     if (!item.item_name?.trim() && !isSuperAdmin(user)) { toast('أدخل اسم المنتج أولاً','error'); return; }
-    const { data: existing } = await sb.from('catalog_items').select('id').ilike('name', item.item_name.trim()).maybeSingle();
+    const cleanName = stripMarkdown(item.item_name.trim());
+    const { data: existing } = await sb.from('catalog_items').select('id').ilike('name', cleanName).maybeSingle();
     if (existing) { toast('هذا الصنف موجود في الكتالوج مسبقاً','info'); return; }
     // افتح CatalogForm مع بيانات المنتج معبّأة
     setPendingCatalogItem({
-      name: item.item_name.trim(),
-      description: item.description||'',
+      name: cleanName,
+      description: stripHtmlToText(item.description||''),
       unit: item.unit||'EACH',
       unit_price: parseFloat(item.unit_price)||0,
       origin: (!item.origin||item.origin==='__custom__') ? 'CHINA' : (item.origin||'CHINA'),
@@ -3518,11 +3655,24 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
                             style={{background:'none',border:'none',color: item.product_url ? '#2563eb' : 'var(--gray-400)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>
                             {item.product_url ? '🔗 تعديل الرابط' : '🔗 إضافة رابط المنتج'}
                           </button>
+                          <button type="button" onClick={()=>toggleDesc(i)}
+                            style={{background:'none',border:'none',color: item.description ? '#7c3aed' : 'var(--gray-400)',fontSize:11,fontWeight:700,cursor:'pointer',padding:0}}>
+                            {item.description ? '📝 الوصف التفصيلي' : '📝 إضافة وصف تفصيلي'}
+                          </button>
                           {grouped && (isCounted
                             ? <span style={{fontSize:10,fontWeight:700,color:'#15803d'}}>✓ معتمد بالمجموع</span>
                             : <span style={{fontSize:10,color:'var(--gray-400)'}}>غير محتسب</span>)}
                           {unavail && <span style={{fontSize:10,fontWeight:800,color:'#dc2626'}}>🚫 غير متوفر</span>}
                         </div>
+                        {openDesc.has(i) && (
+                          <div style={{marginTop:6,padding:'8px 10px',background:'#FAF5FF',border:'1px solid #E9D5FF',borderRadius:8}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                              <span style={{fontSize:10,fontWeight:700,color:'#7c3aed'}}>📝 وصف الصنف — يظهر تحت اسم المنتج بالعرض المطبوع</span>
+                              <button type="button" onClick={()=>toggleDesc(i)} title="إغلاق" style={{background:'none',border:'none',color:'var(--gray-400)',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>✕</button>
+                            </div>
+                            <ItemDescriptionEditor value={item.description} onChange={v=>setItem(i,'description',v)}/>
+                          </div>
+                        )}
                       </td>
                       <td><input list="unit-opts" value={item.unit} onChange={e=>setItem(i,'unit',e.target.value)} onBlur={e=>handleUnitBlur(e.target.value)} placeholder="EACH" style={{width:'100%'}}/></td>
                       <td><input type="number" min="0" style={{width:'100%'}} value={item.quantity} onChange={e=>setItem(i,'quantity',e.target.value)}/></td>
@@ -9002,8 +9152,32 @@ function ItemNameCell({ value, catalogItems, historyItems=[], onSelect, onNameCh
 
   const autoResize = (el) => { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; };
 
+  // تنسيق جزء من اسم المنتج (عريض/تسطير) — بصيغة Markdown خفيفة تبقى نصاً عادياً بكل مكان
+  // آخر (البحث، سجل الأسماء، الكتالوج) وتتحوّل لعريض/تسطير فعلي بلحظة الطباعة فقط
+  const wrapSelection = (marker) => {
+    const el = inputRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const selected = value.slice(start, end);
+    const newValue = value.slice(0, start) + marker + selected + marker + value.slice(end);
+    onNameChange(newValue);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + marker.length, start + marker.length + selected.length);
+      autoResize(el);
+    });
+  };
+  const hasFormatting = /\*\*[^*]+?\*\*|__[^_]+?__/.test(value||'');
+
   return (
     <div style={{position:'relative'}}>
+      <div style={{display:'flex',gap:3,marginBottom:2}}>
+        <button type="button" title="عريض" onMouseDown={e=>e.preventDefault()} onClick={()=>wrapSelection('**')}
+          style={{width:20,height:17,border:'1px solid var(--gray-200)',borderRadius:4,background:'#fff',color:'var(--gray-500)',fontSize:10,fontWeight:900,cursor:'pointer',lineHeight:1,padding:0}}>B</button>
+        <button type="button" title="تسطير" onMouseDown={e=>e.preventDefault()} onClick={()=>wrapSelection('__')}
+          style={{width:20,height:17,border:'1px solid var(--gray-200)',borderRadius:4,background:'#fff',color:'var(--gray-500)',fontSize:10,fontWeight:700,textDecoration:'underline',cursor:'pointer',lineHeight:1,padding:0}}>U</button>
+      </div>
       <textarea ref={inputRef} value={value}
         rows={1}
         onChange={e=>{ handleChange(e.target.value); autoResize(e.target); }}
@@ -9011,6 +9185,11 @@ function ItemNameCell({ value, catalogItems, historyItems=[], onSelect, onNameCh
         onBlur={()=>setTimeout(()=>setShowSug(false),200)}
         onFocus={e=>{ if(value) handleChange(value); else calcPos(); autoResize(e.target); }}
         placeholder="اسم المنتج — ابدأ بالكتابة للبحث" style={{width:'100%'}}/>
+      {hasFormatting && (
+        <div style={{fontSize:11,color:'var(--gray-500)',marginTop:2,padding:'3px 6px',background:'#FAFAFA',border:'1px dashed var(--gray-200)',borderRadius:4}}>
+          {parseFormattedText(value)}
+        </div>
+      )}
 
       {showSug && ReactDOM.createPortal(
         <div style={{
