@@ -2948,8 +2948,8 @@ function renderDescriptionBullets(html, isEn) {
   if (!lines.length) return null;
   return (
     <div style={{marginTop:4,paddingTop:4,borderTop:'1px dashed #d8e4ec'}}>
-      <div style={{fontSize:9,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'.03em',marginBottom:2,textAlign:isEn?'left':'right'}}>
-        {isEn ? 'Description' : 'الوصف'}
+      <div style={{fontSize:9,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:'.03em',marginBottom:2,display:'flex',justifyContent:'space-between'}}>
+        {isEn ? <span>Description</span> : <><span>الوصف</span><span>Description</span></>}
       </div>
       {lines.map((line, i) => {
         const dir = /[؀-ۿ]/.test(stripHtmlToText(line)) ? 'rtl' : 'ltr';
@@ -5273,6 +5273,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setFollowUpTarget(q)}>📌 متابعة</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
+                  <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 مرفقات</button>
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
@@ -5322,6 +5323,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                       { icon:'📌', label:'متابعة', onClick:()=>setFollowUpTarget(q) },
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
+                      { icon:'📎', label:'مرفقات', onClick:()=>setAttachTarget(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
@@ -5652,6 +5654,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                       <button className="btn btn-ghost btn-sm" style={{color:'#6b7280',borderColor:'#d1d5db'}} onClick={()=>setEditArchiveTarget(q)} title="تعديل سبب الأرشفة">✏️ السبب</button>
                       <button className="btn btn-ghost btn-sm" onClick={()=>openPreview(q)}>👁 معاينة</button>
                       {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>}
+                      {tab==='archive_official' && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 مرفقات</button>}
                       {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#0f766e',borderColor:'#0f766e'}} onClick={()=>setGuaranteeTarget(q)}>📜 كفالات</button>}
                       <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
                     </div>
@@ -5814,7 +5817,7 @@ function FilePreviewModal({ bucket, path, fileName, mimeType, onClose }) {
   );
 }
 
-/* ===================== ملحقات العطاء (قائمة واحدة بدون تصنيف — احالات وغيرها) ===================== */
+/* ===================== ملحقات/مرفقات العرض أو العطاء (قائمة واحدة بدون تصنيف — نفس المودال لكلا النوعين) ===================== */
 /* سقف 5 ميغا للملف الواحد — مساحة Storage بالباقة الحالية محدودة (1GB لكامل النظام) */
 const TENDER_ATTACH_MAX_SIZE = 5 * 1024 * 1024;
 
@@ -5830,6 +5833,12 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
 
   const canWrite = quote.created_by===user?.id || hasPerm(user,'quotes_edit_all');
   const canDelete = hasPerm(user,'quotes_delete');
+  // نفس الجدول/الحاوية مستخدمين لمرفقات العروض والعطاءات سوا — بس التسمية بالواجهة وسجل
+  // الأحداث لازم تبقى مطابقة لنوع المستند (عطاء/عرض) يلي فاتح المودال
+  const docLabel = quote.quote_type==='tender' ? 'العطاء' : 'العرض';
+  const forDocLabel = quote.quote_type==='tender' ? 'للعطاء' : 'للعرض';
+  const attachLabel = quote.quote_type==='tender' ? 'ملحقات' : 'مرفقات';
+  const attachLabelSingular = quote.quote_type==='tender' ? 'ملحق' : 'مرفق';
 
   const load = async () => {
     setLoading(true);
@@ -5854,7 +5863,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
 
   const handleUpload = async () => {
-    if (!form.title.trim() && !isSuperAdmin(user)) { toast('اكتب عنوان الملحق', 'error'); return; }
+    if (!form.title.trim() && !isSuperAdmin(user)) { toast(`اكتب عنوان ${attachLabelSingular}`, 'error'); return; }
     if (!form.file) { toast('اختر ملف', 'error'); return; }
     if (form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
     setUploading(true);
@@ -5869,7 +5878,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
       };
       const { error: insErr } = await sb.from('tender_attachments').insert(payload);
       if (insErr) throw insErr;
-      createLog(user, `أضاف ملحقاً للعطاء ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
+      createLog(user, `أضاف ${attachLabelSingular}اً ${forDocLabel} ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
       toast('تم رفع الملحق ✓', 'success');
       setAdding(false); setForm(blankForm); load();
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
@@ -5879,7 +5888,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   const openEdit = (att) => { setAdding(false); setForm({ title: att.title, file: null }); setEditingAtt(att); };
 
   const handleUpdate = async () => {
-    if (!form.title.trim() && !isSuperAdmin(user)) { toast('اكتب عنوان الملحق', 'error'); return; }
+    if (!form.title.trim() && !isSuperAdmin(user)) { toast(`اكتب عنوان ${attachLabelSingular}`, 'error'); return; }
     if (form.file && form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
     setUploading(true);
     try {
@@ -5893,7 +5902,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
       }
       const { error: updErr } = await sb.from('tender_attachments').update(payload).eq('id', editingAtt.id);
       if (updErr) throw updErr;
-      createLog(user, `عدّل ملحق العطاء ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
+      createLog(user, `عدّل ${attachLabelSingular} ${docLabel} ${quote.number}: ${payload.title}`, 'quote', quote.id, quote.number);
       toast('تم التعديل ✓', 'success');
       setEditingAtt(null); setForm(blankForm); load();
     } catch(e) { toast('خطأ: '+e.message, 'error'); }
@@ -5912,11 +5921,11 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
   };
 
   const handleDelete = async (att) => {
-    if (!confirm(`حذف الملحق "${att.title}"؟`)) return;
+    if (!confirm(`حذف ${attachLabelSingular} "${att.title}"؟`)) return;
     await sb.storage.from('tender-attachments').remove([att.file_path]);
     const { error } = await sb.from('tender_attachments').delete().eq('id', att.id);
     if (error) { toast('خطأ: '+error.message, 'error'); return; }
-    createLog(user, `حذف ملحق العطاء ${quote.number}: ${att.title}`, 'quote', quote.id, quote.number);
+    createLog(user, `حذف ${attachLabelSingular} ${docLabel} ${quote.number}: ${att.title}`, 'quote', quote.id, quote.number);
     toast('تم الحذف', 'success'); load();
   };
 
@@ -5924,19 +5933,19 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:600,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header">
-          <span className="modal-title" style={{fontSize:17,flex:1}}>📎 ملحقات العطاء — {quote.number}</span>
+          <span className="modal-title" style={{fontSize:17,flex:1}}>📎 {attachLabel} {docLabel} — {quote.number}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div style={{padding:20}}>
           {loading ? <div className="empty-state">جاري التحميل...</div> : (
             <div className="form-group" style={{marginBottom:0}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <label className="form-label" style={{margin:0}}>الملحقات</label>
+                <label className="form-label" style={{margin:0}}>{attachLabel}</label>
                 {canWrite && !adding && !editingAtt && <button className="btn btn-ghost btn-sm" onClick={()=>{setForm(blankForm);setAdding(true);}}>➕ إضافة</button>}
               </div>
 
               {rows.length===0 ? (
-                <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد ملحقات بعد</div>
+                <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد {attachLabel} بعد</div>
               ) : (
                 <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',fontSize:13,borderCollapse:'collapse'}}>
@@ -5967,8 +5976,8 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
 
               {(adding || editingAtt) && (
                 <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
-                  {editingAtt && <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)'}}>تعديل الملحق</div>}
-                  <input className="form-control" placeholder="عنوان الملحق *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+                  {editingAtt && <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)'}}>تعديل {attachLabelSingular}</div>}
+                  <input className="form-control" placeholder={`عنوان ${attachLabelSingular} *`} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
                   {editingAtt && <div style={{fontSize:11,color:'var(--gray-500)'}}>الملف الحالي: {editingAtt.file_name}</div>}
                   <input type="file" className="form-control" onChange={handleFileChange}/>
                   {editingAtt && <div style={{fontSize:11,color:'var(--gray-400)'}}>اختر ملفاً جديداً فقط لو بدك تستبدل الملف الحالي</div>}
@@ -5976,7 +5985,7 @@ function TenderAttachmentsModal({ quote, user, onClose }) {
                   <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
                   <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
                     <button className="btn btn-ghost btn-sm" onClick={()=>{setAdding(false);setEditingAtt(null);setForm(blankForm);}}>إلغاء</button>
-                    <button className="btn btn-primary btn-sm" disabled={uploading} onClick={editingAtt?handleUpdate:handleUpload}>{uploading?'...جاري الحفظ':editingAtt?'حفظ التعديل':'رفع الملحق'}</button>
+                    <button className="btn btn-primary btn-sm" disabled={uploading} onClick={editingAtt?handleUpdate:handleUpload}>{uploading?'...جاري الحفظ':editingAtt?'حفظ التعديل':`رفع ${attachLabelSingular}`}</button>
                   </div>
                 </div>
               )}
