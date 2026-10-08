@@ -1901,16 +1901,30 @@ function itemsGroupMeta(items) {
    لـHTML إلا لحظة العرض بالمطبوع فقط */
 function parseFormattedText(str) {
   if (!str) return str;
+  // مُحلِّل بالتبديل (toggle) لا بـ regex أزواج منفصلة — عشان البولد والتسطير يشتغلوا
+  // صح لحالهم أو مع بعض (متداخلين بأي ترتيب، متل __**نص**__) بدل ما نوع يبلع التاني
+  // كنص حرفي (كانت هاي بالضبط مشكلة الـ regex القديم: ** جوا __...__ بتطبع حرفياً)
   const nodes = [];
-  const re = /\*\*([^*]+?)\*\*|__([^_]+?)__/g;
-  let last = 0, m, key = 0;
-  while ((m = re.exec(str))) {
-    if (m.index > last) nodes.push(str.slice(last, m.index));
-    if (m[1] !== undefined) nodes.push(<strong key={key++}>{m[1]}</strong>);
-    else nodes.push(<u key={key++}>{m[2]}</u>);
-    last = re.lastIndex;
+  let bold = false, underline = false, buf = '', key = 0;
+  const flush = () => {
+    if (!buf) return;
+    if (bold || underline) {
+      const style = {};
+      if (bold) style.fontWeight = 700;
+      if (underline) style.textDecoration = 'underline';
+      nodes.push(<span key={key++} style={style}>{buf}</span>);
+    } else {
+      nodes.push(buf);
+    }
+    buf = '';
+  };
+  let i = 0;
+  while (i < str.length) {
+    if (str.startsWith('**', i)) { flush(); bold = !bold; i += 2; }
+    else if (str.startsWith('__', i)) { flush(); underline = !underline; i += 2; }
+    else { buf += str[i]; i++; }
   }
-  if (last < str.length) nodes.push(str.slice(last));
+  flush();
   return nodes.length ? nodes : str;
 }
 
