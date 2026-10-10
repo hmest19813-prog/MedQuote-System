@@ -7655,16 +7655,14 @@ function OrdersPage({ user, orders, onReload }) {
                         </select>
                       : <SBadge status={o.status} type="o"/>}
                     </td>
-                    <td style={{whiteSpace:'nowrap'}}>
-                      <div className="flex gap-2">
-                        <button className="btn btn-ghost btn-sm" onClick={()=>previewOrder(o)}>👁 معاينة</button>
-                        {['processing','delivered'].includes(o.status) && (
-                          <button className="btn btn-ghost btn-sm" style={{color:'#0369a1'}} onClick={()=>openReceipt(o)} title="سند استلام">📦 سند</button>
-                        )}
-                        {hasPerm(user,'orders_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditingOrder(o)}>✏️ تعديل</button>}
-                        <button className="btn btn-ghost btn-sm" onClick={()=>{if(!['delivered','cancelled'].includes(o.status) && !isSuperAdmin(user)){toast('⚠️ لا يمكن الأرشفة إلا بعد التسليم أو الإلغاء','error');return;}setArchiveOrderTarget(o);}}>🗄️ أرشفة</button>
-                        {hasPerm(user,'orders_delete') && <button className="btn btn-danger btn-sm" onClick={()=>setDeleteTarget(o)}>🗑️ حذف</button>}
-                      </div>
+                    <td style={{textAlign:'center',whiteSpace:'nowrap'}}>
+                      <ActionMenu actions={[
+                        { icon:'👁', label:'معاينة', onClick:()=>previewOrder(o) },
+                        { icon:'📦', label:'سند استلام', hidden:!['processing','delivered'].includes(o.status), onClick:()=>openReceipt(o) },
+                        { icon:'✏️', label:'تعديل', hidden:!hasPerm(user,'orders_edit'), onClick:()=>setEditingOrder(o) },
+                        { icon:'🗄️', label:'أرشفة', onClick:()=>{if(!['delivered','cancelled'].includes(o.status) && !isSuperAdmin(user)){toast('⚠️ لا يمكن الأرشفة إلا بعد التسليم أو الإلغاء','error');return;}setArchiveOrderTarget(o);} },
+                        { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'orders_delete'), onClick:()=>setDeleteTarget(o) },
+                      ]}/>
                     </td>
                   </tr>
                 ))}
@@ -7688,12 +7686,12 @@ function OrdersPage({ user, orders, onReload }) {
                     <td className="font-bold">{numFmt(o.total_amount)} {o.currency}</td>
                     <td><SBadge status={o.status} type="o"/></td>
                     <td className="text-sm text-muted">{o.archive_note||'—'}</td>
-                    <td>
-                      <div className="flex gap-2">
-                        <button className="btn btn-ghost btn-sm" onClick={()=>previewOrder(o)}>👁 معاينة</button>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>setEditNoteTarget(o)}>تعديل السبب</button>
-                        <button className="btn btn-ghost btn-sm" onClick={()=>restore(o.id)}>↩ استعادة</button>
-                      </div>
+                    <td style={{textAlign:'center'}}>
+                      <ActionMenu actions={[
+                        { icon:'👁', label:'معاينة', onClick:()=>previewOrder(o) },
+                        { icon:'✏️', label:'تعديل السبب', onClick:()=>setEditNoteTarget(o) },
+                        { icon:'↩', label:'استعادة', onClick:()=>restore(o.id) },
+                      ]}/>
                     </td>
                   </tr>
                 ))}
@@ -7733,11 +7731,11 @@ function OrdersPage({ user, orders, onReload }) {
                       {o.delete_reason||'—'}
                       <button className="btn btn-ghost btn-sm" style={{marginRight:6,padding:'1px 6px',fontSize:11,color:'var(--gray-600)'}} onClick={()=>setEditDeleteTarget(o)} title="تعديل السبب">✏️</button>
                     </td>
-                    <td>
-                      <div className="flex gap-1">
-                        <button className="btn btn-ghost btn-sm" onClick={()=>restoreDeleted(o)}>↩️ استعادة</button>
-                        {user?.role==='admin' && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>hardDeleteO(o)}>🗑️ حذف نهائي</button>}
-                      </div>
+                    <td style={{textAlign:'center'}}>
+                      <ActionMenu actions={[
+                        { icon:'↩️', label:'استعادة', onClick:()=>restoreDeleted(o) },
+                        { icon:'🗑️', label:'حذف نهائي', danger:true, hidden:user?.role!=='admin', onClick:()=>hardDeleteO(o) },
+                      ]}/>
                     </td>
                   </tr>
                 ))}
