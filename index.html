@@ -369,6 +369,7 @@ th:last-child, td:last-child { border-left: none; }
 .print-items th { background: linear-gradient(135deg, var(--acc, #1C6A99), var(--acc2, #2B8FC4)); color: white; padding: 7px 3px; text-align: center; font-size: 11px; overflow: hidden; }
 .print-items td { padding: 6px 9px; border-bottom: 1px solid var(--acc-tint2, #B8DCF0); text-align: center; vertical-align: middle; }
 .print-items td.item-name { text-align: right; max-width: 150px; white-space: normal; word-break: break-word; line-height: 1.4; }
+[dir="ltr"] .print-items td.item-name { text-align: left; }
 .print-items td.item-notes { max-width: 80px; white-space: normal; word-break: break-word; font-size: 10px; line-height: 1.4; }
 .print-items td.unit-cell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 3px; padding-right: 3px; }
 .print-items tr:nth-child(even) td { background: var(--acc-tint, #F0F8FD); }
@@ -7458,12 +7459,19 @@ function OrdersPage({ user, orders, onReload }) {
   const [editDeleteTarget, setEditDeleteTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletedSearch, setDeletedSearch] = useState('');
+  const [search, setSearch]       = useState('');
   const [profiles, setProfiles]   = useState({});
+
+  const matchesSearch = (o, s) => !s
+    || o.customer_name?.toLowerCase().includes(s.toLowerCase())
+    || String(o.number||'').includes(s)
+    || String(o.quotation_number||'').includes(s);
 
   const active   = orders.filter(o => !o.archived && !o.deleted_at);
   const archived = orders.filter(o =>  o.archived  && !o.deleted_at);
   const deleted  = orders.filter(o =>  o.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
-  const filtered = filter==='all' ? active : active.filter(o=>o.status===filter);
+  const filtered = (filter==='all' ? active : active.filter(o=>o.status===filter)).filter(o=>matchesSearch(o, search));
+  const filteredArchived = archived.filter(o=>matchesSearch(o, search));
   const filteredDeleted = deleted.filter(o =>
     !deletedSearch || o.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || String(o.number||'').includes(deletedSearch)
   );
@@ -7625,7 +7633,8 @@ function OrdersPage({ user, orders, onReload }) {
       </div>
 
       {tab==='active' && <>
-        <div style={{display:'flex', justifyContent:'flex-end', marginBottom:12}}>
+        <div className="filter-bar" style={{justifyContent:'space-between'}}>
+          <input className="search-input" placeholder="بحث بالاسم أو رقم الطلبية أو رقم العرض..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:260,flex:1}}/>
           <select className="form-control" style={{width:'auto'}} value={filter} onChange={e=>setFilter(e.target.value)}>
             <option value="all">كل الحالات</option>
             {Object.entries(OL).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
@@ -7636,7 +7645,6 @@ function OrdersPage({ user, orders, onReload }) {
             <table>
               <thead><tr>
                 <th>الرقم</th><th>العميل</th><th>من عرض</th><th>المرجع</th><th>القيمة</th>
-                <th>جهة التجهيز</th><th>جهة التسليم</th>
                 <th>تغيير الحالة</th><th></th>
               </tr></thead>
               <tbody>
@@ -7647,8 +7655,6 @@ function OrdersPage({ user, orders, onReload }) {
                     <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
                     <td className="text-sm text-muted">{o.reference||'—'}</td>
                     <td className="font-bold" style={{whiteSpace:'nowrap'}}>{numFmt(o.total_amount)} {o.currency}</td>
-                    <td className="text-sm text-muted">{o.prepared_by||'—'}</td>
-                    <td className="text-sm text-muted">{o.delivered_by||'—'}</td>
                     <td>{hasPerm(user,'orders_edit')
                       ? <select className="form-control" style={selStyle} value={o.status} onChange={e=>changeStatus(o,e.target.value)}>
                           {Object.entries(OL).map(([k,v])=><option key={k} value={k}>{v}</option>)}
@@ -7666,7 +7672,7 @@ function OrdersPage({ user, orders, onReload }) {
                     </td>
                   </tr>
                 ))}
-                {filtered.length===0 && <tr><td colSpan="9"><div className="empty-state"><p>لا توجد طلبات</p></div></td></tr>}
+                {filtered.length===0 && <tr><td colSpan="7"><div className="empty-state"><p>لا توجد طلبات</p></div></td></tr>}
               </tbody>
             </table>
           </div>
@@ -7674,12 +7680,15 @@ function OrdersPage({ user, orders, onReload }) {
       </>}
 
       {tab==='archived' && <>
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث بالاسم أو رقم الطلبية أو رقم العرض..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
         <div className="card">
           <div className="table-wrap">
             <table>
               <thead><tr><th>الرقم</th><th>العميل</th><th>القيمة</th><th>الحالة</th><th>سبب الأرشفة</th><th></th></tr></thead>
               <tbody>
-                {archived.map(o => (
+                {filteredArchived.map(o => (
                   <tr key={o.id}>
                     <td className="font-bold" style={{color:'var(--primary)'}}>{o.number}</td>
                     <td>{o.customer_name}</td>
@@ -7695,7 +7704,7 @@ function OrdersPage({ user, orders, onReload }) {
                     </td>
                   </tr>
                 ))}
-                {archived.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>لا توجد طلبات مؤرشفة</p></div></td></tr>}
+                {filteredArchived.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>لا توجد طلبات مؤرشفة</p></div></td></tr>}
               </tbody>
             </table>
           </div>
