@@ -15872,7 +15872,6 @@ const CHEM_CATEGORIES = {
   bio:       { label:'مواد حيوية',         icon:'🧬' },
 };
 const CHEM_PROD_TYPES = { repack:'إعادة تعبئة', prepare:'تحضير (وصفة)' };
-const CHEM_STATES = { solid:'صلب', liquid:'سائل', gas:'غاز' };
 const GHS_PICTOGRAMS = [
   { code:'GHS01', label:'متفجّر',        icon:'💥' },
   { code:'GHS02', label:'قابل للاشتعال', icon:'🔥' },
@@ -15983,7 +15982,7 @@ const CHEM_EXPIRY_WARN_DAYS = 90;
 // التحويل للوحدة الأساسية: الكتلة → g ، الحجم → mL ، العدد → pcs
 const CHEM_UNIT_INFO = { mg:{base:'g',f:0.001}, g:{base:'g',f:1}, kg:{base:'g',f:1000}, mL:{base:'mL',f:1}, L:{base:'mL',f:1000}, pcs:{base:'pcs',f:1}, kit:{base:'pcs',f:1} };
 const chemToBase = (qty, unit) => { const u = CHEM_UNIT_INFO[unit]; return u ? { qty: Number(qty)*u.f, base: u.base } : null; };
-const chemMaterialBase = (m) => m?.physical_state==='liquid' ? 'mL' : (m?.category==='stain' && m?.production_type==='prepare' && /kit/i.test(m?.name_en||'')) ? 'pcs' : 'g';
+const chemMaterialBase = (m) => (m?.category==='stain' && m?.production_type==='prepare' && /kit/i.test(m?.name_en||'')) ? 'pcs' : null;
 const fmtChemQty = (qty, base) => {
   const n = Number(qty)||0;
   if (base==='g'  && Math.abs(n) >= 1000) return `${chemNum(n/1000)} kg`;
@@ -16068,6 +16067,7 @@ function ChemicalsPage({ user }) {
   const [specsFilter, setSpecsFilter] = useState('all');
 
   const [editingMat, setEditingMat] = useState(null);
+  const [showListMgr, setShowListMgr] = useState(false);
   const [viewingId, setViewingId] = useState(null);
   const [recipeView, setRecipeView] = useState(null);
   const [recipeEdit, setRecipeEdit] = useState(null);
@@ -16085,7 +16085,7 @@ function ChemicalsPage({ user }) {
   const load = async () => {
     setLoading(true);
     const res = await Promise.all([
-      sb.from('chem_materials').select('*').order('name_en'),
+      sb.from('chem_materials').select('*, chem_appearance_options(name), chem_grade_options(name)').order('name_en'),
       sb.from('chem_pack_sizes').select('*').order('size'),
       sb.from('chem_specs').select('*').order('seq'),
       sb.from('chem_documents').select('*').order('created_at',{ascending:false}),
@@ -16268,6 +16268,7 @@ function ChemicalsPage({ user }) {
               <option value="none">بدون رموز GHS</option>
             </select>
           </FilterPopover>
+          {hasPerm(user,'chemicals_delete') && <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>}
           {canEdit && <button className="btn btn-primary" onClick={()=>setEditingMat('new')}>➕ مادة جديدة</button>}
         </>}
         {tab==='recipes' && (
@@ -16575,6 +16576,7 @@ function ChemicalsPage({ user }) {
       </>)}
 
       {/* Modals */}
+      {showListMgr && <ChemListsManager user={user} onClose={()=>setShowListMgr(false)}/>}
       {editingMat && (
         <ChemMaterialForm user={user}
           material={editingMat==='new' ? null : editingMat}
@@ -16698,7 +16700,7 @@ function ChemMaterialPicker({ materials, value, onChange, disabled, placeholder=
 /* إضافة حجم عبوة سريعة من داخل النماذج (بصلاحية تعديل المواد) */
 function ChemPackQuickAdd({ user, material, onAdded, onCancel }) {
   const [size, setSize] = useState('');
-  const [unit, setUnit] = useState(material.physical_state==='liquid' ? 'mL' : 'g');
+  const [unit, setUnit] = useState('g');
   const [busy, setBusy] = useState(false);
   if (!hasPerm(user,'chemicals_edit')) return <span style={{fontSize:11,color:'#b45309'}}>المادة بدون أحجام عبوات — اطلب إضافتها من مسؤول الكيماويات</span>;
   const add = async () => {
@@ -16736,7 +16738,7 @@ function ChemReceiptForm({ user, receipt, materials, suppliers, onSave, onClose 
   const [loading, setLoading] = useState(false);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const mat = materials.find(m=>m.id===form.material_id);
-  const unitsFor = (m) => chemMaterialBase(m)==='mL' ? ['L','mL'] : chemMaterialBase(m)==='pcs' ? ['pcs'] : ['kg','g'];
+  const unitsFor = (m) => chemMaterialBase(m)==='pcs' ? ['pcs'] : ['kg','g','L','mL'];
   useEffect(()=>{ if (mat && !isEdit && !unitsFor(mat).includes(form.unit)) setF('unit', unitsFor(mat)[0]); }, [mat?.id]);
   const urlOk = !form.supplier_coa_url.trim() || /^https?:\/\/\S+$/i.test(form.supplier_coa_url.trim());
 
@@ -17380,10 +17382,11 @@ function ChemCoaPrint({ docs, packById, receiptById, title, onClose }) {
     const mfrLots = [...new Set(srcReceipts.map(r=>r.manufacturer_lot).filter(Boolean))].join(', ');
     const watermark = coa.status==='draft' ? 'DRAFT' : coa.status==='rejected' ? 'REJECTED' : null;
     const info = [
-      ['Product', m?.name_en], ['Grade', m?.grade],
+      ['Product', m?.name_en], ['Date of Certificate', fmtD(coa.issue_date)],
+      ['Batch Number / Lot Number', l.lot_no], ['Total Quantity', packsTxt],
+      ['Production Date', fmtM(l.prod_date)], ['Expiry Date', fmtM(l.expiry_date)],
       ['CAS No.', m?.cas_no], ['Formula', [m?.formula, m?.mol_weight && `MW ${chemNum(m.mol_weight)}`].filter(Boolean).join(' · ')],
-      ['Batch / Lot No.', l.lot_no], ['Total Quantity', packsTxt],
-      [l.lot_type==='prepare' ? 'Preparation Date' : 'Packing Date', fmtM(l.prod_date)], ['Expiry Date', fmtM(l.expiry_date)],
+      ['Grade', m?.chem_grade_options?.name],
       l.lot_type==='repack' && ['Manufacturer', mfr], l.lot_type==='repack' && ['Manufacturer Lot', mfrLots],
       ['Origin', l.lot_type==='prepare' ? 'Prepared by HAYAT — Jordan' : 'Packed by HAYAT — Jordan'],
     ].filter(Boolean).filter(r=>r[1]);
@@ -17394,29 +17397,24 @@ function ChemCoaPrint({ docs, packById, receiptById, title, onClose }) {
           <PqDocHeader/>
           <div dir="ltr" style={{fontFamily:'Arial, sans-serif',color:'#1a2e3d'}}>
             <div style={{textAlign:'center',margin:'4mm 0 1mm',fontSize:20,fontWeight:900,letterSpacing:1,color:'#1C6A99'}}>CERTIFICATE OF ANALYSIS</div>
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:11.5,margin:'0 0 3mm'}}>
+            <div style={{textAlign:'right',fontSize:11.5,margin:'0 0 3mm'}}>
               <span><b>Certificate No.:</b> {coa.coa_no}</span>
-              <span><b>Date:</b> {fmtD(coa.issue_date)}</span>
             </div>
             <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',marginBottom:'4mm'}}>
-              <colgroup><col style={{width:'19%'}}/><col style={{width:'31%'}}/><col style={{width:'19%'}}/><col style={{width:'31%'}}/></colgroup>
+              <colgroup><col style={{width:'38%'}}/><col style={{width:'62%'}}/></colgroup>
               <tbody>
-                {Array.from({length:Math.ceil(info.length/2)}).map((_,ri)=>(
+                {info.map((it,ri)=>(
                   <tr key={ri}>
-                    {[info[ri*2], info[ri*2+1]].map((it,ci)=> it ? (
-                      <React.Fragment key={ci}>
-                        <td style={{...cell,background:'#eef6fb',fontWeight:700}}>{it[0]}</td>
-                        <td style={cell}>{it[1]}</td>
-                      </React.Fragment>
-                    ) : <React.Fragment key={ci}><td style={cell}/><td style={cell}/></React.Fragment>)}
+                    <td style={{...cell,background:'#eef6fb',fontWeight:700}}>{it[0]}</td>
+                    <td style={cell}>{it[1]}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
-              <colgroup><col style={{width:'30%'}}/><col style={{width:'24%'}}/><col style={{width:'20%'}}/><col style={{width:'16%'}}/><col style={{width:'10%'}}/></colgroup>
+              <colgroup><col style={{width:'30%'}}/><col style={{width:'27%'}}/><col style={{width:'23%'}}/><col style={{width:'20%'}}/></colgroup>
               <thead><tr>
-                {['Parameter','Specification','Result','Method',''].map((h,hi)=>(
+                {['Parameter','Reference','Results','Method'].map((h,hi)=>(
                   <th key={hi} style={{...cell,background:'#1C6A99',color:'#fff',textAlign:'left',fontSize:11.5}}>{h}</th>
                 ))}
               </tr></thead>
@@ -17426,7 +17424,6 @@ function ChemCoaPrint({ docs, packById, receiptById, title, onClose }) {
                   <td style={cell}>{formatChemSpec(r)}</td>
                   <td style={cell}>{r.result||'—'}</td>
                   <td style={cell}>{r.method||'—'}</td>
-                  <td style={{...cell,textAlign:'center',fontWeight:900,color:r.pass?'#15803d':'#b91c1c'}}>{r.pass ? '✓' : r.pass===false ? '✗' : ''}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -18136,13 +18133,116 @@ async function chemSyncRows(table, materialId, original, rows, toPayload) {
   }
 }
 
+/* ---- ChemListsManager (admin only) — Appearance + Grade option lists ---- */
+function ChemListsManager({ user, onClose }) {
+  const [tab, setTab] = React.useState('appearance'); // 'appearance' | 'grade'
+  const [appearance, setAppearance] = React.useState([]);
+  const [grade, setGrade] = React.useState([]);
+  const [newName, setNewName] = React.useState('');
+  const [editing, setEditing] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+  const isAdmin = user?.role === 'admin';
+
+  const loadAppearance = () => sb.from('chem_appearance_options').select('*').order('sort_order').order('name').then(({data})=>setAppearance(data||[]));
+  const loadGrade = () => sb.from('chem_grade_options').select('*').order('sort_order').order('name').then(({data})=>setGrade(data||[]));
+  React.useEffect(()=>{ loadAppearance(); loadGrade(); },[]);
+
+  const table = tab==='appearance' ? 'chem_appearance_options' : 'chem_grade_options';
+  const list  = tab==='appearance' ? appearance : grade;
+  const reload = tab==='appearance' ? loadAppearance : loadGrade;
+
+  const add = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    const { error } = await sb.from(table).insert({ name:newName.trim(), sort_order:list.length+1 });
+    setSaving(false);
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    setNewName(''); reload();
+  };
+
+  const save = async () => {
+    if (!editing?.name?.trim()) return;
+    setSaving(true);
+    const { error } = await sb.from(table).update({ name:editing.name.trim() }).eq('id', editing.id);
+    setSaving(false);
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    setEditing(null); reload();
+  };
+
+  const del = async (item) => {
+    if (!confirm(`Delete "${item.name}"?`)) return;
+    const { error } = await sb.from(table).delete().eq('id', item.id);
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    reload();
+  };
+
+  const tabStyle = (t) => ({
+    padding:'8px 18px', borderRadius:8, border:'none', cursor:'pointer', fontWeight:600, fontSize:13,
+    background: tab===t ? 'var(--primary)' : '#f0f4f8',
+    color: tab===t ? '#fff' : 'var(--gray-600)',
+  });
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:480}}>
+        <div className="modal-header">
+          <span className="modal-title">⚙️ Appearance & Grade Lists</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {!isAdmin && <div style={{fontSize:12,color:'#92400e',background:'#fffbeb',borderRadius:8,padding:'8px 10px',marginBottom:12}}>👁 View only — only the system admin can add or edit these lists.</div>}
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            <button style={tabStyle('appearance')} onClick={()=>{setTab('appearance');setNewName('');setEditing(null);}}>🔬 Appearance</button>
+            <button style={tabStyle('grade')} onClick={()=>{setTab('grade');setNewName('');setEditing(null);}}>🏷️ Grade</button>
+          </div>
+
+          {isAdmin && (
+            <div style={{display:'flex',gap:8,marginBottom:14}}>
+              <input className="form-control" dir="ltr" value={newName} onChange={e=>setNewName(e.target.value)}
+                placeholder={tab==='appearance' ? 'New appearance...' : 'New grade...'}
+                onKeyDown={e=>e.key==='Enter'&&add()} style={{flex:1}}/>
+              <button className="btn btn-primary btn-sm" onClick={add} disabled={saving||!newName.trim()}>➕ Add</button>
+            </div>
+          )}
+
+          <div style={{maxHeight:'45vh',overflowY:'auto',display:'flex',flexDirection:'column',gap:6}}>
+            {list.length===0 && <div style={{textAlign:'center',color:'var(--gray-400)',padding:20,fontSize:13}}>No data</div>}
+            {list.map(item=>(
+              <div key={item.id} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:8}}>
+                {editing?.id===item.id ? (
+                  <>
+                    <input className="form-control" dir="ltr" value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}
+                      onKeyDown={e=>e.key==='Enter'&&save()} style={{flex:1,padding:'4px 8px',height:32}}/>
+                    <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>✓</button>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(null)}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{flex:1,fontSize:13,fontWeight:500}} dir="ltr">{item.name}</span>
+                    {isAdmin && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing({id:item.id,name:item.name})}>✏️</button>}
+                    {isAdmin && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>del(item)}>🗑️</button>}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="modal-footer">
+          <span style={{fontSize:12,color:'var(--gray-400)'}}>{list.length} item(s)</span>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
   const isEdit = !!material;
   const [form, setForm] = useState({
     name_en: material?.name_en || '', name_ar: material?.name_ar || '',
     category: material?.category || 'chemical', production_type: material?.production_type || 'repack',
     cas_no: material?.cas_no || '', formula: material?.formula || '', mol_weight: material?.mol_weight ?? '',
-    grade: material?.grade || '', physical_state: material?.physical_state || '',
+    grade_id: material?.grade_id || '', appearance_id: material?.appearance_id || '',
     manufacturer: material?.manufacturer || '', shelf_life_months: material?.shelf_life_months ?? '',
     storage_conditions: material?.storage_conditions || '',
     ghs_pictograms: material?.ghs_pictograms || [], signal_word: material?.signal_word || '',
@@ -18155,6 +18255,12 @@ function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
     id:s.id, parameter:s.parameter, spec_type:s.spec_type, min_value:chemNum(s.min_value), max_value:chemNum(s.max_value),
     text_value:s.text_value||'', unit:s.unit||'', method:s.method||'' })));
   const [loading, setLoading] = useState(false);
+  const [appearanceOpts, setAppearanceOpts] = useState([]);
+  const [gradeOpts, setGradeOpts] = useState([]);
+  useEffect(() => {
+    sb.from('chem_appearance_options').select('*').order('sort_order').order('name').then(({data})=>setAppearanceOpts(data||[]));
+    sb.from('chem_grade_options').select('*').order('sort_order').order('name').then(({data})=>setGradeOpts(data||[]));
+  }, []);
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const toggleGhs = (code) => setF('ghs_pictograms', form.ghs_pictograms.includes(code) ? form.ghs_pictograms.filter(c=>c!==code) : [...form.ghs_pictograms, code]);
   const setRow = (setter) => (i,k,v) => setter(rows=>rows.map((r,idx)=>idx===i?{...r,[k]:v}:r));
@@ -18162,17 +18268,17 @@ function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
   const casBad = form.cas_no.trim() && !isValidCAS(form.cas_no);
 
   const handleSave = async () => {
-    if (!form.name_en.trim() && !isSuperAdmin(user)) { toast('أدخل اسم المادة بالإنجليزي','error'); return; }
+    if (!form.name_en.trim() && !isSuperAdmin(user)) { toast('Enter the material name in English','error'); return; }
     const cleanPacks = packRows.filter(p=>String(p.size).trim()!=='');
-    if (cleanPacks.some(p=>!(parseFloat(p.size)>0)) && !isSuperAdmin(user)) { toast('حجم العبوة لازم يكون رقم أكبر من صفر','error'); return; }
+    if (cleanPacks.some(p=>!(parseFloat(p.size)>0)) && !isSuperAdmin(user)) { toast('Pack size must be a number greater than zero','error'); return; }
     const cleanSpecs = specRows.filter(s=>s.parameter.trim());
     for (const s of cleanSpecs) {
       if (isSuperAdmin(user)) break;
-      if ((s.spec_type==='min'||s.spec_type==='range') && s.min_value==='') { toast(`حدّد الحد الأدنى لبند "${s.parameter}"`,'error'); return; }
-      if ((s.spec_type==='max'||s.spec_type==='range') && s.max_value==='') { toast(`حدّد الحد الأعلى لبند "${s.parameter}"`,'error'); return; }
-      if (s.spec_type==='text' && !s.text_value.trim()) { toast(`اكتب نص المواصفة لبند "${s.parameter}"`,'error'); return; }
+      if ((s.spec_type==='min'||s.spec_type==='range') && s.min_value==='') { toast(`Set the minimum value for item "${s.parameter}"`,'error'); return; }
+      if ((s.spec_type==='max'||s.spec_type==='range') && s.max_value==='') { toast(`Set the maximum value for item "${s.parameter}"`,'error'); return; }
+      if (s.spec_type==='text' && !s.text_value.trim()) { toast(`Enter the spec text for item "${s.parameter}"`,'error'); return; }
     }
-    if (casBad && !confirm('رقم CAS لا يطابق خانة التحقق — ممكن يكون فيه خطأ بالكتابة. متابعة الحفظ؟')) return;
+    if (casBad && !confirm('CAS number check digit does not match — there may be a typo. Continue saving?')) return;
     setLoading(true);
     try {
       const num = (v) => v===''||v===null ? null : parseFloat(v);
@@ -18180,7 +18286,7 @@ function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
         name_en: form.name_en.trim(), name_ar: form.name_ar.trim()||null,
         category: form.category, production_type: form.production_type,
         cas_no: form.cas_no.trim()||null, formula: form.formula.trim()||null, mol_weight: num(form.mol_weight),
-        grade: form.grade.trim()||null, physical_state: form.physical_state||null,
+        grade_id: form.grade_id||null, appearance_id: form.appearance_id||null,
         manufacturer: form.manufacturer.trim()||null, shelf_life_months: form.shelf_life_months===''?null:parseInt(form.shelf_life_months),
         storage_conditions: form.storage_conditions.trim()||null,
         ghs_pictograms: form.ghs_pictograms, signal_word: form.signal_word||null,
@@ -18206,90 +18312,98 @@ function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
           text_value: s.spec_type==='text' ? s.text_value.trim() : null,
           unit: s.unit.trim()||null, method: s.method.trim()||null }));
       createLog(user, `${isEdit?'عدّل':'أضاف'} المادة الكيميائية ${saved.name_en}`, 'chem_material', saved.id, saved.code);
-      toast(isEdit?'تم التحديث ✓':'تمت إضافة المادة ✓','success');
+      toast(isEdit?'Updated ✓':'Material added ✓','success');
       onSave(saved);
     } catch(err) {
-      toast(err.code==='23505' ? 'يوجد مادة بنفس الاسم مسبقاً'
-        : err.code==='23503' ? 'حجم عبوة مستخدم بتشغيلات — ما بينحذف (باقي التعديلات انحفظت)'
-        : 'خطأ: '+err.message,'error');
+      toast(err.code==='23505' ? 'A material with this name already exists'
+        : err.code==='23503' ? 'Pack size in use by production lots — cannot be deleted (other changes were saved)'
+        : 'Error: '+err.message,'error');
     } finally { setLoading(false); }
   };
 
   const rowBox = {display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderBottom:'1px dashed #e2edf5'};
+  const CAT_EN = { chemical:'Chemicals', reagent:'Reagents & Solutions', stain:'Stains', indicator:'Indicators', media:'Culture Media', natural:'Natural Oils & Materials', bio:'Biological Materials' };
+  const PROD_EN = { repack:'Repack', prepare:'Prepare (Recipe)' };
+  const SIGNAL_EN = { danger:'Danger', warning:'Warning' };
+  const SPEC_TYPE_EN = { min:'≥ Min', max:'≤ Max', range:'Range', text:'Text (match)' };
+  const GHS_EN = { GHS01:'Explosive', GHS02:'Flammable', GHS03:'Oxidizing', GHS04:'Compressed Gas', GHS05:'Corrosive', GHS06:'Toxic', GHS07:'Irritant / Harmful', GHS08:'Health Hazard', GHS09:'Environmental Hazard' };
 
   return (
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:880}}>
         <div className="modal-header">
-          <span className="modal-title">🧪 {isEdit ? `تعديل ${material.name_en}` : 'مادة كيميائية جديدة'}</span>
+          <span className="modal-title">🧪 {isEdit ? `Edit ${material.name_en}` : 'New Chemical Material'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          <ChemSection title="البيانات الأساسية">
+          <ChemSection title="Basic Information">
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">الاسم (إنجليزي) <span style={{color:'var(--danger)'}}>*</span></label>
+                <label className="form-label">Name (English) <span style={{color:'var(--danger)'}}>*</span></label>
                 <input className="form-control" dir="ltr" value={form.name_en} onChange={e=>setF('name_en',e.target.value)} placeholder="Sodium Chloride"/>
               </div>
               <div className="form-group">
-                <label className="form-label">الاسم (عربي)</label>
+                <label className="form-label">Name (Arabic)</label>
                 <input className="form-control" value={form.name_ar} onChange={e=>setF('name_ar',e.target.value)} placeholder="كلوريد الصوديوم"/>
               </div>
             </div>
             <div className="form-row-3">
               <div className="form-group">
-                <label className="form-label">التصنيف</label>
+                <label className="form-label">Category</label>
                 <select className="form-control" value={form.category} onChange={e=>setF('category',e.target.value)}>
-                  {Object.entries(CHEM_CATEGORIES).map(([k,v])=><option key={k} value={k}>{v.icon} {v.label}</option>)}
+                  {Object.entries(CHEM_CATEGORIES).map(([k,v])=><option key={k} value={k}>{v.icon} {CAT_EN[k]||v.label}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">طريقة الإنتاج</label>
+                <label className="form-label">Production Type</label>
                 <select className="form-control" value={form.production_type} onChange={e=>setF('production_type',e.target.value)}>
-                  {Object.entries(CHEM_PROD_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  {Object.entries(CHEM_PROD_TYPES).map(([k])=><option key={k} value={k}>{PROD_EN[k]}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">الحالة الفيزيائية</label>
-                <select className="form-control" value={form.physical_state} onChange={e=>setF('physical_state',e.target.value)}>
+                <label className="form-label">Appearance</label>
+                <select className="form-control" value={form.appearance_id} onChange={e=>setF('appearance_id',e.target.value)}>
                   <option value="">—</option>
-                  {Object.entries(CHEM_STATES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  {appearanceOpts.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
               </div>
             </div>
             <div className="form-row-3">
               <div className="form-group">
-                <label className="form-label">رقم CAS</label>
+                <label className="form-label">CAS Number</label>
                 <input className="form-control" dir="ltr" value={form.cas_no} onChange={e=>setF('cas_no',e.target.value)} placeholder="7647-14-5"
                   style={casBad?{borderColor:'#dc2626'}:undefined}/>
-                {casBad && <div style={{fontSize:11,color:'#dc2626',marginTop:3}}>خانة التحقق غير مطابقة — راجع الرقم</div>}
+                {casBad && <div style={{fontSize:11,color:'#dc2626',marginTop:3}}>Check digit mismatch — please verify the number</div>}
               </div>
               <div className="form-group">
-                <label className="form-label">الصيغة الكيميائية</label>
+                <label className="form-label">Chemical Formula</label>
                 <input className="form-control" dir="ltr" value={form.formula} onChange={e=>setF('formula',e.target.value)} placeholder="NaCl"/>
               </div>
               <div className="form-group">
-                <label className="form-label">الوزن الجزيئي (g/mol)</label>
+                <label className="form-label">Molecular Weight (g/mol)</label>
                 <input type="number" min="0" step="0.001" className="form-control" value={form.mol_weight} onChange={e=>setF('mol_weight',e.target.value)}/>
               </div>
             </div>
             <div className="form-row-3">
               <div className="form-group">
-                <label className="form-label">الدرجة (Grade)</label>
-                <input className="form-control" dir="ltr" value={form.grade} onChange={e=>setF('grade',e.target.value)} placeholder="AR / LR / Extra Pure"/>
+                <label className="form-label">Grade</label>
+                <select className="form-control" value={form.grade_id} onChange={e=>setF('grade_id',e.target.value)}>
+                  <option value="">—</option>
+                  {gradeOpts.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
               </div>
               <div className="form-group">
-                <label className="form-label">الشركة المصنّعة</label>
+                <label className="form-label">Manufacturer</label>
                 <input className="form-control" dir="ltr" value={form.manufacturer} onChange={e=>setF('manufacturer',e.target.value)}/>
               </div>
               <div className="form-group">
-                <label className="form-label">الصلاحية بعد التعبئة (شهر)</label>
+                <label className="form-label">Shelf Life After Packing (months)</label>
                 <input type="number" min="0" step="1" className="form-control" value={form.shelf_life_months} onChange={e=>setF('shelf_life_months',e.target.value)}/>
               </div>
             </div>
           </ChemSection>
 
-          <ChemSection title="⚠️ الخطورة (GHS)">
+          <ChemSection title="⚠️ Hazard (GHS)">
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
               {GHS_PICTOGRAMS.map(g=>{
                 const on = form.ghs_pictograms.includes(g.code);
@@ -18297,66 +18411,66 @@ function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
                   <button key={g.code} type="button" onClick={()=>toggleGhs(g.code)}
                     style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
                       border: on?'2px solid #dc2626':'1.5px solid #e2edf5', background: on?'#fef2f2':'#fff', color: on?'#b91c1c':'#4b5563'}}>
-                    <span>{g.icon}</span>{g.label}
+                    <span>{g.icon}</span>{GHS_EN[g.code]||g.label}
                   </button>
                 );
               })}
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">كلمة التنبيه</label>
+                <label className="form-label">Signal Word</label>
                 <select className="form-control" value={form.signal_word} onChange={e=>setF('signal_word',e.target.value)}>
-                  <option value="">— بدون —</option>
-                  {Object.entries(CHEM_SIGNAL_WORDS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  <option value="">— None —</option>
+                  {Object.entries(CHEM_SIGNAL_WORDS).map(([k])=><option key={k} value={k}>{SIGNAL_EN[k]}</option>)}
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">شروط التخزين</label>
-                <input className="form-control" value={form.storage_conditions} onChange={e=>setF('storage_conditions',e.target.value)} placeholder="مكان جاف، بعيد عن الضوء، 15–25 °C"/>
+                <label className="form-label">Storage Conditions</label>
+                <input className="form-control" value={form.storage_conditions} onChange={e=>setF('storage_conditions',e.target.value)} placeholder="Dry place, away from light, 15–25 °C"/>
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">عبارات الخطر (H)</label>
+                <label className="form-label">Hazard Statements (H)</label>
                 <textarea className="form-control" dir="ltr" rows={2} value={form.hazard_statements} onChange={e=>setF('hazard_statements',e.target.value)} placeholder="H302 Harmful if swallowed" style={{resize:'vertical'}}/>
               </div>
               <div className="form-group">
-                <label className="form-label">عبارات الوقاية (P)</label>
+                <label className="form-label">Precautionary Statements (P)</label>
                 <textarea className="form-control" dir="ltr" rows={2} value={form.precautionary_statements} onChange={e=>setF('precautionary_statements',e.target.value)} placeholder="P280 Wear protective gloves" style={{resize:'vertical'}}/>
               </div>
             </div>
           </ChemSection>
 
-          <ChemSection title="📦 أحجام العبوات"
-            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setPackRows(r=>[...r,{size:'',unit:form.physical_state==='liquid'?'mL':'g',container:''}])}>➕ حجم</button>}>
-            {packRows.length===0 && <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد أحجام — أضف الأحجام اللي بتبيعها (مثلاً 500 g، 1 L)</div>}
+          <ChemSection title="📦 Pack Sizes"
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setPackRows(r=>[...r,{size:'',unit:'g',container:''}])}>➕ Size</button>}>
+            {packRows.length===0 && <div style={{fontSize:12,color:'var(--gray-400)'}}>No sizes yet — add the sizes you sell (e.g. 500 g, 1 L)</div>}
             {packRows.map((p,i)=>(
               <div key={p.id||'n'+i} style={rowBox}>
-                <input type="number" min="0" step="0.001" className="form-control" style={{width:110}} placeholder="الحجم" value={p.size} onChange={e=>setPack(i,'size',e.target.value)}/>
+                <input type="number" min="0" step="0.001" className="form-control" style={{width:110}} placeholder="Size" value={p.size} onChange={e=>setPack(i,'size',e.target.value)}/>
                 <select className="form-control" style={{width:90}} value={p.unit} onChange={e=>setPack(i,'unit',e.target.value)}>
                   {CHEM_PACK_UNITS.map(u=><option key={u} value={u}>{u}</option>)}
                 </select>
-                <input className="form-control" style={{flex:'1 1 160px'}} placeholder="نوع العبوة (زجاج عنبري، بلاستيك...)" value={p.container} onChange={e=>setPack(i,'container',e.target.value)}/>
+                <input className="form-control" style={{flex:'1 1 160px'}} placeholder="Container type (amber glass, plastic...)" value={p.container} onChange={e=>setPack(i,'container',e.target.value)}/>
                 <button type="button" className="btn btn-danger btn-sm" onClick={()=>setPackRows(r=>r.filter((_,idx)=>idx!==i))}>✕</button>
               </div>
             ))}
           </ChemSection>
 
-          <ChemSection title="📋 مواصفات الفحص (أساس شهادة التحليل COA)"
-            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setSpecRows(r=>[...r,{parameter:'',spec_type:'min',min_value:'',max_value:'',text_value:'',unit:'%',method:''}])}>➕ بند</button>}>
-            {specRows.length===0 && <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد بنود — مثال: Purity ≥ 98 %، Iron ≤ 0.005 %، Appearance = White powder</div>}
+          <ChemSection title="📋 Test Specifications (basis of Certificate of Analysis — COA)"
+            action={<button type="button" className="btn btn-ghost btn-sm" onClick={()=>setSpecRows(r=>[...r,{parameter:'',spec_type:'min',min_value:'',max_value:'',text_value:'',unit:'%',method:''}])}>➕ Item</button>}>
+            {specRows.length===0 && <div style={{fontSize:12,color:'var(--gray-400)'}}>No items yet — e.g. Purity ≥ 98%, Iron ≤ 0.005%, Appearance = White powder</div>}
             {specRows.map((s,i)=>(
               <div key={s.id||'n'+i} style={rowBox}>
                 <input className="form-control" dir="ltr" style={{flex:'1 1 150px'}} placeholder="Parameter" value={s.parameter} onChange={e=>setSpec(i,'parameter',e.target.value)}/>
                 <select className="form-control" style={{width:130}} value={s.spec_type} onChange={e=>setSpec(i,'spec_type',e.target.value)}>
-                  {Object.entries(CHEM_SPEC_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                  {Object.entries(CHEM_SPEC_TYPES).map(([k])=><option key={k} value={k}>{SPEC_TYPE_EN[k]}</option>)}
                 </select>
-                {(s.spec_type==='min'||s.spec_type==='range') && <input type="number" step="any" className="form-control" style={{width:95}} placeholder="أدنى" value={s.min_value} onChange={e=>setSpec(i,'min_value',e.target.value)}/>}
-                {(s.spec_type==='max'||s.spec_type==='range') && <input type="number" step="any" className="form-control" style={{width:95}} placeholder="أعلى" value={s.max_value} onChange={e=>setSpec(i,'max_value',e.target.value)}/>}
+                {(s.spec_type==='min'||s.spec_type==='range') && <input type="number" step="any" className="form-control" style={{width:95}} placeholder="Min" value={s.min_value} onChange={e=>setSpec(i,'min_value',e.target.value)}/>}
+                {(s.spec_type==='max'||s.spec_type==='range') && <input type="number" step="any" className="form-control" style={{width:95}} placeholder="Max" value={s.max_value} onChange={e=>setSpec(i,'max_value',e.target.value)}/>}
                 {s.spec_type==='text' && <input className="form-control" dir="ltr" style={{width:170}} placeholder="Passes test" value={s.text_value} onChange={e=>setSpec(i,'text_value',e.target.value)}/>}
-                {s.spec_type!=='text' && <input className="form-control" dir="ltr" style={{width:70}} placeholder="الوحدة" value={s.unit} onChange={e=>setSpec(i,'unit',e.target.value)}/>}
+                {s.spec_type!=='text' && <input className="form-control" dir="ltr" style={{width:70}} placeholder="Unit" value={s.unit} onChange={e=>setSpec(i,'unit',e.target.value)}/>}
                 <input className="form-control" dir="ltr" style={{width:120}} placeholder="Method" value={s.method} onChange={e=>setSpec(i,'method',e.target.value)}/>
-                <button type="button" className="btn btn-ghost btn-sm" disabled={i===0} title="تحريك لأعلى"
+                <button type="button" className="btn btn-ghost btn-sm" disabled={i===0} title="Move up"
                   onClick={()=>setSpecRows(r=>{ const a=r.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; return a; })}>▲</button>
                 <button type="button" className="btn btn-danger btn-sm" onClick={()=>setSpecRows(r=>r.filter((_,idx)=>idx!==i))}>✕</button>
               </div>
@@ -18364,21 +18478,21 @@ function ChemMaterialForm({ user, material, packs, specs, onSave, onClose }) {
           </ChemSection>
 
           <div className="form-group">
-            <label className="form-label">ملاحظات</label>
+            <label className="form-label">Notes</label>
             <textarea className="form-control" rows={2} value={form.notes} onChange={e=>setF('notes',e.target.value)} style={{resize:'vertical'}}/>
           </div>
           <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,fontWeight:600,marginTop:8}}>
-            <input type="checkbox" checked={form.is_active} onChange={e=>setF('is_active',e.target.checked)}/> مادة فعّالة
+            <input type="checkbox" checked={form.is_active} onChange={e=>setF('is_active',e.target.checked)}/> Active material
           </label>
           {material && 'specs_reviewed' in material && (
             <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,fontWeight:700,marginTop:8,color:form.specs_reviewed?'#166534':'#6b21a8'}}>
-              <input type="checkbox" checked={form.specs_reviewed} onChange={e=>setF('specs_reviewed',e.target.checked)}/> ✔ راجعت مواصفات الفحص وهي معتمدة لهذه المادة
+              <input type="checkbox" checked={form.specs_reviewed} onChange={e=>setF('specs_reviewed',e.target.checked)}/> ✔ I reviewed the test specs and they are approved for this material
             </label>
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(!form.name_en.trim() && !isSuperAdmin(user))}>{loading?'...':isEdit?'حفظ':'إضافة المادة'}</button>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(!form.name_en.trim() && !isSuperAdmin(user))}>{loading?'...':isEdit?'Save':'Add Material'}</button>
         </div>
       </div>
     </div>
@@ -18390,16 +18504,24 @@ function ChemMaterialDetail({ user, material:m, packs, specs, docs, recipe, matB
   const canEdit = hasPerm(user,'chemicals_edit');
   const canDelete = hasPerm(user,'chemicals_delete');
   const cat = CHEM_CATEGORIES[m.category] || CHEM_CATEGORIES.chemical;
-  const ms = CHEM_MSDS_META[chemMsdsStatus(docs)];
-  const rs = m.production_type==='prepare' ? CHEM_RECIPE_META[recipe?.status || 'none'] : null;
+  const CAT_EN = { chemical:'Chemicals', reagent:'Reagents & Solutions', stain:'Stains', indicator:'Indicators', media:'Culture Media', natural:'Natural Oils & Materials', bio:'Biological Materials' };
+  const PROD_EN = { repack:'Repack', prepare:'Prepare (Recipe)' };
+  const SIGNAL_EN = { danger:'Danger', warning:'Warning' };
+  const DOC_TYPE_EN = { msds:'MSDS / SDS', supplier_coa:'Supplier COA', tds:'Technical Data Sheet (TDS)', other:'Other' };
+  const MSDS_EN = { none:'No MSDS', expired:'MSDS review overdue', due:'MSDS review due soon', ok:'MSDS current' };
+  const RECIPE_EN = { none:'No recipe', draft:'Draft — pending approval', approved:'Approved' };
+  const msdsKey = chemMsdsStatus(docs);
+  const ms = CHEM_MSDS_META[msdsKey];
+  const rsKey = m.production_type==='prepare' ? (recipe?.status || 'none') : null;
+  const rs = rsKey ? CHEM_RECIPE_META[rsKey] : null;
   const sortedSpecs = specs.slice().sort((a,b)=>a.seq-b.seq);
   const today = new Date().toISOString().slice(0,10);
 
   const deleteDoc = async (d) => {
-    if (!confirm('حذف رابط هذه الوثيقة؟ (الملف نفسه على Drive ما بينحذف)')) return;
+    if (!confirm('Delete this document link? (the file itself on Drive will not be deleted)')) return;
     const { error } = await sb.from('chem_documents').delete().eq('id', d.id);
-    if (error) { toast('خطأ: '+error.message,'error'); return; }
-    toast('تم الحذف','success'); onChanged();
+    if (error) { toast('Error: '+error.message,'error'); return; }
+    toast('Deleted','success'); onChanged();
   };
 
   const field = (label, value, ltr) => value ? (
@@ -18416,49 +18538,49 @@ function ChemMaterialDetail({ user, material:m, packs, specs, docs, recipe, matB
         <div className="modal-body">
           <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14,alignItems:'center'}}>
             <ChemPill color="#374151" bg="#f3f4f6">{m.code}</ChemPill>
-            <ChemPill color="#1C6A99" bg="#e0f0fa">{cat.label}</ChemPill>
-            <ChemPill color="#1C6A99" bg="#e0f0fa">{CHEM_PROD_TYPES[m.production_type]}</ChemPill>
-            <ChemPill color={ms.color} bg={ms.bg}>{ms.label}</ChemPill>
-            {rs && <ChemPill color={rs.color} bg={rs.bg}>{rs.label}</ChemPill>}
-            {!m.is_active && <ChemPill color="#6b7280" bg="#f3f4f6">غير فعّالة</ChemPill>}
+            <ChemPill color="#1C6A99" bg="#e0f0fa">{CAT_EN[m.category]||cat.label}</ChemPill>
+            <ChemPill color="#1C6A99" bg="#e0f0fa">{PROD_EN[m.production_type]}</ChemPill>
+            <ChemPill color={ms.color} bg={ms.bg}>{MSDS_EN[msdsKey]}</ChemPill>
+            {rs && <ChemPill color={rs.color} bg={rs.bg}>{RECIPE_EN[rsKey]}</ChemPill>}
+            {!m.is_active && <ChemPill color="#6b7280" bg="#f3f4f6">Inactive</ChemPill>}
           </div>
 
-          <ChemSection title="البيانات الأساسية">
+          <ChemSection title="Basic Information">
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:8}}>
-              {field('الاسم العربي', m.name_ar)}
+              {field('Arabic Name', m.name_ar)}
               {field('CAS', m.cas_no, true)}
-              {field('الصيغة', m.formula, true)}
-              {field('الوزن الجزيئي', m.mol_weight && `${chemNum(m.mol_weight)} g/mol`, true)}
-              {field('الدرجة', m.grade, true)}
-              {field('الحالة', CHEM_STATES[m.physical_state])}
-              {field('المصنّع', m.manufacturer, true)}
-              {field('الصلاحية بعد التعبئة', m.shelf_life_months && `${m.shelf_life_months} شهر`)}
+              {field('Formula', m.formula, true)}
+              {field('Molecular Weight', m.mol_weight && `${chemNum(m.mol_weight)} g/mol`, true)}
+              {field('Grade', m.chem_grade_options?.name, true)}
+              {field('Appearance', m.chem_appearance_options?.name, true)}
+              {field('Manufacturer', m.manufacturer, true)}
+              {field('Shelf Life After Packing', m.shelf_life_months && `${m.shelf_life_months} months`)}
             </div>
             {m.notes && <div style={{marginTop:10,fontSize:12,color:'#92400e',background:'#fffbeb',borderRadius:8,padding:'8px 10px'}}>📝 {m.notes}</div>}
           </ChemSection>
 
-          <ChemSection title="⚠️ الخطورة والتخزين">
+          <ChemSection title="⚠️ Hazard & Storage">
             {(m.ghs_pictograms||[]).length===0 && !m.signal_word && !m.hazard_statements && !m.storage_conditions
-              ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لم تُدخل بيانات الخطورة بعد — راجع MSDS المصنّع</div>
+              ? <div style={{fontSize:12,color:'var(--gray-400)'}}>No hazard data entered yet — check the manufacturer's MSDS</div>
               : <>
                 <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
                   <GhsIcons codes={m.ghs_pictograms} size={30}/>
-                  {m.signal_word && <span style={{fontWeight:900,fontSize:15,color:m.signal_word==='danger'?'#b91c1c':'#b45309'}}>{CHEM_SIGNAL_WORDS[m.signal_word]}</span>}
+                  {m.signal_word && <span style={{fontWeight:900,fontSize:15,color:m.signal_word==='danger'?'#b91c1c':'#b45309'}}>{SIGNAL_EN[m.signal_word]}</span>}
                 </div>
                 {m.hazard_statements && <div dir="ltr" style={{fontSize:12,marginTop:8,whiteSpace:'pre-wrap',textAlign:'left'}}>{m.hazard_statements}</div>}
                 {m.precautionary_statements && <div dir="ltr" style={{fontSize:12,marginTop:6,color:'var(--gray-500)',whiteSpace:'pre-wrap',textAlign:'left'}}>{m.precautionary_statements}</div>}
-                {m.storage_conditions && <div style={{fontSize:12,marginTop:8}}>🏷️ <b>التخزين:</b> {m.storage_conditions}</div>}
+                {m.storage_conditions && <div style={{fontSize:12,marginTop:8}}>🏷️ <b>Storage:</b> {m.storage_conditions}</div>}
               </>}
           </ChemSection>
 
-          <ChemSection title="📦 أحجام العبوات">
-            {packs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لم تُحدَّد بعد</div>
+          <ChemSection title="📦 Pack Sizes">
+            {packs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>Not set yet</div>
               : <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{packs.map(p=><ChemPill key={p.id} color="#1a2e3d" bg="#f1f5f9">{formatChemPack(p)}</ChemPill>)}</div>}
           </ChemSection>
 
-          <ChemSection title="📋 مواصفات الفحص (COA)">
-            {m.specs_reviewed===false && sortedSpecs.length>0 && <div style={{fontSize:12,color:'#6b21a8',background:'#f3e8ff',borderRadius:8,padding:'6px 10px',marginBottom:8}}>مسودة مواصفات نموذجية — راجعها وعدّلها حسب COA المصنّع ودرجة المادة، ثم علّم "راجعت المواصفات" من التعديل.</div>}
-            {sortedSpecs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد بنود — أضفها من "تعديل" لتُبنى عليها شهادة التحليل</div> : (
+          <ChemSection title="📋 Test Specifications (COA)">
+            {m.specs_reviewed===false && sortedSpecs.length>0 && <div style={{fontSize:12,color:'#6b21a8',background:'#f3e8ff',borderRadius:8,padding:'6px 10px',marginBottom:8}}>Draft template specs — review and adjust them per the manufacturer's COA and material grade, then check "Specs reviewed" from Edit.</div>}
+            {sortedSpecs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>No items yet — add them from "Edit" to build the Certificate of Analysis</div> : (
               <div style={{overflowX:'auto'}}>
                 <table dir="ltr" style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:380}}>
                   <thead><tr style={{background:'#f1f5f9'}}>
@@ -18478,22 +18600,22 @@ function ChemMaterialDetail({ user, material:m, packs, specs, docs, recipe, matB
             )}
           </ChemSection>
 
-          <ChemSection title="📄 الوثائق (Google Drive)"
-            action={canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setDocForm('new')}>➕ إضافة رابط</button>}>
-            {docs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد وثائق — أضف رابط MSDS المصنّع من Google Drive</div>
+          <ChemSection title="📄 Documents (Google Drive)"
+            action={canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setDocForm('new')}>➕ Add Link</button>}>
+            {docs.length===0 ? <div style={{fontSize:12,color:'var(--gray-400)'}}>No documents yet — add the manufacturer's MSDS link from Google Drive</div>
               : docs.map(d=>{
                 const overdue = d.is_current && d.review_date && d.review_date < today;
                 return (
                   <div key={d.id} style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',padding:'8px 0',borderBottom:'1px dashed #e2edf5',opacity:d.is_current?1:.6}}>
                     <span style={{fontSize:18}}>📄</span>
                     <div style={{flex:'1 1 200px',minWidth:0}}>
-                      <div style={{fontWeight:800,fontSize:13}}>{CHEM_DOC_TYPES[d.doc_type]}{d.title?` — ${d.title}`:''} {!d.is_current && <span style={{fontSize:11,color:'var(--gray-400)'}}>(نسخة قديمة)</span>}</div>
+                      <div style={{fontWeight:800,fontSize:13}}>{DOC_TYPE_EN[d.doc_type]||CHEM_DOC_TYPES[d.doc_type]}{d.title?` — ${d.title}`:''} {!d.is_current && <span style={{fontSize:11,color:'var(--gray-400)'}}>(old version)</span>}</div>
                       <div style={{fontSize:11,color:'var(--gray-500)'}}>
-                        {[d.version && `نسخة ${d.version}`, d.language==='ar'?'عربي':'إنجليزي', d.issue_date && `إصدار ${d.issue_date}`].filter(Boolean).join(' · ')}
-                        {d.review_date && <span style={{color:overdue?'#b91c1c':undefined,fontWeight:overdue?800:400}}> · المراجعة {d.review_date}</span>}
+                        {[d.version && `v${d.version}`, d.language==='ar'?'Arabic':'English', d.issue_date && `Issued ${d.issue_date}`].filter(Boolean).join(' · ')}
+                        {d.review_date && <span style={{color:overdue?'#b91c1c':undefined,fontWeight:overdue?800:400}}> · Review {d.review_date}</span>}
                       </div>
                     </div>
-                    <a className="btn btn-ghost btn-sm" href={d.url} target="_blank" rel="noopener noreferrer">🔗 فتح</a>
+                    <a className="btn btn-ghost btn-sm" href={d.url} target="_blank" rel="noopener noreferrer">🔗 Open</a>
                     {canEdit && <button className="btn btn-ghost btn-sm" onClick={()=>setDocForm(d)}>✏️</button>}
                     {canDelete && <button className="btn btn-danger btn-sm" onClick={()=>deleteDoc(d)}>🗑</button>}
                   </div>
@@ -18502,18 +18624,18 @@ function ChemMaterialDetail({ user, material:m, packs, specs, docs, recipe, matB
           </ChemSection>
 
           {m.production_type==='prepare' && (
-            <ChemSection title="📖 الوصفة"
-              action={(recipe || canEdit) && <button className="btn btn-ghost btn-sm" onClick={onOpenRecipe}>{recipe?'👁 فتح الوصفة':'➕ إضافة وصفة'}</button>}>
+            <ChemSection title="📖 Recipe"
+              action={(recipe || canEdit) && <button className="btn btn-ghost btn-sm" onClick={onOpenRecipe}>{recipe?'👁 Open Recipe':'➕ Add Recipe'}</button>}>
               {recipe
-                ? <div style={{fontSize:12}}>دفعة {chemNum(recipe.batch_size)} {recipe.batch_unit}: {(recipe.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq).map(i=>matById[i.material_id]?.name_en||i.item_name).join('، ')}</div>
-                : <div style={{fontSize:12,color:'var(--gray-400)'}}>لا توجد وصفة بعد</div>}
+                ? <div style={{fontSize:12}}>Batch {chemNum(recipe.batch_size)} {recipe.batch_unit}: {(recipe.chem_recipe_items||[]).slice().sort((a,b)=>a.seq-b.seq).map(i=>matById[i.material_id]?.name_en||i.item_name).join(', ')}</div>
+                : <div style={{fontSize:12,color:'var(--gray-400)'}}>No recipe yet</div>}
             </ChemSection>
           )}
         </div>
         <div className="modal-footer">
-          {onDelete && <button className="btn btn-danger" onClick={onDelete} style={{marginInlineEnd:'auto'}}>🗑 حذف المادة</button>}
-          <button className="btn btn-ghost" onClick={onClose}>إغلاق</button>
-          {onEdit && <button className="btn btn-primary" onClick={onEdit}>✏️ تعديل</button>}
+          {onDelete && <button className="btn btn-danger" onClick={onDelete} style={{marginInlineEnd:'auto'}}>🗑 Delete Material</button>}
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          {onEdit && <button className="btn btn-primary" onClick={onEdit}>✏️ Edit</button>}
         </div>
       </div>
       {docForm && <ChemDocForm user={user} materialId={m.id} doc={docForm==='new'?null:docForm}
@@ -18543,8 +18665,10 @@ function ChemDocForm({ user, materialId, doc, onSave, onClose }) {
     }
   };
 
+  const DOC_TYPE_EN = { msds:'MSDS / SDS', supplier_coa:'Supplier COA', tds:'Technical Data Sheet (TDS)', other:'Other' };
+
   const handleSave = async () => {
-    if (!urlOk && !isSuperAdmin(user)) { toast('ألصق رابط صحيح يبدأ بـ https://','error'); return; }
+    if (!urlOk && !isSuperAdmin(user)) { toast('Paste a valid link starting with https://','error'); return; }
     setLoading(true);
     try {
       const payload = {
@@ -18563,9 +18687,9 @@ function ChemDocForm({ user, materialId, doc, onSave, onClose }) {
         ? await sb.from('chem_documents').update(payload).eq('id', doc.id)
         : await sb.from('chem_documents').insert({ ...payload, created_by: user.id });
       if (error) throw error;
-      toast(isEdit?'تم التحديث ✓':'تمت إضافة الوثيقة ✓','success');
+      toast(isEdit?'Updated ✓':'Document added ✓','success');
       onSave();
-    } catch(err) { toast('خطأ: '+err.message,'error'); }
+    } catch(err) { toast('Error: '+err.message,'error'); }
     finally { setLoading(false); }
   };
 
@@ -18573,61 +18697,61 @@ function ChemDocForm({ user, materialId, doc, onSave, onClose }) {
     <div className="modal-overlay" style={{zIndex:1100}}>
       <div className="modal" style={{maxWidth:540}}>
         <div className="modal-header">
-          <span className="modal-title">📄 {isEdit?'تعديل وثيقة':'إضافة وثيقة'}</span>
+          <span className="modal-title">📄 {isEdit?'Edit Document':'Add Document'}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:12}}>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">نوع الوثيقة</label>
+              <label className="form-label">Document Type</label>
               <select className="form-control" value={form.doc_type} onChange={e=>setF('doc_type',e.target.value)}>
-                {Object.entries(CHEM_DOC_TYPES).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+                {Object.entries(CHEM_DOC_TYPES).map(([k])=><option key={k} value={k}>{DOC_TYPE_EN[k]}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">اللغة</label>
+              <label className="form-label">Language</label>
               <select className="form-control" value={form.language} onChange={e=>setF('language',e.target.value)}>
-                <option value="en">إنجليزي</option><option value="ar">عربي</option>
+                <option value="en">English</option><option value="ar">Arabic</option>
               </select>
             </div>
           </div>
           <div className="form-group">
-            <label className="form-label">رابط Google Drive <span style={{color:'var(--danger)'}}>*</span></label>
+            <label className="form-label">Google Drive Link <span style={{color:'var(--danger)'}}>*</span></label>
             <input className="form-control" dir="ltr" value={form.url} onChange={e=>setF('url',e.target.value)} placeholder="https://drive.google.com/file/d/..."
               style={form.url && !urlOk ? {borderColor:'#dc2626'} : undefined}/>
-            <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>تأكد إن مشاركة الملف على Drive مفتوحة للي لازم يشوفه</div>
+            <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>Make sure the file's sharing on Drive is open to whoever needs to see it</div>
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">العنوان / المصدر</label>
+              <label className="form-label">Title / Source</label>
               <input className="form-control" dir="ltr" value={form.title} onChange={e=>setF('title',e.target.value)} placeholder="Merck SDS"/>
             </div>
             <div className="form-group">
-              <label className="form-label">رقم النسخة</label>
+              <label className="form-label">Version Number</label>
               <input className="form-control" dir="ltr" value={form.version} onChange={e=>setF('version',e.target.value)} placeholder="Rev. 4"/>
             </div>
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">تاريخ الإصدار</label>
+              <label className="form-label">Issue Date</label>
               <input type="date" className="form-control" value={form.issue_date} onChange={e=>onIssue(e.target.value)}/>
             </div>
             <div className="form-group">
-              <label className="form-label">تاريخ المراجعة القادمة</label>
+              <label className="form-label">Next Review Date</label>
               <input type="date" className="form-control" value={form.review_date} onChange={e=>setF('review_date',e.target.value)}/>
             </div>
           </div>
           <div className="form-group">
-            <label className="form-label">ملاحظات</label>
+            <label className="form-label">Notes</label>
             <input className="form-control" value={form.notes} onChange={e=>setF('notes',e.target.value)}/>
           </div>
           <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,fontWeight:600}}>
-            <input type="checkbox" checked={form.is_current} onChange={e=>setF('is_current',e.target.checked)}/> النسخة السارية (أي نسخة سارية سابقة من نفس النوع بتصير "قديمة")
+            <input type="checkbox" checked={form.is_current} onChange={e=>setF('is_current',e.target.checked)}/> Current version (any previous current version of the same type becomes "old")
           </label>
         </div>
         <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(!urlOk && !isSuperAdmin(user))}>{loading?'...':'حفظ'}</button>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={loading||(!urlOk && !isSuperAdmin(user))}>{loading?'...':'Save'}</button>
         </div>
       </div>
     </div>
@@ -18720,7 +18844,7 @@ function ChemRecipeView({ user, material:m, recipe:r, matById, onClose, onEdit, 
 function ChemRecipeForm({ user, material:m, recipe:r, materials, matById, onSave, onClose }) {
   const isEdit = !!r;
   const [form, setForm] = useState({
-    batch_size: r ? chemNum(r.batch_size) : '1000', batch_unit: r?.batch_unit || (m.physical_state==='solid'?'g':'mL'),
+    batch_size: r ? chemNum(r.batch_size) : '1000', batch_unit: r?.batch_unit || (['reagent','stain','indicator'].includes(m.category)?'mL':'g'),
     procedure: r?.procedure || '', source: r?.source || '', notes: r?.notes || '',
   });
   const [items, setItems] = useState(r
