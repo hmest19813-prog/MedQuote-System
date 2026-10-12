@@ -1549,7 +1549,7 @@ const NAV = [
   { id: 'customers', label: 'إدارة العملاء',        icon: '🏢', perm: 'customers_access' },
   { id: 'hr',        label: 'إدارة الموارد البشرية', icon: '👥', perm: 'hr_access' },
   { id: 'correspondence', label: 'إدارة الديوان والأرشيف', icon: '📨', visible: (u) => hasPerm(u,'letters_access') || hasPerm(u,'inbox_access') },
-  { id: 'catalog',   label: 'إدارة الأصناف',       icon: '🗂️', perm: 'catalog_access' },
+  { id: 'catalog',   label: 'إدارة المخزون',       icon: '🗂️', perm: 'catalog_access' },
   { id: 'chemicals', label: 'إدارة الكيماويات', icon: '🧪', perm: 'chemicals_access' },
   { id: 'properties', label: 'إدارة الأصول', icon: '🏘️', visible: isPropertiesUser },
   { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
@@ -8094,7 +8094,7 @@ const PERM_GROUPS = [
     { key: 'export_customers_edit',   label: 'تعديل بيانات عملاء التصدير' },
     { key: 'export_customers_delete', label: 'حذف عملاء التصدير' },
   ]},
-  { label: 'الكتالوج', icon: '🗂️', perms: [
+  { label: 'إدارة المخزون', icon: '🗂️', perms: [
     { key: 'catalog_access', label: 'الوصول للكتالوج' },
     { key: 'catalog_edit',   label: 'إضافة وتعديل الأصناف' },
     { key: 'catalog_delete', label: 'حذف الأصناف وإدارة الفئات' },
@@ -9021,16 +9021,55 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
 function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject }) {
   const [quotes, setQuotes] = useState([]);
   const [loadingQ, setLoadingQ] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [loadingO, setLoadingO] = useState(true);
+  const [letters, setLetters] = useState([]);
+  const [loadingL, setLoadingL] = useState(true);
   const [editing, setEditing] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [previewingLetter, setPreviewingLetter] = useState(null);
+  const [showLetterForm, setShowLetterForm] = useState(false);
+  const [letterMeta, setLetterMeta] = useState({ contacts: [], categories: [] });
+  const canIssueLetter = hasPerm(user, 'letters_access');
+  const [orderDoc, setOrderDoc] = useState(null);
+  const [orderDocItems, setOrderDocItems] = useState([]);
+  const [loadingOrderPreview, setLoadingOrderPreview] = useState(false);
+
+  const loadLetters = async () => {
+    setLoadingL(true);
+    const { data: l } = await sb.from('official_letters').select('*').eq('customer_id', customer.id).is('deleted_at', null).order('number',{ascending:false});
+    setLetters(l||[]); setLoadingL(false);
+  };
 
   useEffect(() => {
-    sb.from('quotations').select('*').eq('customer_id', customer.id).order('number',{ascending:false, nullsFirst:false})
-      .then(({data})=>{ setQuotes(data||[]); setLoadingQ(false); });
+    let active = true;
+    (async () => {
+      setLoadingQ(true); setLoadingO(true);
+      const { data: q } = await sb.from('quotations').select('*').eq('customer_id', customer.id).order('number',{ascending:false, nullsFirst:false});
+      if (!active) return;
+      const qList = q || [];
+      setQuotes(qList); setLoadingQ(false);
+      const qIds = qList.map(x=>x.id);
+      const { data: o } = qIds.length
+        ? await sb.from('orders').select('*').in('quotation_id', qIds).is('deleted_at', null).order('created_at',{ascending:false})
+        : { data: [] };
+      if (active) { setOrders(o||[]); setLoadingO(false); }
+    })();
+    loadLetters();
+    return () => { active = false; };
   }, [customer.id]);
+
+  const openLetterForm = async () => {
+    const [{data:ct}, {data:cat}] = await Promise.all([
+      sb.from('letter_contacts').select('*').order('name'),
+      sb.from('letter_categories').select('*').order('sort_order'),
+    ]);
+    setLetterMeta({ contacts: ct||[], categories: cat||[] });
+    setShowLetterForm(true);
+  };
 
   const assignedName = customer.rep_name || profiles.find(p=>p.id===customer.assigned_to)?.full_name || '—';
 
@@ -9042,6 +9081,52 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
     setLoadingPreview(true);
     sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order')
       .then(({data}) => { setPreviewDoc(q); setPreviewItems(data||[]); setLoadingPreview(false); });
+  };
+
+  const previewOrder = async (o) => {
+    setLoadingOrderPreview(true);
+    try {
+      let q = null;
+      if (o.quotation_id || o.quotation_number) {
+        const qy = o.quotation_id
+          ? sb.from('quotations').select('*').eq('id', o.quotation_id)
+          : sb.from('quotations').select('*').eq('number', o.quotation_number);
+        const { data } = await qy.maybeSingle();
+        q = data || null;
+      }
+      const { data: oits } = await sb.from('order_items').select('*').eq('order_id', o.id).order('sort_order');
+      let items = oits || [];
+      const defTax = parseFloat(q?.tax_pct ?? 16) || 0;
+      if (!items.length && q?.id) {
+        const { data: qits } = await sb.from('quotation_items').select('*').eq('quotation_id', q.id).order('sort_order');
+        const normQits = (q.detailed_layout === false) ? (qits||[]).map(it => ({ ...it, tax_pct: defTax })) : (qits||[]);
+        items = pickQuoteItems(normQits, defTax);
+      }
+      if (!items.length) { toast('لا توجد أصناف لعرضها في هذا الطلب', 'error'); setLoadingOrderPreview(false); return; }
+      const subtotal = items.reduce((s,i) => s + (parseFloat(i.quantity||0) * parseFloat(i.unit_price||0)), 0);
+      const disc_amt = q?.discount_type === 'amt' ? parseFloat(q?.discount_fixed || 0) : subtotal * parseFloat(q?.discount_pct || 0) / 100;
+      const ratio = subtotal > 0 ? (subtotal - disc_amt) / subtotal : 1;
+      const tax_amt = items.reduce((s,i) => {
+        const line = parseFloat(i.quantity||0) * parseFloat(i.unit_price||0);
+        return s + line * ratio * (parseFloat(i.tax_pct ?? defTax) || 0) / 100;
+      }, 0);
+      setOrderDoc({
+        ...(q || {}), number: o.number, customer_name: o.customer_name || customer.name,
+        currency: o.currency || q?.currency || 'JOD',
+        date: (o.created_at||'').slice(0,10) || q?.date || today(),
+        valid_until: null, notes: o.notes || q?.notes || '', tax_pct: defTax,
+        subtotal: subtotal.toFixed(3), discount_amt: disc_amt.toFixed(3),
+        tax_amt: tax_amt.toFixed(3), nett_price: (subtotal - disc_amt + tax_amt).toFixed(3),
+        prepared_by: o.prepared_by || null,
+        delivered_by: o.delivered_by || null,
+        expected_delivery: o.expected_delivery || null,
+        issued_by_name: profiles.find(p=>p.id===o.created_by)?.full_name || null,
+        customer_ref: o.customer_ref || null,
+        po_number: o.po_number || null,
+      });
+      setOrderDocItems(items);
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    setLoadingOrderPreview(false);
   };
 
   const printCustomerReport = () => {
@@ -9158,6 +9243,26 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
 
       {previewDoc && <DocPreview doc={previewDoc} items={previewItems} docType="quote" onClose={()=>setPreviewDoc(null)}/>}
 
+      {orderDoc && <DocPreview doc={orderDoc} items={orderDocItems} docType="order" onClose={()=>{ setOrderDoc(null); setOrderDocItems([]); }}/>}
+
+      {previewingLetter && <LetterPrint letter={previewingLetter} onClose={()=>setPreviewingLetter(null)}/>}
+
+      {showLetterForm && (
+        <LetterForm
+          user={user}
+          letter={{ recipient: customer.name, customer_id: customer.id, attention: customer.contact1_name || '' }}
+          contacts={letterMeta.contacts}
+          letters={letters}
+          categories={letterMeta.categories}
+          onCategoriesChanged={async()=>{
+            const {data:cat} = await sb.from('letter_categories').select('*').order('sort_order');
+            setLetterMeta(m=>({...m, categories: cat||[]}));
+          }}
+          onSave={()=>{ setShowLetterForm(false); toast('تم إصدار الكتاب وربطه بالعميل ✓','success'); loadLetters(); }}
+          onClose={()=>setShowLetterForm(false)}
+        />
+      )}
+
       {/* ERP Toolbar */}
       <div className="erp-toolbar">
         <button className="btn btn-ghost btn-sm" onClick={onBack}>← رجوع للقائمة</button>
@@ -9170,6 +9275,7 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
           <button className="btn btn-primary btn-sm" onClick={()=>onApprove(customer)}>✅ موافقة الآن</button>
         </>}
         {hasPerm(user,'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>setEditing(true)}>✏️ تعديل</button>}
+        {canIssueLetter && <button className="btn btn-ghost btn-sm" onClick={openLetterForm}>✉️ إصدار كتاب رسمي</button>}
         <button className="btn btn-ghost btn-sm" onClick={printCustomerReport}>🖨️ طباعة</button>
       </div>
 
@@ -9196,6 +9302,14 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
         <div style={{textAlign:'center',padding:'8px 18px',borderRight:'2px solid var(--primary-light)',marginRight:4}}>
           <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>عروض الأسعار</div>
           <div style={{fontSize:22,fontWeight:900,color:'var(--primary)'}}>{quotes.length}</div>
+        </div>
+        <div style={{textAlign:'center',padding:'8px 18px',borderRight:'2px solid var(--primary-light)'}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>الطلبات</div>
+          <div style={{fontSize:22,fontWeight:900,color:'var(--primary)'}}>{orders.length}</div>
+        </div>
+        <div style={{textAlign:'center',padding:'8px 18px',borderRight:'2px solid var(--primary-light)'}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>الكتب الرسمية</div>
+          <div style={{fontSize:22,fontWeight:900,color:'var(--primary)'}}>{letters.length}</div>
         </div>
         <div style={{textAlign:'center',padding:'8px 18px'}}>
           <div style={{fontSize:10,fontWeight:700,color:'#7a8fa6',marginBottom:3}}>المندوب</div>
@@ -9282,6 +9396,75 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
           )}
         </div>
       </div>
+
+      {/* Linked Orders */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">الطلبات ({orders.length})</span>
+        </div>
+        <div className="table-wrap">
+          {loadingO ? <div style={{padding:24,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+            <table>
+              <thead><tr><th>الرقم</th><th>من عرض</th><th>القيمة</th><th>الحالة</th><th>التاريخ</th><th style={{width:48}}></th></tr></thead>
+              <tbody>
+                {orders.map(o=>(
+                  <tr key={o.id}>
+                    <td className="font-bold" style={{color:'var(--primary)'}}>{o.number}</td>
+                    <td className="text-sm text-muted">{o.quotation_number||'—'}</td>
+                    <td className="font-bold">{numFmt(o.total_amount)} {o.currency}</td>
+                    <td><SBadge status={o.status} type="o"/></td>
+                    <td className="text-sm text-muted">{(o.created_at||'').slice(0,10)}</td>
+                    <td>
+                      <button title="عرض" disabled={loadingOrderPreview}
+                        onClick={()=>previewOrder(o)}
+                        style={{background:'none',border:'1px solid var(--gray-200)',borderRadius:6,padding:'3px 7px',cursor:'pointer',fontSize:14,color:'var(--primary)',lineHeight:1}}>
+                        {loadingOrderPreview ? '…' : '👁'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {orders.length===0 && (
+                  <tr><td colSpan="6"><div className="empty-state"><p>لا توجد طلبات لهذا العميل بعد</p></div></td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Linked Official Letters */}
+      {canIssueLetter && (
+        <div className="card">
+          <div className="card-header" style={{display:'flex',alignItems:'center',gap:10}}>
+            <span className="card-title">الكتب الرسمية ({letters.length})</span>
+            <div style={{flex:1}}/>
+            <button className="btn btn-primary btn-sm" onClick={openLetterForm}>✉️ إصدار كتاب رسمي</button>
+          </div>
+          <div className="table-wrap">
+            {loadingL ? <div style={{padding:24,textAlign:'center'}}><div className="spinner" style={{margin:'auto'}}/></div> : (
+              <table>
+                <thead><tr><th>الرقم</th><th>الموضوع</th><th>التاريخ</th><th style={{width:48}}></th></tr></thead>
+                <tbody>
+                  {letters.map(l=>(
+                    <tr key={l.id}>
+                      <td className="font-bold" style={{color:'var(--primary)'}}>{l.number}</td>
+                      <td>{l.subject}</td>
+                      <td className="text-sm text-muted">{l.date}</td>
+                      <td>
+                        <button title="معاينة وطباعة" onClick={()=>setPreviewingLetter(l)}
+                          style={{background:'none',border:'1px solid var(--gray-200)',borderRadius:6,padding:'3px 7px',cursor:'pointer',fontSize:14,color:'var(--primary)',lineHeight:1}}>👁</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {letters.length===0 && (
+                    <tr><td colSpan="4"><div className="empty-state"><p>لا توجد كتب رسمية مرتبطة بهذا العميل بعد</p></div></td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -10219,7 +10402,7 @@ function CatalogPage({ user }) {
       {stockItem && <StockHistoryModal item={stockItem} onClose={()=>setStockItem(null)}/>}
 
       <div className="flex items-center gap-2 mb-4" style={{justifyContent:'space-between'}}>
-        <h2 style={{fontSize:20,fontWeight:800}}>كتالوج الأصناف</h2>
+        <h2 style={{fontSize:20,fontWeight:800}}>إدارة المخزون</h2>
         <div style={{display:'flex',gap:8}}>
           {canDeleteCatalog && (
             <button className="btn btn-ghost" onClick={()=>setShowCatMgr(true)}>⚙️ إدارة الفئات</button>
@@ -10419,7 +10602,7 @@ function ProspectForm({ prospect, profiles, user, onSave, onClose }) {
 }
 
 /* بطاقة موحّدة لعرض العملاء/المحتملين/عملاء الأونلاين بشكل بطاقات بدل الجدول */
-function EntityCard({ onClick, avatar, title, subtitle, badge, rows, actions }) {
+function EntityCard({ onClick, avatar, title, subtitle, badge, rows, stats, actions }) {
   return (
     <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',padding:14,boxShadow:'0 2px 8px rgba(43,143,196,.06)',cursor: onClick?'pointer':'default'}} onClick={onClick}>
       <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:badge?6:8}}>
@@ -10430,7 +10613,7 @@ function EntityCard({ onClick, avatar, title, subtitle, badge, rows, actions }) 
         </div>
       </div>
       {badge && <div style={{marginBottom:8}}>{badge}</div>}
-      <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:actions?10:0}}>
+      <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom: (stats||actions) ? (stats?6:10) : 0}}>
         {rows.filter(Boolean).map((r,i)=>(
           <div key={i} style={{fontSize:12,color:'#374151',display:'flex',gap:6,alignItems:'center'}}>
             <span style={{opacity:.7,flexShrink:0}}>{r.icon}</span>
@@ -10438,6 +10621,16 @@ function EntityCard({ onClick, avatar, title, subtitle, badge, rows, actions }) 
           </div>
         ))}
       </div>
+      {stats && (
+        <div style={{display:'flex',gap:6,marginBottom:actions?10:0,flexWrap:'wrap'}}>
+          {stats.filter(Boolean).map((s,i)=>(
+            <span key={i} title={s.label} style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,
+              background: s.count>0 ? '#eff6ff' : '#f3f4f6', color: s.count>0 ? 'var(--primary)' : '#9ca3af'}}>
+              <span>{s.icon}</span><span>{s.count}</span>
+            </span>
+          ))}
+        </div>
+      )}
       {actions && (
         <div style={{display:'flex',gap:6,paddingTop:10,borderTop:'1px solid #f0f4f8',flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
           {actions}
@@ -11972,26 +12165,66 @@ function CustomersPage({ user }) {
   const [cityFilter, setCityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [repFilter, setRepFilter] = useState('all');
+  const [relatedCounts, setRelatedCounts] = useState({ quotes:{}, orders:{}, letters:{} });
 
   const load = async () => {
     setLoading(true);
-    const [{ data: c }, { data: p }, { count }, { count: onlineCnt }, { count: exportCnt }] = await Promise.all([
+    const [{ data: c }, { data: p }, { count }, { count: onlineCnt }, { count: exportCnt }, { data: qRows }, { data: oRows }, { data: lRows }] = await Promise.all([
       sb.from('customers').select('*').order('customer_code', {ascending: true, nullsFirst: false}),
       sb.from('profiles').select('id,full_name,role').eq('is_active',true).order('full_name'),
       sb.from('prospects').select('id', {count:'exact',head:true}).eq('converted',false),
       sb.from('online_customers').select('phone', {count:'exact',head:true}),
       sb.from('export_customers').select('id', {count:'exact',head:true}),
+      sb.from('quotations').select('id,customer_id').not('customer_id','is',null),
+      sb.from('orders').select('quotation_id').is('deleted_at', null).not('quotation_id','is',null),
+      sb.from('official_letters').select('customer_id').not('customer_id','is',null).is('deleted_at', null),
     ]);
-    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setOnlineCount(onlineCnt||0); setExportCount(exportCnt||0); setLoading(false);
+    setCustomers(c||[]); setProfiles(p||[]); setProspectCount(count||0); setOnlineCount(onlineCnt||0); setExportCount(exportCnt||0);
+
+    const quoteCustomerMap = {};
+    const quoteCounts = {};
+    (qRows||[]).forEach(q => {
+      quoteCustomerMap[q.id] = q.customer_id;
+      quoteCounts[q.customer_id] = (quoteCounts[q.customer_id]||0) + 1;
+    });
+    const orderCounts = {};
+    (oRows||[]).forEach(o => {
+      const cid = quoteCustomerMap[o.quotation_id];
+      if (cid) orderCounts[cid] = (orderCounts[cid]||0) + 1;
+    });
+    const letterCounts = {};
+    (lRows||[]).forEach(l => { letterCounts[l.customer_id] = (letterCounts[l.customer_id]||0) + 1; });
+    setRelatedCounts({ quotes: quoteCounts, orders: orderCounts, letters: letterCounts });
+
+    setLoading(false);
   };
   useEffect(()=>{ load(); },[]);
 
   const deleteCustomer = async (c) => {
-    if (!confirm(`حذف العميل "${c.name}"؟`)) return;
-    const {error} = await sb.from('customers').delete().eq('id', c.id);
+    const reason = prompt(`سبب حذف العميل "${c.name}" (اختياري):`);
+    if (reason === null) return;
+    const {error} = await sb.from('customers').update({
+      deleted_at: new Date().toISOString(), deleted_by: user?.id || null, delete_reason: reason || null,
+    }).eq('id', c.id);
     if(error) { toast('خطأ: ' + error.message,'error'); return; }
     createLog(user, `حذف العميل ${c.name}`, 'customer', c.id, c.name);
     toast('تم الحذف','success'); load();
+  };
+
+  const restoreCustomer = async (c) => {
+    if (!confirm(`استعادة العميل "${c.name}"؟`)) return;
+    const {error} = await sb.from('customers').update({ deleted_at:null, deleted_by:null, delete_reason:null }).eq('id', c.id);
+    if(error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `استعاد العميل ${c.name}`, 'customer', c.id, c.name);
+    toast('تمت الاستعادة','success'); load();
+  };
+
+  const hardDeleteCustomer = async (c) => {
+    if (!confirm(`حذف نهائي للعميل "${c.name}"؟ لا يمكن التراجع`)) return;
+    const {error} = await sb.from('customers').delete().eq('id', c.id);
+    if(error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `حذف نهائي للعميل ${c.name}`, 'customer', c.id, c.name);
+    toast('تم الحذف النهائي','success'); load();
   };
 
   const approveCustomer = async (c) => {
@@ -12017,7 +12250,8 @@ function CustomersPage({ user }) {
   const [approvalsView, setApprovalsView] = useState('pending');
   const pendingCustomers = customers.filter(c => c.approval_status === 'pending');
   const rejectedCustomers = customers.filter(c => c.approval_status === 'rejected');
-  const visibleCustomers = customers.filter(c => c.approval_status !== 'rejected' && c.approval_status !== 'pending');
+  const visibleCustomers = customers.filter(c => c.approval_status !== 'rejected' && c.approval_status !== 'pending' && !c.deleted_at);
+  const deletedCustomers = customers.filter(c => c.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
 
   const usedCities = [...new Set(visibleCustomers.map(c=>c.city).filter(Boolean))].sort();
   const usedCategories = [...new Set(visibleCustomers.map(c=>c.category).filter(Boolean))].sort();
@@ -12102,6 +12336,7 @@ function CustomersPage({ user }) {
         {hasPerm(user,'prospects_access') && <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>}
         <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
         <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
+        {hasPerm(user,'customers_delete') && <button style={tabStyle('deleted')} onClick={()=>setTab('deleted')}>🗑️ العملاء المحذوفون {deletedCustomers.length>0 && <span style={{background:'#fee2e2',color:'var(--danger)',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{deletedCustomers.length}</span>}</button>}
       </div>
 
       {tab === 'customers' && <>
@@ -12127,6 +12362,11 @@ function CustomersPage({ user }) {
                     {icon:'👤', text: assignedName(c)},
                     c.contact1_name && {icon:'🧑‍💼', text: c.contact1_name + (c.contact1_title?' — '+c.contact1_title:'')},
                   ]}
+                  stats={[
+                    {icon:'📋', label:'عروض الأسعار', count: relatedCounts.quotes[c.id]||0},
+                    {icon:'📦', label:'الطلبات', count: relatedCounts.orders[c.id]||0},
+                    {icon:'✉️', label:'الكتب الرسمية', count: relatedCounts.letters[c.id]||0},
+                  ]}
                   actions={<>
                     <button className="btn btn-ghost btn-sm" onClick={()=>setSelected(c)} title="عرض" style={{padding:'3px 8px'}}>👁</button>
                     {hasPerm(user, 'customers_edit') && <button className="btn btn-ghost btn-sm" onClick={()=>{ setEditing(c); setShowForm(true); }} title="تعديل" style={{padding:'3px 8px'}}>✏️</button>}
@@ -12144,6 +12384,44 @@ function CustomersPage({ user }) {
       {tab === 'online' && <OnlineCustomersTab user={user} onCountChange={setOnlineCount}/>}
 
       {tab === 'export' && <ExportCustomersTab user={user} profiles={profiles} onCountChange={setExportCount}/>}
+
+      {tab === 'deleted' && hasPerm(user,'customers_delete') && (
+        <div style={{marginTop:16}}>
+          {deletedCustomers.length === 0 ? (
+            <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
+              <div style={{fontSize:48,marginBottom:12}}>✅</div>
+              <p>لا يوجد عملاء محذوفون</p>
+            </div>
+          ) : (
+            <div className="card">
+              <div className="table-wrap">
+                <table>
+                  <thead><tr>
+                    <th>الاسم</th><th>رقم العميل</th><th>الهاتف</th><th>تاريخ الحذف</th><th>سبب الحذف</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {deletedCustomers.map(c=>(
+                      <tr key={c.id}>
+                        <td className="font-bold" style={{color:'var(--danger)',textDecoration:'line-through'}}>{c.name}</td>
+                        <td className="text-sm text-muted">{c.customer_code||'—'}</td>
+                        <td className="text-sm text-muted">{c.phone||c.mobile||'—'}</td>
+                        <td className="text-sm text-muted">{c.deleted_at?.slice(0,10)}</td>
+                        <td style={{maxWidth:220,fontSize:12,color:'var(--danger)',fontWeight:600}}>{c.delete_reason||'—'}</td>
+                        <td style={{textAlign:'center'}}>
+                          <ActionMenu actions={[
+                            { icon:'↩️', label:'استعادة', onClick:()=>restoreCustomer(c) },
+                            { icon:'🗑️', label:'حذف نهائي', danger:true, hidden:user?.role!=='admin', onClick:()=>hardDeleteCustomer(c) },
+                          ]}/>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {tab === 'approvals' && hasPerm(user,'customers_approve') && (() => {
         const list = approvalsView === 'pending' ? pendingCustomers : rejectedCustomers;
@@ -20502,6 +20780,7 @@ function LettersPage({ user }) {
   }, []);
 
   const [categories, setCategories] = useState([]);
+  const [customerNames, setCustomerNames] = useState({});
 
   const load = async () => {
     const [lr, cr, ctr] = await Promise.all([
@@ -20519,6 +20798,15 @@ function LettersPage({ user }) {
     setLetters(lr.data || []);
     setContacts(cr.data || []);
     setCategories(ctr.data || []);
+    // أسماء العملاء المرتبطين تُجلب بنداء مستقل (لا نضمّها بصف الكتاب نفسه)
+    // حتى لا تنتقل كحقل زائد لصندوق الحفظ عند فتح الكتاب للتعديل
+    const custIds = [...new Set((lr.data||[]).map(l=>l.customer_id).filter(Boolean))];
+    if (custIds.length) {
+      const { data: custs } = await sb.from('customers').select('id,name').in('id', custIds);
+      setCustomerNames(Object.fromEntries((custs||[]).map(c=>[c.id, c.name])));
+    } else {
+      setCustomerNames({});
+    }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -20670,7 +20958,10 @@ function LettersPage({ user }) {
               {filtered.map(l => (
                 <tr key={l.id}>
                   <td className="font-bold" style={{color:'var(--primary)',textAlign:'center'}}>{l.number}</td>
-                  <td>{l.recipient}</td>
+                  <td>
+                    {l.recipient}
+                    {l.customer_id && customerNames[l.customer_id] && <div style={{fontSize:10,color:'var(--primary)',marginTop:2}}>🔗 {customerNames[l.customer_id]}</div>}
+                  </td>
                   <td>{l.is_private && <span title="كتاب خاص" style={{marginLeft:6}}>🔒</span>}{l.subject}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{l.date}</td>
                   <td className="text-sm text-muted" style={{textAlign:'center'}}>{profiles[l.created_by]||'—'}</td>
@@ -20973,6 +21264,51 @@ const RichTextEditor = React.forwardRef(function RichTextEditor({ value, onChang
   );
 });
 
+function CustomerPickerModal({ onSelect, onClose }) {
+  const [list, setList] = useState([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    sb.from('customers').select('id,name,customer_code,phone,mobile,city').is('deleted_at', null).order('name')
+      .then(({data})=>{ setList(data||[]); setLoading(false); });
+  }, []);
+
+  const filtered = list.filter(c => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return c.name?.toLowerCase().includes(q) || (c.customer_code||'').toLowerCase().includes(q) || (c.phone||c.mobile||'').includes(search);
+  });
+
+  return (
+    <div className="modal-overlay" style={{zIndex:1200}} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:460,maxHeight:'80vh',display:'flex',flexDirection:'column'}}>
+        <div className="modal-header">
+          <span className="modal-title">🔗 اختر عميلاً للربط</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{display:'flex',flexDirection:'column',gap:10,overflow:'hidden'}}>
+          <input className="form-control" autoFocus placeholder="بحث بالاسم أو رقم العميل أو الهاتف..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <div style={{overflowY:'auto',flex:1,maxHeight:380}}>
+            {loading ? <div style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>جارٍ التحميل...</div> :
+              filtered.length===0 ? <div style={{textAlign:'center',padding:20,color:'var(--gray-400)'}}>لا نتائج</div> :
+              filtered.map(c => (
+                <div key={c.id} onClick={()=>onSelect(c)}
+                  style={{padding:'8px 10px',borderBottom:'1px solid var(--gray-100)',cursor:'pointer',borderRadius:6}}
+                  onMouseEnter={e=>e.currentTarget.style.background='var(--gray-50)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <div style={{fontWeight:700,fontSize:13}}>{c.name}</div>
+                  <div style={{fontSize:11,color:'var(--gray-500)'}}>{c.customer_code||'—'} · {c.phone||c.mobile||'—'} · {c.city||'—'}</div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LetterForm({ user, letter, contacts, letters, categories, onCategoriesChanged, onSave, onClose }) {
   const [form, setForm] = useState({
     recipient:'', attention:'', date: today(), subject:'',
@@ -20986,6 +21322,14 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
   const setF = (k,v) => setForm(f=>({...f,[k]:v}));
   const canManageLetters = hasPerm(user, 'letters_manage');
   const rteRef = useRef(null);
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [linkedCustomerName, setLinkedCustomerName] = useState(null);
+
+  useEffect(() => {
+    if (!form.customer_id) { setLinkedCustomerName(null); return; }
+    sb.from('customers').select('name').eq('id', form.customer_id).maybeSingle()
+      .then(({data})=>setLinkedCustomerName(data?.name || null));
+  }, [form.customer_id]);
 
   /* يحقن بيانات الكتاب (السادة/عناية/التاريخ/الموضوع) كنص عادي بأول صندوق التحرير —
      نص حر بعدها، المستخدم يقدر يعدّله أو يحذف أي سطر منه متل أي نص كتبه بنفسه */
@@ -21085,7 +21429,7 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
     setLoading(true);
     try {
       const payload = {...form};
-      delete payload.id; delete payload.created_at; delete payload.updated_at; delete payload.isImportDraft;
+      delete payload.id; delete payload.created_at; delete payload.updated_at; delete payload.isImportDraft; delete payload.customers;
       if (!canManageLetters) delete payload.category;
       if (!payload.is_private) payload.access_code_hash = null;
       else if (pwd.trim()) payload.access_code_hash = await sha256Hex(pwd.trim());
@@ -21123,6 +21467,23 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          {showCustomerPicker && <CustomerPickerModal
+            onSelect={(c)=>{ setF('customer_id', c.id); if (!form.recipient) setF('recipient', c.name); setShowCustomerPicker(false); }}
+            onClose={()=>setShowCustomerPicker(false)}/>}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+            {form.customer_id ? (
+              <span style={{display:'flex',alignItems:'center',gap:6,background:'#eff6ff',color:'#1C6A99',padding:'4px 10px',borderRadius:20,fontWeight:700,fontSize:12}}>
+                🔗 مرتبط بالعميل: {linkedCustomerName || '...'}
+                <button type="button" onClick={()=>setF('customer_id', null)} title="إلغاء الربط"
+                  style={{background:'none',border:'none',color:'#1C6A99',cursor:'pointer',fontWeight:900,fontSize:13,lineHeight:1}}>✕</button>
+              </span>
+            ) : (
+              <button type="button" onClick={()=>setShowCustomerPicker(true)}
+                style={{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:20,border:'1px solid var(--primary)',background:'#fff',color:'var(--primary)',cursor:'pointer'}}>
+                🔗 ربط بعميل
+              </button>
+            )}
+          </div>
           <div className="form-row mb-4">
             <div className="form-group">
               <label className="form-label">السادة</label>
