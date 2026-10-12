@@ -8133,6 +8133,7 @@ const PERM_GROUPS = [
   { label: 'الموارد البشرية', icon: '👥', perms: [
     { key: 'hr_access',              label: 'الوصول لقسم الموارد البشرية' },
     { key: 'hr_employees_edit',      label: 'إضافة وتعديل وحذف ملفات الموظفين' },
+    { key: 'hr_candidates_edit',     label: 'إضافة وتعديل وحذف المرشحين وتحويلهم لموظفين' },
     { key: 'hr_salaries_access',     label: 'مشاهدة الرواتب الأساسية وتبويب الرواتب' },
     { key: 'hr_salaries_edit',       label: 'تعديل/توليد/صرف الرواتب' },
     { key: 'hr_attendance_edit',     label: 'تسجيل الحضور والغياب' },
@@ -8174,7 +8175,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   payments_delete: false,
   vouchers_access: false, vouchers_create: false, vouchers_delete: false,
   hr_access: false,
-  hr_employees_edit: true, hr_salaries_access: false, hr_salaries_edit: false,
+  hr_employees_edit: true, hr_candidates_edit: true, hr_salaries_access: false, hr_salaries_edit: false,
   hr_attendance_edit: true, hr_periodic_tasks_edit: true, hr_letters_create: true,
   suppliers_access: true, suppliers_create: true, suppliers_edit: false, suppliers_delete: false,
   supplier_invoices_create: false, supplier_payments_create: false,
@@ -22646,6 +22647,7 @@ function HRPage({ user }) {
   const [tab, setTab] = useState('employees');
   const tabs = [
     { id: 'employees', label: 'الموظفين',       icon: '👤' },
+    { id: 'candidates', label: 'المرشحين',      icon: '🧑‍💼' },
     { id: 'attendance', label: 'الحضور والغياب', icon: '📅' },
     { id: 'periodic_tasks', label: 'المهام الدورية', icon: '🗓️' },
     { id: 'letters',   label: 'الكتب',           icon: '📝' },
@@ -22664,6 +22666,7 @@ function HRPage({ user }) {
         ))}
       </div>
       {tab==='employees' && <HREmployees/>}
+      {tab==='candidates' && <HRCandidates/>}
       {tab==='attendance' && <HRAttendance/>}
       {tab==='periodic_tasks' && <HRPeriodicTasks/>}
       {tab==='letters'   && <HRLetters user={user}/>}
@@ -22784,7 +22787,7 @@ function HREmployees() {
 }
 
 function HREmployeeForm({ editEmp, onClose, onSave }) {
-  const isNew = !editEmp;
+  const isNew = !editEmp?.id;
   const [form, setForm] = useState(() => ({
     full_name:   editEmp?.full_name   || '',
     job_title:   editEmp?.job_title   || '',
@@ -22803,13 +22806,13 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
     if (!form.full_name.trim() && !isSuperAdmin()) { toast('الاسم الكامل مطلوب', 'error'); return; }
     setSaving(true);
     const payload = { ...form, base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0, hire_date: form.hire_date || null, updated_at: new Date().toISOString() };
-    const { error } = isNew
-      ? await sb.from('hr_employees').insert(payload)
-      : await sb.from('hr_employees').update(payload).eq('id', editEmp.id);
+    const { data, error } = isNew
+      ? await sb.from('hr_employees').insert(payload).select().single()
+      : await sb.from('hr_employees').update(payload).eq('id', editEmp.id).select().single();
     setSaving(false);
     if (error) { toast('خطأ: ' + error.message, 'error'); return; }
     toast(isNew ? 'تمت إضافة الموظف' : 'تم حفظ التعديلات', 'success');
-    onSave();
+    onSave(data);
   };
 
   return (
@@ -22862,6 +22865,400 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
             <div className="form-group" style={{gridColumn:'1 / -1'}}>
               <label>ملاحظات</label>
               <textarea className="form-control" value={form.notes} onChange={e => upd('notes', e.target.value)} rows={3} placeholder="أي ملاحظات إضافية..."/>
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- الموظفين المرشحين ---------- */
+const CANDIDATE_STATUS = {
+  new:       { label: 'متقدم جديد', color: '#64748b', bg: '#f1f5f9' },
+  interview: { label: 'مقابلة',      color: '#0ea5e9', bg: '#e0f2fe' },
+  accepted:  { label: 'مقبول',       color: '#16a34a', bg: '#dcfce7' },
+  rejected:  { label: 'مرفوض',       color: '#dc2626', bg: '#fee2e2' },
+};
+
+function HRCandidates() {
+  const [candidates, setCandidates] = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [search, setSearch]         = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showForm, setShowForm]     = useState(false);
+  const [editCand, setEditCand]     = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+  const [converting, setConverting] = useState(null);
+  const [attachTarget, setAttachTarget] = useState(null);
+  const canEdit = hasPerm(CURRENT_USER, 'hr_candidates_edit');
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await sb.from('hr_candidates').select('*').order('created_at', {ascending:false});
+    setCandidates(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const filtered = candidates.filter(c => {
+    if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return c.full_name.toLowerCase().includes(q) || (c.job_title||'').toLowerCase().includes(q) || (c.phone||'').includes(search);
+  });
+
+  const changeStatus = async (c, status) => {
+    const payload = { status, updated_at: new Date().toISOString() };
+    if (status === 'rejected') {
+      const reason = prompt('سبب الرفض (اختياري):', c.rejection_reason||'');
+      if (reason === null) return;
+      payload.rejection_reason = reason || null;
+    }
+    const { error } = await sb.from('hr_candidates').update(payload).eq('id', c.id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    load();
+  };
+
+  const handleDelete = async (id) => {
+    const { error } = await sb.from('hr_candidates').delete().eq('id', id);
+    if (error) { toast('خطأ في الحذف: ' + error.message, 'error'); return; }
+    toast('تم حذف المرشح', 'success');
+    setDelConfirm(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, gap:8, flexWrap:'wrap'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+          <input className="form-control" placeholder="بحث بالاسم أو الوظيفة أو الهاتف..." value={search}
+            onChange={e => setSearch(e.target.value)} style={{width:220}}/>
+          <select className="form-control" style={{width:'auto'}} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+            <option value="all">كل الحالات</option>
+            {Object.entries(CANDIDATE_STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <span style={{fontSize:13, color:'var(--gray-400)'}}>{filtered.length} مرشح</span>
+        </div>
+        {canEdit && <button className="btn btn-primary" onClick={() => { setEditCand(null); setShowForm(true); }}>+ إضافة مرشح</button>}
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr>
+              <th>الاسم</th><th>الوظيفة المتقدم لها</th><th>الهاتف</th><th>المصدر</th><th>الحالة</th><th>إجراءات</th>
+            </tr></thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد مرشحون{search ? ' بهذا البحث' : ''}</td></tr>
+              ) : filtered.map(c => (
+                <tr key={c.id}>
+                  <td style={{fontWeight:600}}>{c.full_name}</td>
+                  <td>{c.job_title||'—'}</td>
+                  <td>{c.phone||'—'}</td>
+                  <td>{c.source||'—'}</td>
+                  <td>
+                    {canEdit ? (
+                      <select className="form-control" style={{fontSize:12, padding:'3px 6px', width:'auto'}} value={c.status} onChange={e=>changeStatus(c, e.target.value)}>
+                        {Object.entries(CANDIDATE_STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:CANDIDATE_STATUS[c.status]?.bg, color:CANDIDATE_STATUS[c.status]?.color}}>
+                        {CANDIDATE_STATUS[c.status]?.label || c.status}
+                      </span>
+                    )}
+                    {c.status==='rejected' && c.rejection_reason && <div style={{fontSize:10, color:'var(--gray-400)', marginTop:2}}>{c.rejection_reason}</div>}
+                  </td>
+                  <td>
+                    <div style={{display:'flex', gap:6, flexWrap:'wrap', alignItems:'center'}}>
+                      <button className="btn btn-sm" onClick={() => setAttachTarget(c)}>📎 مرفقات</button>
+                      {canEdit && <>
+                        {c.status==='accepted' && !c.converted_employee_id && (
+                          <button className="btn btn-sm btn-primary" onClick={()=>setConverting(c)}>🔁 تحويل لموظف</button>
+                        )}
+                        {c.converted_employee_id && <span style={{fontSize:11, fontWeight:700, color:'var(--primary)'}}>✅ تم التحويل</span>}
+                        <button className="btn btn-sm" onClick={() => { setEditCand(c); setShowForm(true); }}>تعديل</button>
+                        <button className="btn btn-sm" style={{background:'var(--danger-light)', color:'var(--danger)'}}
+                          onClick={() => setDelConfirm(c)}>حذف</button>
+                      </>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <HRCandidateForm editCand={editCand} onClose={() => setShowForm(false)}
+          onSave={() => { setShowForm(false); load(); }}/>
+      )}
+
+      {converting && (
+        <HREmployeeForm
+          editEmp={{ full_name: converting.full_name, phone: converting.phone||'', job_title: converting.job_title||'' }}
+          onClose={() => setConverting(null)}
+          onSave={async (savedEmployee) => {
+            await sb.from('hr_candidates').update({
+              status: 'accepted', converted_employee_id: savedEmployee?.id || null, updated_at: new Date().toISOString(),
+            }).eq('id', converting.id);
+            setConverting(null);
+            toast('تم تحويل المرشح لموظف ✓', 'success');
+            load();
+          }}
+        />
+      )}
+
+      {delConfirm && (
+        <div className="modal-overlay" onClick={() => setDelConfirm(null)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>تأكيد الحذف</h3></div>
+            <div className="modal-body">هل أنت متأكد من حذف المرشح <strong>{delConfirm.full_name}</strong>؟</div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setDelConfirm(null)}>إلغاء</button>
+              <button className="btn btn-danger" onClick={() => handleDelete(delConfirm.id)}>حذف نهائي</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {attachTarget && <CandidateAttachmentsModal candidate={attachTarget} user={CURRENT_USER} onClose={() => setAttachTarget(null)}/>}
+    </div>
+  );
+}
+
+function CandidateAttachmentsModal({ candidate, user, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState(null);
+  const [editingAtt, setEditingAtt] = useState(null);
+  const blankForm = { title:'', file:null };
+  const [form, setForm] = useState(blankForm);
+  const canWrite = hasPerm(user, 'hr_candidates_edit');
+
+  const load = async () => {
+    setLoading(true);
+    const { data, error } = await sb.from('hr_candidate_attachments').select('*').eq('candidate_id', candidate.id).order('created_at', { ascending:false });
+    if (error) toast('خطأ: '+error.message, 'error');
+    setRows(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [candidate.id]);
+
+  const sanitizeFileName = (name) => name.replace(/[^\w.\-]+/g, '_');
+  const handleFileChange = (e) => {
+    const file = e.target.files[0] || null;
+    if (file && file.size > TENDER_ATTACH_MAX_SIZE) {
+      toast(`الملف أكبر من الحد المسموح (5 ميغا) — حجمه ${(file.size/1024/1024).toFixed(1)} ميغا`, 'error');
+      e.target.value = '';
+      setForm(f => ({ ...f, file: null }));
+      return;
+    }
+    setForm(f => ({ ...f, file }));
+  };
+  const fmtSize = (n) => !n ? '' : n < 1024*1024 ? `${Math.round(n/1024)} كيلوبايت` : `${(n/1024/1024).toFixed(1)} ميغابايت`;
+
+  const handleUpload = async () => {
+    if (!form.title.trim()) { toast('اكتب عنوان المرفق', 'error'); return; }
+    if (!form.file) { toast('اختر ملف', 'error'); return; }
+    if (form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
+    setUploading(true);
+    try {
+      const path = `${candidate.id}/${Date.now()}-${sanitizeFileName(form.file.name)}`;
+      const { error: upErr } = await sb.storage.from('hr-candidate-attachments').upload(path, form.file);
+      if (upErr) throw upErr;
+      const payload = {
+        candidate_id: candidate.id, title: form.title.trim() || form.file.name,
+        file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type,
+        created_by: user?.id||null,
+      };
+      const { error: insErr } = await sb.from('hr_candidate_attachments').insert(payload);
+      if (insErr) throw insErr;
+      toast('تم رفع المرفق ✓', 'success');
+      setAdding(false); setForm(blankForm); load();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
+  const openEdit = (att) => { setAdding(false); setForm({ title: att.title, file: null }); setEditingAtt(att); };
+
+  const handleUpdate = async () => {
+    if (!form.title.trim()) { toast('اكتب عنوان المرفق', 'error'); return; }
+    if (form.file && form.file.size > TENDER_ATTACH_MAX_SIZE) { toast('الملف أكبر من الحد المسموح (5 ميغا)', 'error'); return; }
+    setUploading(true);
+    try {
+      let payload = { title: form.title.trim() || editingAtt.title };
+      if (form.file) {
+        const path = `${candidate.id}/${Date.now()}-${sanitizeFileName(form.file.name)}`;
+        const { error: upErr } = await sb.storage.from('hr-candidate-attachments').upload(path, form.file);
+        if (upErr) throw upErr;
+        await sb.storage.from('hr-candidate-attachments').remove([editingAtt.file_path]);
+        payload = { ...payload, file_path: path, file_name: form.file.name, file_size: form.file.size, mime_type: form.file.type };
+      }
+      const { error: updErr } = await sb.from('hr_candidate_attachments').update(payload).eq('id', editingAtt.id);
+      if (updErr) throw updErr;
+      toast('تم التعديل ✓', 'success');
+      setEditingAtt(null); setForm(blankForm); load();
+    } catch(e) { toast('خطأ: '+e.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
+  const handleDownload = async (att) => {
+    const { data, error } = await sb.storage.from('hr-candidate-attachments')
+      .createSignedUrl(att.file_path, 60, { download: att.file_name || att.title });
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    const a = document.createElement('a');
+    a.href = data.signedUrl; a.download = att.file_name || att.title;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const handleDelete = async (att) => {
+    if (!confirm(`حذف المرفق "${att.title}"؟`)) return;
+    await sb.storage.from('hr-candidate-attachments').remove([att.file_path]);
+    const { error } = await sb.from('hr_candidate_attachments').delete().eq('id', att.id);
+    if (error) { toast('خطأ: '+error.message, 'error'); return; }
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{maxWidth:600,maxHeight:'90vh',overflowY:'auto'}}>
+        <div className="modal-header">
+          <span className="modal-title" style={{fontSize:17,flex:1}}>📎 مرفقات المرشح — {candidate.full_name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          {loading ? <div className="empty-state">جاري التحميل...</div> : (
+            <div className="form-group" style={{marginBottom:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <label className="form-label" style={{margin:0}}>المرفقات (السيرة الذاتية، الشهادات...)</label>
+                {canWrite && !adding && !editingAtt && <button className="btn btn-ghost btn-sm" onClick={()=>{setForm(blankForm);setAdding(true);}}>➕ إضافة</button>}
+              </div>
+
+              {rows.length===0 ? (
+                <div style={{fontSize:12,color:'var(--gray-400)',padding:'8px 2px'}}>لا يوجد مرفقات بعد</div>
+              ) : (
+                <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',fontSize:13,borderCollapse:'collapse'}}>
+                  <colgroup><col/><col style={{width:120}}/><col style={{width:60}}/></colgroup>
+                  <thead><tr>
+                    <th style={{textAlign:'right',fontSize:14,padding:'4px 8px 6px'}}>العنوان</th>
+                    <th style={{fontSize:11,padding:'4px 8px 6px'}}>الملف</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.id} style={{borderTop:'1px solid var(--gray-100)'}}>
+                        <td style={{fontSize:15,fontWeight:600,padding:'10px 8px',whiteSpace:'normal',wordBreak:'break-word'}}>{r.title}</td>
+                        <td style={{textAlign:'center',fontSize:10,color:'var(--gray-400)',padding:'10px 8px',whiteSpace:'normal',wordBreak:'break-word'}} title={r.file_name}>{r.file_name}{r.file_size?` (${fmtSize(r.file_size)})`:''}</td>
+                        <td style={{textAlign:'center',padding:'10px 4px'}}>
+                          <ActionMenu actions={[
+                            {icon:'👁', label:'معاينة', onClick:()=>setPreviewTarget(r)},
+                            {icon:'⬇️', label:'تحميل', onClick:()=>handleDownload(r)},
+                            {icon:'✏️', label:'تعديل', onClick:()=>openEdit(r), hidden:!canWrite},
+                            {icon:'🗑️', label:'حذف', onClick:()=>handleDelete(r), danger:true, hidden:!canWrite},
+                          ]}/>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                </div>
+              )}
+
+              {(adding || editingAtt) && (
+                <div style={{marginTop:10,padding:'12px 14px',background:'var(--gray-100)',borderRadius:10,display:'flex',flexDirection:'column',gap:8}}>
+                  {editingAtt && <div style={{fontSize:12,fontWeight:700,color:'var(--gray-500)'}}>تعديل المرفق</div>}
+                  <input className="form-control" placeholder="عنوان المرفق *" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+                  {editingAtt && <div style={{fontSize:11,color:'var(--gray-500)'}}>الملف الحالي: {editingAtt.file_name}</div>}
+                  <input type="file" className="form-control" onChange={handleFileChange}/>
+                  {editingAtt && <div style={{fontSize:11,color:'var(--gray-400)'}}>اختر ملفاً جديداً فقط لو بدك تستبدل الملف الحالي</div>}
+                  {form.file && <div style={{fontSize:11,color:'var(--gray-500)'}}>{form.file.name} ({(form.file.size/1024/1024).toFixed(2)} ميغا)</div>}
+                  <div style={{fontSize:11,color:'var(--gray-400)'}}>الحد الأقصى لحجم الملف: 5 ميغا</div>
+                  <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                    <button className="btn btn-ghost btn-sm" onClick={()=>{setAdding(false);setEditingAtt(null);setForm(blankForm);}}>إلغاء</button>
+                    <button className="btn btn-primary btn-sm" disabled={uploading} onClick={editingAtt?handleUpdate:handleUpload}>{uploading?'...جاري الحفظ':editingAtt?'حفظ التعديل':'رفع المرفق'}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {previewTarget && <FilePreviewModal bucket="hr-candidate-attachments" path={previewTarget.file_path} fileName={previewTarget.file_name} mimeType={previewTarget.mime_type} onClose={()=>setPreviewTarget(null)}/>}
+    </div>
+  );
+}
+
+function HRCandidateForm({ editCand, onClose, onSave }) {
+  const isNew = !editCand?.id;
+  const [form, setForm] = useState(() => ({
+    full_name: editCand?.full_name || '',
+    phone:     editCand?.phone     || '',
+    job_title: editCand?.job_title || '',
+    source:    editCand?.source    || '',
+    status:    editCand?.status    || 'new',
+    notes:     editCand?.notes     || '',
+  }));
+  const [saving, setSaving] = useState(false);
+  const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    if (!form.full_name.trim()) { toast('الاسم الكامل مطلوب', 'error'); return; }
+    setSaving(true);
+    const payload = { ...form, updated_at: new Date().toISOString() };
+    const { error } = isNew
+      ? await sb.from('hr_candidates').insert(payload)
+      : await sb.from('hr_candidates').update(payload).eq('id', editCand.id);
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت إضافة المرشح' : 'تم حفظ التعديلات', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:560}} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{isNew ? 'إضافة مرشح جديد' : 'تعديل بيانات المرشح'}</h3>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group">
+              <label>الاسم الكامل *</label>
+              <input className="form-control" value={form.full_name} onChange={e => upd('full_name', e.target.value)} placeholder="اسم المرشح"/>
+            </div>
+            <div className="form-group">
+              <label>الوظيفة المتقدم لها</label>
+              <input className="form-control" value={form.job_title} onChange={e => upd('job_title', e.target.value)} placeholder="مثال: محاسب"/>
+            </div>
+            <div className="form-group">
+              <label>رقم الهاتف</label>
+              <input className="form-control" value={form.phone} onChange={e => upd('phone', e.target.value)} placeholder="05XXXXXXXX"/>
+            </div>
+            <div className="form-group">
+              <label>المصدر</label>
+              <input className="form-control" value={form.source} onChange={e => upd('source', e.target.value)} placeholder="مثال: لينكد إن، إحالة، موقع التوظيف"/>
+            </div>
+            <div className="form-group">
+              <label>الحالة</label>
+              <select className="form-control" value={form.status} onChange={e => upd('status', e.target.value)}>
+                {Object.entries(CANDIDATE_STATUS).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}>
+              <label>ملاحظات</label>
+              <textarea className="form-control" value={form.notes} onChange={e => upd('notes', e.target.value)} rows={3} placeholder="ملاحظات المقابلة، التقييم..."/>
             </div>
           </div>
         </div>
