@@ -24413,6 +24413,8 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
     phone:       editEmp?.phone       || '',
     national_id: editEmp?.national_id || '',
     status:      editEmp?.status      || 'active',
+    shift_start: editEmp?.shift_start || '',
+    shift_end:   editEmp?.shift_end   || '',
     notes:       editEmp?.notes       || '',
   }));
   const [saving, setSaving] = useState(false);
@@ -24421,7 +24423,7 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
   const handleSave = async () => {
     if (!form.full_name.trim() && !isSuperAdmin()) { toast('الاسم الكامل مطلوب', 'error'); return; }
     setSaving(true);
-    const payload = { ...form, base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0, hire_date: form.hire_date || null, updated_at: new Date().toISOString() };
+    const payload = { ...form, base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0, hire_date: form.hire_date || null, shift_start: form.shift_start || null, shift_end: form.shift_end || null, updated_at: new Date().toISOString() };
     const { data, error } = isNew
       ? await sb.from('hr_employees').insert(payload).select().single()
       : await sb.from('hr_employees').update(payload).eq('id', editEmp.id).select().single();
@@ -24477,6 +24479,14 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
                 <option value="inactive">غير نشط</option>
                 <option value="terminated">منتهي الخدمة</option>
               </select>
+            </div>
+            <div className="form-group">
+              <label>بداية وقت الدوام</label>
+              <TimeInputAr className="form-control" value={form.shift_start} onChange={e => upd('shift_start', e.target.value)}/>
+            </div>
+            <div className="form-group">
+              <label>نهاية وقت الدوام</label>
+              <TimeInputAr className="form-control" value={form.shift_end} onChange={e => upd('shift_end', e.target.value)}/>
             </div>
             <div className="form-group" style={{gridColumn:'1 / -1'}}>
               <label>ملاحظات</label>
@@ -25176,15 +25186,73 @@ const ATT_STATUS = [
 const ATT_MAP = Object.fromEntries(ATT_STATUS.map(s => [s.key, s]));
 // الحالات اللي فيها دوام فعلي — بيظهر لها حقول وقت الحضور/الانصراف وتُحسب منها الساعات
 const ATT_WORKED_STATUSES = ['present','late','departure_official','departure_unofficial'];
+const attToMin = (t) => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+// تداخل فترة المغادرة مع فترة الحضور الفعلية — مش مدة المغادرة كاملة، تجنباً لطرحها مرتين
+// لو كان الحضور (check_in) أصلاً بعد انتهاء المغادرة
+const attDepartureOverlapMins = (rec) => {
+  if (rec?.status !== 'departure_official' || !rec?.check_in || !rec?.check_out || !rec?.departure_start || !rec?.departure_end) return 0;
+  const s = Math.max(attToMin(rec.check_in),  attToMin(rec.departure_start));
+  const e = Math.min(attToMin(rec.check_out), attToMin(rec.departure_end));
+  return Math.max(0, e - s);
+};
 const attHours = (rec) => {
   if (!rec?.check_in || !rec?.check_out) return 0;
-  const [h1,m1] = rec.check_in.split(':').map(Number);
-  const [h2,m2] = rec.check_out.split(':').map(Number);
-  const mins = (h2*60+m2) - (h1*60+m1);
+  const mins = (attToMin(rec.check_out) - attToMin(rec.check_in)) - attDepartureOverlapMins(rec);
+  return mins > 0 ? mins/60 : 0;
+};
+const attDepartureHours = (rec) => {
+  const mins = attDepartureOverlapMins(rec);
   return mins > 0 ? mins/60 : 0;
 };
 const fmtHours = (h) => h ? (Math.round(h*10)/10).toLocaleString('ar') : '0';
 const MONTHS_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+// منتقي وقت مخصص (ساعة / دقيقة / ص-م) بدل input[type=time] الأصلي —
+// المتصفح بيعرض AM/PM بالإنجليزي حتى مع lang="ar"، وحتى وقت الاختيار نفسه (الأداة الأصلية)،
+// فبنبني أدواتنا الخاصة اللي كلها عربي من الداخل. القيمة المخزّنة تبقى "HH:MM" بصيغة 24 ساعة.
+const ATT_MINUTES_12 = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
+const ATT_HOURS_12   = Array.from({length:12}, (_,i) => i+1);
+function TimeInputAr({ value, onChange, disabled, title, style, className }) {
+  const [hStr, mStr] = (value || '').split(':');
+  const h24 = hStr ? Number(hStr) : null;
+  const m   = (value && mStr !== undefined) ? Number(mStr) : null;
+  const period = h24 === null ? 'ص' : (h24 >= 12 ? 'م' : 'ص');
+  const h12 = h24 === null ? '' : (h24 % 12 === 0 ? 12 : h24 % 12);
+  const mm  = m === null ? '00' : String(m).padStart(2,'0');
+
+  const emit = (h12v, mv, per) => {
+    if (h12v === '') { onChange({ target:{ value:'' } }); return; }
+    let hh = Number(h12v) % 12;
+    if (per === 'م') hh += 12;
+    onChange({ target:{ value: `${String(hh).padStart(2,'0')}:${mv}` } });
+  };
+
+  // بدون className (قوائم شبكة سجل الحضور الضيّقة) منستخدم مقاسات مصغّرة افتراضية؛
+  // مع className="form-control" (فورم الموظف) منسيب المقاس للكلاس وما نفرض padding/border يدوي
+  const compact = !className;
+  const selStyle = {
+    minWidth:0, flex:1, color: disabled ? 'var(--gray-400)' : undefined,
+    background: disabled ? 'var(--gray-50)' : (compact ? '#fff' : undefined),
+    ...(compact ? { fontSize: style?.fontSize||12, padding:'1px', border:'1px solid var(--gray-200)', borderRadius:4 } : {}),
+    ...style,
+  };
+
+  return (
+    <div title={title} style={{display:'flex', gap:2, width:'100%'}}>
+      <select className={className} disabled={disabled} value={h12} onChange={e=>emit(e.target.value, mm, period)} style={selStyle}>
+        <option value="">-</option>
+        {ATT_HOURS_12.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <select className={className} disabled={disabled} value={mm} onChange={e=>emit(h12===''?'1':h12, e.target.value, period)} style={selStyle}>
+        {ATT_MINUTES_12.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+      <select className={className} disabled={disabled} value={period} onChange={e=>emit(h12===''?'1':h12, mm, e.target.value)} style={{...selStyle, flex:'0 0 auto'}}>
+        <option value="ص">ص</option>
+        <option value="م">م</option>
+      </select>
+    </div>
+  );
+}
 
 function HRAttendance() {
   const [sub, setSub] = useState('register');
@@ -25214,23 +25282,25 @@ function HRAttendanceRegister() {
   const canEdit = hasPerm(CURRENT_USER,'hr_attendance_edit');
 
   useEffect(() => {
-    sb.from('hr_employees').select('id,full_name').eq('status','active').order('full_name')
+    sb.from('hr_employees').select('id,full_name,shift_start,shift_end').eq('status','active').order('full_name')
       .then(({ data }) => {
         setEmployees(data || []);
         if (data?.length) setSelectedEmp(data[0].id);
       });
   }, []);
 
+  const empShift = employees.find(e => e.id === selectedEmp) || {};
+
   useEffect(() => {
     if (!selectedEmp) return;
     setLoading(true);
     const yStr = String(year);
     const mStr = String(month).padStart(2,'0');
-    sb.from('hr_attendance').select('date,status,check_in,check_out').eq('employee_id', selectedEmp)
+    sb.from('hr_attendance').select('date,status,check_in,check_out,departure_start,departure_end').eq('employee_id', selectedEmp)
       .gte('date', `${yStr}-${mStr}-01`).lte('date', `${yStr}-${mStr}-31`)
       .then(({ data }) => {
         const map = {};
-        (data||[]).forEach(r => { map[r.date] = { status:r.status, check_in:r.check_in||'', check_out:r.check_out||'' }; });
+        (data||[]).forEach(r => { map[r.date] = { status:r.status, check_in:r.check_in||'', check_out:r.check_out||'', departure_start:r.departure_start||'', departure_end:r.departure_end||'' }; });
         setAttendance(map);
         setLoading(false);
       });
@@ -25241,7 +25311,12 @@ function HRAttendanceRegister() {
 
   const dateStr = (day) => `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
   const isFriday = (day) => new Date(year, month-1, day).getDay() === 5;
-  const getDay = (day) => attendance[dateStr(day)] || { status: isFriday(day) ? 'holiday' : 'present', check_in:'', check_out:'' };
+  const getDay = (day) => attendance[dateStr(day)] || {
+    status: isFriday(day) ? 'holiday' : 'present',
+    check_in:  isFriday(day) ? '' : (empShift.shift_start || ''),
+    check_out: isFriday(day) ? '' : (empShift.shift_end   || ''),
+    departure_start:'', departure_end:'',
+  };
   const getDayName = (day) => new Date(year, month-1, day).toLocaleDateString('ar', { weekday:'short' });
   const isWeekend = (day) => { const d = new Date(year, month-1, day).getDay(); return d===5||d===6; };
 
@@ -25258,6 +25333,8 @@ function HRAttendanceRegister() {
         employee_id: selectedEmp, date, status: r.status,
         check_in:  ATT_WORKED_STATUSES.includes(r.status) && r.check_in  ? r.check_in  : null,
         check_out: ATT_WORKED_STATUSES.includes(r.status) && r.check_out ? r.check_out : null,
+        departure_start: r.status==='departure_official' && r.departure_start ? r.departure_start : null,
+        departure_end:   r.status==='departure_official' && r.departure_end   ? r.departure_end   : null,
       }));
     const { error } = await sb.from('hr_attendance').upsert(rows, { onConflict: 'employee_id,date' });
     setSaving(false);
@@ -25328,10 +25405,21 @@ function HRAttendanceRegister() {
                 </select>
                 {worked && (
                   <div style={{display:'flex', flexDirection:'column', gap:2, marginTop:4}}>
-                    <input type="time" value={rec.check_in||''} disabled={!canEdit} onChange={e=>setDay(day,{check_in:e.target.value})}
+                    <div style={{fontSize:9, color:'var(--gray-500)'}}>وقت الحضور</div>
+                    <TimeInputAr value={rec.check_in} disabled={!canEdit} onChange={e=>setDay(day,{check_in:e.target.value})}
                       title="وقت الحضور" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
-                    <input type="time" value={rec.check_out||''} disabled={!canEdit} onChange={e=>setDay(day,{check_out:e.target.value})}
-                      title="وقت الانصراف" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
+                    <div style={{fontSize:9, color:'var(--gray-500)'}}>وقت المغادرة</div>
+                    <TimeInputAr value={rec.check_out} disabled={!canEdit} onChange={e=>setDay(day,{check_out:e.target.value})}
+                      title="وقت المغادرة" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
+                    {status==='departure_official' && (<>
+                      <div style={{fontSize:9, color:'var(--gray-500)', marginTop:2}}>فترة المغادرة</div>
+                      <div style={{fontSize:9, color:'var(--gray-500)'}}>من الساعة</div>
+                      <TimeInputAr value={rec.departure_start} disabled={!canEdit} onChange={e=>setDay(day,{departure_start:e.target.value})}
+                        title="فترة المغادرة - من الساعة" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
+                      <div style={{fontSize:9, color:'var(--gray-500)'}}>إلى الساعة</div>
+                      <TimeInputAr value={rec.departure_end} disabled={!canEdit} onChange={e=>setDay(day,{departure_end:e.target.value})}
+                        title="فترة المغادرة - إلى الساعة" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
+                    </>)}
                     {attHours(rec)>0 && <div style={{fontSize:9, color:'var(--gray-500)'}}>{fmtHours(attHours(rec))} ساعة</div>}
                   </div>
                 )}
@@ -25398,7 +25486,7 @@ function HRAttendanceSummary() {
   useEffect(() => {
     if (!employees.length) return;
     setLoading(true);
-    sb.from('hr_attendance').select('employee_id,date,status,check_in,check_out')
+    sb.from('hr_attendance').select('employee_id,date,status,check_in,check_out,departure_start,departure_end')
       .gte('date', rangeDates[0]).lte('date', rangeDates[rangeDates.length-1])
       .then(({ data }) => { setRows(data||[]); setLoading(false); });
   }, [employees, rangeDates[0], rangeDates[rangeDates.length-1]]);
@@ -25410,7 +25498,7 @@ function HRAttendanceSummary() {
 
   const summary = employees.map(emp => {
     const recMap = Object.fromEntries((byEmp[emp.id]||[]).map(r => [r.date, r]));
-    const recs = rangeDates.map(d => recMap[d] || { status: dayStatusDefault(d), check_in:null, check_out:null });
+    const recs = rangeDates.map(d => recMap[d] || { status: dayStatusDefault(d), check_in:null, check_out:null, departure_start:null, departure_end:null });
     const count = (pred) => recs.filter(pred).length;
     return {
       employee: emp,
@@ -25422,13 +25510,15 @@ function HRAttendanceSummary() {
       departure: count(r=>r.status?.startsWith('departure_')),
       holiday:   count(r=>r.status==='holiday'),
       hours:     recs.reduce((s,r)=>s+attHours(r),0),
+      departureHours: recs.reduce((s,r)=>s+attDepartureHours(r),0),
     };
   });
 
   const totals = summary.reduce((t,s) => ({
     present:t.present+s.present, absent:t.absent+s.absent, late:t.late+s.late,
     leave:t.leave+s.leave, departure:t.departure+s.departure, holiday:t.holiday+s.holiday, hours:t.hours+s.hours,
-  }), { present:0, absent:0, late:0, leave:0, departure:0, holiday:0, hours:0 });
+    departureHours:t.departureHours+s.departureHours,
+  }), { present:0, absent:0, late:0, leave:0, departure:0, holiday:0, hours:0, departureHours:0 });
 
   const fmtAr = (s) => new Date(s + 'T00:00:00Z').toLocaleDateString('ar');
   const periodLabel = period==='day' ? `يوم ${fmtAr(pickDate)}`
@@ -25470,10 +25560,11 @@ function HRAttendanceSummary() {
                 <th>حاضر</th><th>غائب</th><th>متأخر</th><th>إجازة</th><th>مغادرة</th><th>عطلة رسمية</th>
               </>)}
               <th>ساعات الدوام</th>
+              <th>ساعات المغادرة</th>
             </tr></thead>
             <tbody>
               {summary.length===0 ? (
-                <tr><td colSpan={period==='day'?5:8} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد موظفون</td></tr>
+                <tr><td colSpan={period==='day'?6:9} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد موظفون</td></tr>
               ) : summary.map(s => (
                 <tr key={s.employee.id}>
                   <td style={{fontWeight:600}}>{s.employee.full_name}</td>
@@ -25490,6 +25581,7 @@ function HRAttendanceSummary() {
                     <td style={{textAlign:'center'}}>{s.holiday}</td>
                   </>)}
                   <td style={{textAlign:'center', fontWeight:700, color:'#1d4ed8'}}>{fmtHours(s.hours)}</td>
+                  <td style={{textAlign:'center', fontWeight:700, color: s.departureHours>0 ? '#b45309' : 'var(--gray-400)'}}>{s.departureHours>0 ? fmtHours(s.departureHours) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -25503,6 +25595,7 @@ function HRAttendanceSummary() {
                 <td style={{textAlign:'center'}}>{totals.departure}</td>
                 <td style={{textAlign:'center'}}>{totals.holiday}</td>
                 <td style={{textAlign:'center', color:'#1d4ed8'}}>{fmtHours(totals.hours)}</td>
+                <td style={{textAlign:'center', color:'#b45309'}}>{totals.departureHours>0 ? fmtHours(totals.departureHours) : '—'}</td>
               </tr></tfoot>
             )}
           </table>
