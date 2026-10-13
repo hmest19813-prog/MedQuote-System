@@ -24405,6 +24405,45 @@ function EmployeeAttachmentsModal({ employee, user, onClose }) {
   );
 }
 
+const HR_EMPLOYMENT_TYPES = [
+  { key:'full_time',  label:'دوام كامل' },
+  { key:'part_time',  label:'دوام جزئي' },
+  { key:'temporary',  label:'مؤقت' },
+  { key:'seasonal',   label:'موسمي' },
+  { key:'fixed_term', label:'عقد محدد المدة' },
+];
+const HR_WORK_MODES = [
+  { key:'morning',  label:'صباحي' },
+  { key:'evening',  label:'مسائي' },
+  { key:'flexible', label:'مرن' },
+  { key:'shifts',   label:'ورديات' },
+  { key:'field',    label:'ميداني' },
+  { key:'remote',   label:'عن بُعد' },
+];
+const HR_ATTENDANCE_METHODS = [
+  { key:'fingerprint', label:'بصمة' },
+  { key:'manual',      label:'يدوي' },
+  { key:'both',        label:'بصمة ويدوي' },
+];
+// الفهرس = Date.getDay() (0=الأحد..6=السبت) حتى يطابق مباشرة الحسابات الموجودة بسجل الحضور
+const HR_WEEKDAYS = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+
+const hrDefaultWeeklySchedule = () => {
+  const sch = {};
+  for (let d=0; d<7; d++) {
+    const weekendDay = d===5 || d===6; // جمعة وسبت
+    sch[d] = { is_work_day: !weekendDay, start: weekendDay?'':'08:00', end: weekendDay?'':'17:00', break_minutes: weekendDay?0:60 };
+  }
+  return sch;
+};
+// يدمج جدول الموظف المخزّن (ممكن يكون فاضي لموظف قديم أو جزئي) فوق قيم افتراضية كاملة السبع أيام
+const hrMergeWeeklySchedule = (saved) => {
+  const base = hrDefaultWeeklySchedule();
+  if (!saved) return base;
+  for (let d=0; d<7; d++) { if (saved[d]) base[d] = { ...base[d], ...saved[d] }; }
+  return base;
+};
+
 function HREmployeeForm({ editEmp, onClose, onSave }) {
   const isNew = !editEmp?.id;
   const [form, setForm] = useState(() => ({
@@ -24419,14 +24458,36 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
     shift_start: editEmp?.shift_start || '',
     shift_end:   editEmp?.shift_end   || '',
     notes:       editEmp?.notes       || '',
+    employment_type:      editEmp?.employment_type      || '',
+    work_mode:             editEmp?.work_mode             || '',
+    schedule_type:         editEmp?.schedule_type         || 'fixed',
+    weekly_schedule:       hrMergeWeeklySchedule(editEmp?.weekly_schedule),
+    required_daily_hours: editEmp?.required_daily_hours ?? '',
+    grace_minutes:         editEmp?.grace_minutes ?? 0,
+    attendance_method:    editEmp?.attendance_method    || '',
+    overtime_notes:        editEmp?.overtime_notes        || '',
+    absence_notes:         editEmp?.absence_notes         || '',
   }));
   const [saving, setSaving] = useState(false);
   const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const updDay = (dow, patch) => setForm(f => ({ ...f, weekly_schedule: { ...f.weekly_schedule, [dow]: { ...f.weekly_schedule[dow], ...patch } } }));
 
   const handleSave = async () => {
     if (!form.full_name.trim() && !isSuperAdmin()) { toast('الاسم الكامل مطلوب', 'error'); return; }
     setSaving(true);
-    const payload = { ...form, base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0, hire_date: form.hire_date || null, shift_start: form.shift_start || null, shift_end: form.shift_end || null, updated_at: new Date().toISOString() };
+    const payload = {
+      ...form,
+      base_salary: form.base_salary !== '' ? Number(form.base_salary) : 0,
+      hire_date: form.hire_date || null,
+      shift_start: form.shift_start || null,
+      shift_end: form.shift_end || null,
+      employment_type: form.employment_type || null,
+      work_mode: form.work_mode || null,
+      required_daily_hours: form.required_daily_hours !== '' ? Number(form.required_daily_hours) : null,
+      grace_minutes: Number(form.grace_minutes) || 0,
+      attendance_method: form.attendance_method || null,
+      updated_at: new Date().toISOString(),
+    };
     const { data, error } = isNew
       ? await sb.from('hr_employees').insert(payload).select().single()
       : await sb.from('hr_employees').update(payload).eq('id', editEmp.id).select().single();
@@ -24438,7 +24499,7 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{maxWidth:620}} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:760}} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{isNew ? 'إضافة موظف جديد' : 'تعديل بيانات الموظف'}</h3>
           <button className="modal-close" onClick={onClose}>×</button>
@@ -24484,17 +24545,99 @@ function HREmployeeForm({ editEmp, onClose, onSave }) {
               </select>
             </div>
             <div className="form-group">
-              <label>بداية وقت الدوام</label>
+              <label>بداية وقت الدوام (مرجعي)</label>
               <TimeInputAr className="form-control" value={form.shift_start} onChange={e => upd('shift_start', e.target.value)}/>
             </div>
             <div className="form-group">
-              <label>نهاية وقت الدوام</label>
+              <label>نهاية وقت الدوام (مرجعي)</label>
               <TimeInputAr className="form-control" value={form.shift_end} onChange={e => upd('shift_end', e.target.value)}/>
             </div>
-            <div className="form-group" style={{gridColumn:'1 / -1'}}>
-              <label>ملاحظات</label>
-              <textarea className="form-control" value={form.notes} onChange={e => upd('notes', e.target.value)} rows={3} placeholder="أي ملاحظات إضافية..."/>
+            <div className="form-group">
+              <label>نوع التوظيف</label>
+              <select className="form-control" value={form.employment_type} onChange={e => upd('employment_type', e.target.value)}>
+                <option value="">— غير محدد —</option>
+                {HR_EMPLOYMENT_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
             </div>
+            <div className="form-group">
+              <label>نظام الدوام</label>
+              <select className="form-control" value={form.work_mode} onChange={e => upd('work_mode', e.target.value)}>
+                <option value="">— غير محدد —</option>
+                {HR_WORK_MODES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>دوام ثابت أم مرن؟</label>
+              <select className="form-control" value={form.schedule_type} onChange={e => upd('schedule_type', e.target.value)}>
+                <option value="fixed">ثابت</option>
+                <option value="flexible">مرن</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>ساعات العمل المطلوبة / يوم</label>
+              <input type="number" className="form-control" value={form.required_daily_hours} onChange={e => upd('required_daily_hours', e.target.value)} min="0" step="0.5" placeholder="مثال: 9"/>
+            </div>
+          </div>
+
+          <div style={{marginTop:18}}>
+            <label style={{fontWeight:700,fontSize:13,display:'block',marginBottom:8}}>جدول العمل الأسبوعي</label>
+            <div style={{border:'1px solid var(--gray-200)',borderRadius:8,overflow:'hidden'}}>
+              {HR_WEEKDAYS.map((label, dow) => {
+                const d = form.weekly_schedule[dow] || {};
+                return (
+                  <div key={dow} style={{display:'flex',alignItems:'center',gap:10,padding:'7px 10px',borderBottom: dow<6?'1px solid var(--gray-100)':'none',background: d.is_work_day?'#fff':'var(--gray-50)',flexWrap:'wrap'}}>
+                    <label style={{display:'flex',alignItems:'center',gap:6,width:90,fontSize:13,fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                      <input type="checkbox" checked={!!d.is_work_day} onChange={e => updDay(dow, { is_work_day: e.target.checked })}/>
+                      {label}
+                    </label>
+                    {d.is_work_day ? (<>
+                      <div style={{display:'flex',alignItems:'center',gap:4,fontSize:12}}>
+                        <span style={{color:'var(--gray-500)'}}>من</span>
+                        <TimeInputAr className="form-control" value={d.start} onChange={e => updDay(dow, { start: e.target.value })}/>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:4,fontSize:12}}>
+                        <span style={{color:'var(--gray-500)'}}>إلى</span>
+                        <TimeInputAr className="form-control" value={d.end} onChange={e => updDay(dow, { end: e.target.value })}/>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:4,fontSize:12}}>
+                        <span style={{color:'var(--gray-500)'}}>استراحة (د)</span>
+                        <input type="number" className="form-control" style={{width:70}} value={d.break_minutes} onChange={e => updDay(dow, { break_minutes: Number(e.target.value)||0 })} min="0"/>
+                      </div>
+                    </>) : <span style={{fontSize:12,color:'var(--gray-400)'}}>عطلة</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{marginTop:18}}>
+            <label style={{fontWeight:700,fontSize:13,display:'block',marginBottom:8}}>قواعد الحضور</label>
+            <div className="form-grid-2">
+              <div className="form-group">
+                <label>فترة السماح (دقيقة)</label>
+                <input type="number" className="form-control" value={form.grace_minutes} onChange={e => upd('grace_minutes', e.target.value)} min="0" placeholder="0"/>
+              </div>
+              <div className="form-group">
+                <label>آلية تسجيل الحضور</label>
+                <select className="form-control" value={form.attendance_method} onChange={e => upd('attendance_method', e.target.value)}>
+                  <option value="">— غير محدد —</option>
+                  {HR_ATTENDANCE_METHODS.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>ملاحظات احتساب العمل الإضافي</label>
+                <textarea className="form-control" value={form.overtime_notes} onChange={e => upd('overtime_notes', e.target.value)} rows={2} placeholder="آلية احتساب الإضافي لهذا الموظف..."/>
+              </div>
+              <div className="form-group">
+                <label>ملاحظات سياسة الغياب</label>
+                <textarea className="form-control" value={form.absence_notes} onChange={e => upd('absence_notes', e.target.value)} rows={2} placeholder="ملاحظات حول الغياب والخصومات..."/>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-group" style={{marginTop:18}}>
+            <label>ملاحظات عامة</label>
+            <textarea className="form-control" value={form.notes} onChange={e => upd('notes', e.target.value)} rows={3} placeholder="أي ملاحظات إضافية..."/>
           </div>
         </div>
         <div className="modal-footer">
@@ -25285,14 +25428,15 @@ function HRAttendanceRegister() {
   const canEdit = hasPerm(CURRENT_USER,'hr_attendance_edit');
 
   useEffect(() => {
-    sb.from('hr_employees').select('id,full_name,shift_start,shift_end').eq('status','active').order('full_name')
+    sb.from('hr_employees').select('id,full_name,shift_start,shift_end,weekly_schedule').eq('status','active').order('full_name')
       .then(({ data }) => {
         setEmployees(data || []);
         if (data?.length) setSelectedEmp(data[0].id);
       });
   }, []);
 
-  const empShift = employees.find(e => e.id === selectedEmp) || {};
+  const empShift  = employees.find(e => e.id === selectedEmp) || {};
+  const empWeekly = hrMergeWeeklySchedule(empShift.weekly_schedule);
 
   useEffect(() => {
     if (!selectedEmp) return;
@@ -25313,15 +25457,18 @@ function HRAttendanceRegister() {
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
 
   const dateStr = (day) => `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-  const isFriday = (day) => new Date(year, month-1, day).getDay() === 5;
-  const getDay = (day) => attendance[dateStr(day)] || {
-    status: isFriday(day) ? 'holiday' : 'present',
-    check_in:  isFriday(day) ? '' : (empShift.shift_start || ''),
-    check_out: isFriday(day) ? '' : (empShift.shift_end   || ''),
-    departure_start:'', departure_end:'',
-  };
+  const daySchedule = (day) => empWeekly[new Date(year, month-1, day).getDay()] || {};
+  const getDay = (day) => attendance[dateStr(day)] || (() => {
+    const sch = daySchedule(day);
+    return {
+      status: sch.is_work_day ? 'present' : 'holiday',
+      check_in:  sch.is_work_day ? (sch.start || empShift.shift_start || '') : '',
+      check_out: sch.is_work_day ? (sch.end   || empShift.shift_end   || '') : '',
+      departure_start:'', departure_end:'',
+    };
+  })();
   const getDayName = (day) => new Date(year, month-1, day).toLocaleDateString('ar', { weekday:'short' });
-  const isWeekend = (day) => { const d = new Date(year, month-1, day).getDay(); return d===5||d===6; };
+  const isWeekend = (day) => !daySchedule(day).is_work_day;
 
   const setDay = (day, patch) => {
     setAttendance(prev => ({ ...prev, [dateStr(day)]: { ...getDay(day), ...prev[dateStr(day)], ...patch } }));
@@ -25474,7 +25621,7 @@ function HRAttendanceSummary() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    sb.from('hr_employees').select('id,full_name').eq('status','active').order('full_name')
+    sb.from('hr_employees').select('id,full_name,weekly_schedule').eq('status','active').order('full_name')
       .then(({ data }) => setEmployees(data||[]));
   }, []);
 
@@ -25497,11 +25644,16 @@ function HRAttendanceSummary() {
   const byEmp = {};
   rows.forEach(r => { (byEmp[r.employee_id] ||= []).push(r); });
 
-  const dayStatusDefault = (dateStr) => new Date(dateStr + 'T00:00:00Z').getUTCDay()===5 ? 'holiday' : 'present';
+  const dayStatusDefault = (dateStr, weekly) => {
+    const dow = new Date(dateStr + 'T00:00:00Z').getUTCDay();
+    const sch = weekly[dow] || {};
+    return sch.is_work_day ? 'present' : 'holiday';
+  };
 
   const summary = employees.map(emp => {
+    const empWeekly = hrMergeWeeklySchedule(emp.weekly_schedule);
     const recMap = Object.fromEntries((byEmp[emp.id]||[]).map(r => [r.date, r]));
-    const recs = rangeDates.map(d => recMap[d] || { status: dayStatusDefault(d), check_in:null, check_out:null, departure_start:null, departure_end:null });
+    const recs = rangeDates.map(d => recMap[d] || { status: dayStatusDefault(d, empWeekly), check_in:null, check_out:null, departure_start:null, departure_end:null });
     const count = (pred) => recs.filter(pred).length;
     return {
       employee: emp,
