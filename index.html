@@ -3291,10 +3291,10 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
         discount_pct: parseFloat(form.discount_pct) || 0,
         discount_fixed: parseFloat(form.discount_fixed) || 0,
         tax_pct: parseFloat(form.tax_pct) || 0,
-        subtotal: subtotal.toFixed(3),
-        discount_amt: disc_amt.toFixed(3),
-        tax_amt: tax_amt.toFixed(3),
-        nett_price: nett.toFixed(3),
+        subtotal: subtotal,
+        discount_amt: disc_amt,
+        tax_amt: tax_amt,
+        nett_price: nett,
         status,
       };
       delete payload.id;
@@ -4460,7 +4460,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
     if (error) { toast('خطأ في جلب بنود العرض', 'error'); return; }
     const markedItems = (data || []).map(i => ({
       ...i,
-      unit_price: (parseFloat(i.unit_price || 0) * (1 + pct / 100)).toFixed(3),
+      unit_price: parseFloat(i.unit_price || 0) * (1 + pct / 100),
     }));
     setCloneSource({
       cloneItems: markedItems,
@@ -4686,10 +4686,10 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
         date: todayStr,
         reference: reference || '',
         currency: 'JOD', delivery: 'PROMPT',
-        subtotal: subtotal.toFixed(3),
-        discount_pct: 0, discount_amt: (0).toFixed(3),
-        tax_pct: DEFAULT_TAX_PCT, tax_amt: taxAmt.toFixed(3),
-        nett_price: nettPrice.toFixed(3),
+        subtotal: subtotal,
+        discount_pct: 0, discount_amt: 0,
+        tax_pct: DEFAULT_TAX_PCT, tax_amt: taxAmt,
+        nett_price: nettPrice,
         status: 'draft', valid_until,
         quote_type: 'quote', detailed_layout: false, quote_lang: 'ar',
         notes: 'مستورد من Excel — بانتظار المراجعة',
@@ -6621,7 +6621,7 @@ function OrderEditModal({ user, quote, order, onSave, onClose }) {
       const payload = {
         customer_name:     form.customer_name.trim(),
         currency:          form.currency,
-        total_amount:      total.toFixed(3),
+        total_amount:      total,
         notes:             form.notes || null,
         expected_delivery: form.expected_delivery || null,
         prepared_by:       form.prepared_by || null,
@@ -6898,10 +6898,10 @@ function InvoiceEditModal({ user, quote, onSave, onClose }) {
         discount_pct: parseFloat(form.discount_pct) || 0,
         tax_pct: parseFloat(form.tax_pct) || 16,
         notes: form.notes || null,
-        subtotal: subtotal.toFixed(3),
-        discount_amt: disc_amt.toFixed(3),
-        tax_amt: tax_amt.toFixed(3),
-        nett_price: nett.toFixed(3),
+        subtotal: subtotal,
+        discount_amt: disc_amt,
+        tax_amt: tax_amt,
+        nett_price: nett,
         status: 'invoiced',
         updated_at: new Date().toISOString(),
       };
@@ -7588,8 +7588,8 @@ function OrdersPage({ user, orders, onReload }) {
         currency: o.currency || q?.currency || 'JOD',
         date: (o.created_at||'').slice(0,10) || q?.date || today(),
         valid_until: null, notes: o.notes || q?.notes || '', tax_pct: defTax,
-        subtotal: subtotal.toFixed(3), discount_amt: disc_amt.toFixed(3),
-        tax_amt: tax_amt.toFixed(3), nett_price: (subtotal - disc_amt + tax_amt).toFixed(3),
+        subtotal: subtotal, discount_amt: disc_amt,
+        tax_amt: tax_amt, nett_price: (subtotal - disc_amt + tax_amt),
         prepared_by:       o.prepared_by || null,
         delivered_by:      o.delivered_by || null,
         expected_delivery: o.expected_delivery || null,
@@ -9116,8 +9116,8 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
         currency: o.currency || q?.currency || 'JOD',
         date: (o.created_at||'').slice(0,10) || q?.date || today(),
         valid_until: null, notes: o.notes || q?.notes || '', tax_pct: defTax,
-        subtotal: subtotal.toFixed(3), discount_amt: disc_amt.toFixed(3),
-        tax_amt: tax_amt.toFixed(3), nett_price: (subtotal - disc_amt + tax_amt).toFixed(3),
+        subtotal: subtotal, discount_amt: disc_amt,
+        tax_amt: tax_amt, nett_price: (subtotal - disc_amt + tax_amt),
         prepared_by: o.prepared_by || null,
         delivered_by: o.delivered_by || null,
         expected_delivery: o.expected_delivery || null,
@@ -11229,11 +11229,11 @@ function DailyOrderForm({ order, profiles, user, onSave, onClose }) {
         sales_rep_id:    form.sales_rep_id || null,
         channel:         form.channel,
         is_express:      form.is_express,
-        express_fee:     expressFee.toFixed(3),
+        express_fee:     expressFee,
         payment_method:  form.payment_method,
         paid_account:    form.payment_method === 'prepaid' ? (form.paid_account.trim() || null) : null,
-        subtotal:        subtotal.toFixed(3),
-        total_amount:    total.toFixed(3),
+        subtotal:        subtotal,
+        total_amount:    total,
         notes:           form.notes.trim() || null,
         prep_note:       form.prep_note.trim() || null,
       };
@@ -13045,7 +13045,7 @@ function POForm({ po, user, onSave, onClose }) {
     }
     setLoading(true);
     try {
-      const payload = { supplier_id:form.supplier_id, supplier_name:form.supplier_name, date:form.date, expected_delivery:form.expected_delivery||null, status:form.status||'draft', currency:form.currency||'JOD', tax_pct:parseFloat(form.tax_pct||0), subtotal:subtotal.toFixed(3), tax_amt:tax_amt.toFixed(3), total:total.toFixed(3), notes:form.notes||null };
+      const payload = { supplier_id:form.supplier_id, supplier_name:form.supplier_name, date:form.date, expected_delivery:form.expected_delivery||null, status:form.status||'draft', currency:form.currency||'JOD', tax_pct:parseFloat(form.tax_pct||0), subtotal:subtotal, tax_amt:tax_amt, total:total, notes:form.notes||null };
       let poId, poNumber;
       if (po?.id) {
         const {error:e} = await sb.from('purchase_orders').update(payload).eq('id',po.id);
@@ -13085,7 +13085,7 @@ function POForm({ po, user, onSave, onClose }) {
         unit:i.unit||'EACH', quantity:parseFloat(i.quantity)||1,
         unit_price:parseFloat(i.unit_price)||0,
         tax_pct:(i.tax_pct===''||i.tax_pct==null)?parseFloat(form.tax_pct||0):parseFloat(i.tax_pct||0),
-        total:(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)).toFixed(3),
+        total:(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)),
         catalog_id: i.catalog_id||null,
       }));
       if(itemRows.length){ const {error:ie}=await sb.from('purchase_order_items').insert(itemRows); if(ie) throw ie; }
@@ -13442,7 +13442,7 @@ function SupplierPaymentForm({ suppliers, onSave, onClose }) {
       const inv = selectedInv;
       const newPaid = parseFloat(inv.paid_amount||0) + parseFloat(form.amount);
       const newStatus = newPaid >= parseFloat(inv.total||0) ? 'paid' : 'partial';
-      await sb.from('supplier_invoices').update({ paid_amount: newPaid.toFixed(3), status: newStatus }).eq('id', form.invoice_id);
+      await sb.from('supplier_invoices').update({ paid_amount: newPaid, status: newStatus }).eq('id', form.invoice_id);
       toast('تم تسجيل الدفعة','success');
       onSave();
     } catch(err){ toast('خطأ: '+err.message,'error'); }
@@ -13466,7 +13466,7 @@ function SupplierPaymentForm({ suppliers, onSave, onClose }) {
           </div>
           <div className="form-group">
             <label className="form-label">الفاتورة <span style={{color:'var(--danger)'}}>*</span></label>
-            <select className="form-control" value={form.invoice_id} onChange={e=>{ setF('invoice_id',e.target.value); const inv=invoices.find(i=>i.id===e.target.value); if(inv) setF('amount',(parseFloat(inv.total||0)-parseFloat(inv.paid_amount||0)).toFixed(3)); }}>
+            <select className="form-control" value={form.invoice_id} onChange={e=>{ setF('invoice_id',e.target.value); const inv=invoices.find(i=>i.id===e.target.value); if(inv) setF('amount',(parseFloat(inv.total||0)-parseFloat(inv.paid_amount||0))); }}>
               <option value="">— اختر فاتورة —</option>
               {invoices.map(i=>{
                 const bal = numFmt(parseFloat(i.total||0)-parseFloat(i.paid_amount||0));
@@ -13842,7 +13842,7 @@ function ProcurementPage({ user }) {
     if(inv){
       const newPaid = Math.max(0, parseFloat(inv.paid_amount||0)-parseFloat(p.amount||0));
       const newStatus = newPaid <= 0 ? 'pending' : newPaid >= parseFloat(inv.total||0) ? 'paid' : 'partial';
-      await sb.from('supplier_invoices').update({paid_amount:newPaid.toFixed(3),status:newStatus}).eq('id',inv.id);
+      await sb.from('supplier_invoices').update({paid_amount:newPaid,status:newStatus}).eq('id',inv.id);
     }
     await sb.from('supplier_payments').delete().eq('id',p.id);
     toast('تم الحذف','success'); load();
@@ -14326,7 +14326,7 @@ function CashVanPage({ user }) {
       if (error) { toast('خطأ: '+error.message, 'error'); return; }
     }
     const newTotal = (parseFloat(keepSale.total_amount)||0) + (parseFloat(mergeSale.total_amount)||0);
-    const { error: uErr } = await sb.from('cashvan_sales').update({ total_amount: newTotal.toFixed(3), amount_paid: newTotal.toFixed(3) }).eq('id', keepSale.id);
+    const { error: uErr } = await sb.from('cashvan_sales').update({ total_amount: newTotal, amount_paid: newTotal }).eq('id', keepSale.id);
     if (uErr) { toast('خطأ: '+uErr.message, 'error'); return; }
     const { error: dErr } = await sb.from('cashvan_sales').delete().eq('id', mergeSale.id);
     if (dErr) { toast('خطأ: '+dErr.message, 'error'); return; }
@@ -14807,8 +14807,8 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, sales, user, o
         const payload = {
           rep_id: form.rep_id, sale_date: form.period_to,
           period_from: form.period_from, period_to: form.period_to,
-          payment_status: 'paid', amount_paid: total.toFixed(3),
-          total_amount: total.toFixed(3), notes: form.notes.trim() || null,
+          payment_status: 'paid', amount_paid: total,
+          total_amount: total, notes: form.notes.trim() || null,
         };
         const { error } = await sb.from('cashvan_sales').update(payload).eq('id', sale.id);
         if (error) throw error;
@@ -14831,8 +14831,8 @@ function CashVanSaleForm({ sale, profiles, itemNames, stockByRep, sales, user, o
           const payload = {
             rep_id: form.rep_id, sale_date: form.period_to,
             period_from: form.period_from, period_to: form.period_to,
-            payment_status: 'paid', amount_paid: total.toFixed(3),
-            total_amount: total.toFixed(3), notes: form.notes.trim() || null,
+            payment_status: 'paid', amount_paid: total,
+            total_amount: total, notes: form.notes.trim() || null,
           };
           const { data: newSale, error } = await sb.from('cashvan_sales').insert({ ...payload, created_by: user?.id||null }).select().single();
           if (error) throw error;
@@ -15090,10 +15090,10 @@ function CashVanSettleForm({ settlement, profiles, sales, saleItems, settlements
       const payload = {
         rep_id: form.rep_id, settlement_date: form.period_to,
         period_from: form.period_from, period_to: form.period_to,
-        gross_amount: grossAmount.toFixed(3), orders_count: ordersCount,
-        delivery_rate: deliveryRate.toFixed(3), delivery_deduction: deliveryDeduction.toFixed(3),
-        other_deductions: otherDeductions.toFixed(3), amount: cashReceivedNum.toFixed(3),
-        click_total: clickTotal.toFixed(3),
+        gross_amount: grossAmount, orders_count: ordersCount,
+        delivery_rate: deliveryRate, delivery_deduction: deliveryDeduction,
+        other_deductions: otherDeductions, amount: cashReceivedNum,
+        click_total: clickTotal,
         method: form.method.trim() || 'نقداً', notes: form.notes.trim() || null,
       };
       let settleId;
