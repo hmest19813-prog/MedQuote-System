@@ -9093,7 +9093,9 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
       sb.from('letter_contacts').select('*').order('name'),
       sb.from('letter_categories').select('*').order('sort_order'),
     ]);
-    setLetterMeta({ contacts: ct||[], categories: cat||[] });
+    // كتب الموارد البشرية تُدار من صفحتها الخاصة فقط — تُستثنى من قائمة تصنيفات الديوان هنا
+    const nonHrCats = (cat||[]).filter(c => c.id!==HR_LETTER_CAT_MAIN_ID && c.parent_id!==HR_LETTER_CAT_MAIN_ID);
+    setLetterMeta({ contacts: ct||[], categories: nonHrCats });
     setShowLetterForm(true);
   };
 
@@ -9282,7 +9284,8 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
           categories={letterMeta.categories}
           onCategoriesChanged={async()=>{
             const {data:cat} = await sb.from('letter_categories').select('*').order('sort_order');
-            setLetterMeta(m=>({...m, categories: cat||[]}));
+            const nonHrCats = (cat||[]).filter(c => c.id!==HR_LETTER_CAT_MAIN_ID && c.parent_id!==HR_LETTER_CAT_MAIN_ID);
+            setLetterMeta(m=>({...m, categories: nonHrCats}));
           }}
           onSave={()=>{ setShowLetterForm(false); toast('تم إصدار الكتاب وربطه بالعميل ✓','success'); loadLetters(); }}
           onClose={()=>setShowLetterForm(false)}
