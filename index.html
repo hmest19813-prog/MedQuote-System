@@ -3074,7 +3074,7 @@ function QuoteForm({ user, quote: editQuote, initialValues, mode='quote', onSave
   const [requesterHistory, setRequesterHistory] = useState([]);
 
   useEffect(() => {
-    sb.from('customers').select('id,name,phone,alt_phone,contact1_name,contact1_phone,contact1_mobile2,email,contact1_email').eq('approval_status','approved').order('name').then(({data})=>setCustomers(data||[]));
+    sb.from('customers').select('id,name,phone,alt_phone,contact1_name,contact1_phone,contact1_mobile2,email,contact1_email').eq('approval_status','approved').is('deleted_at', null).order('name').then(({data})=>setCustomers(data||[]));
     sb.from('reference_history').select('name').order('last_used_at',{ascending:false}).limit(200).then(({data})=>setReferenceHistory((data||[]).map(r=>r.name)));
     sb.from('requester_history').select('name,phone,phone2').order('last_used_at',{ascending:false}).limit(500).then(({data})=>setRequesterHistory(data||[]));
   }, []);
