@@ -1551,6 +1551,7 @@ const NAV = [
   { id: 'correspondence', label: 'إدارة الديوان والأرشيف', icon: '📨', visible: (u) => hasPerm(u,'letters_access') || hasPerm(u,'inbox_access') },
   { id: 'catalog',   label: 'إدارة المخزون',       icon: '🗂️', perm: 'catalog_access' },
   { id: 'chemicals', label: 'إدارة الكيماويات', icon: '🧪', perm: 'chemicals_access' },
+  { id: 'showrooms', label: 'إدارة المعارض', icon: '🏬', perm: 'showrooms_access' },
   { id: 'properties', label: 'إدارة الأصول', icon: '🏘️', visible: isPropertiesUser },
   { id: 'tasks',          label: 'المهام',          icon: '✅', perm: 'tasks_access' },
   { id: 'activity',  label: 'سجل النشاط',     icon: '🕐', perm: 'activity_access' },
@@ -8131,6 +8132,13 @@ const PERM_GROUPS = [
     { key: 'supply_chain_edit',         label: 'تحديث مراحل سلسلة التوريد' },
     { key: 'supply_chain_delete',       label: 'حذف ملفات التوريد' },
   ]},
+  { label: 'إدارة المعارض', icon: '🏬', perms: [
+    { key: 'showrooms_access',   label: 'الوصول لقسم المعارض' },
+    { key: 'showrooms_sell',     label: 'استخدام شاشة نقطة البيع' },
+    { key: 'showrooms_purchase', label: 'تسجيل مشتريات وتحويلات مخزون المعرض' },
+    { key: 'showrooms_cash',     label: 'تسجيل قيود صندوق يدوية' },
+    { key: 'showrooms_manage',   label: 'تعديل/حذف مستندات المعارض وإدارة قائمة المعارض' },
+  ]},
   { label: 'الموارد البشرية', icon: '👥', perms: [
     { key: 'hr_access',              label: 'الوصول لقسم الموارد البشرية' },
     { key: 'hr_employees_edit',      label: 'إضافة وتعديل وحذف ملفات الموظفين' },
@@ -8174,6 +8182,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   accounting_access: false,
   payments_delete: false,
   vouchers_access: false, vouchers_create: false, vouchers_delete: false,
+  showrooms_access: false, showrooms_sell: false, showrooms_purchase: false, showrooms_cash: false, showrooms_manage: false,
   hr_access: false,
   hr_employees_edit: true, hr_candidates_edit: true, hr_salaries_access: false, hr_salaries_edit: false,
   hr_attendance_edit: true, hr_periodic_tasks_edit: true,
@@ -22774,6 +22783,1312 @@ function PropertyContractForm({ user, editContract, onClose, onSave }) {
   );
 }
 
+/* ===================== SHOWROOM MODULE (إدارة المعارض) ===================== */
+const SHOWROOM_PAY_METHODS = [
+  { key:'cash', label:'كاش' },
+  { key:'bank_transfer', label:'تحويل بنكي' },
+  { key:'click', label:'كليك' },
+  { key:'other', label:'أخرى' },
+];
+const SHOWROOM_MOVEMENT_LABELS = {
+  purchase_in:'شراء', transfer_in:'تحويل وارد', transfer_out:'تحويل صادر',
+  sale_out:'بيع', return_in:'إرجاع', adjust:'تسوية يدوية',
+};
+const SHOWROOM_SALE_STATUS = {
+  paid:    { label:'مدفوع بالكامل', color:'#16a34a', bg:'#dcfce7' },
+  partial: { label:'مدفوع جزئياً', color:'#d97706', bg:'#fef3c7' },
+  unpaid:  { label:'دين كامل', color:'#dc2626', bg:'#fee2e2' },
+};
+
+function ShowroomsPage({ user }) {
+  const [showrooms, setShowrooms] = useState([]);
+  const [showroomId, setShowroomId] = useState('');
+  const [tab, setTab] = useState('pos');
+  const [loading, setLoading] = useState(true);
+  const canManage = hasPerm(user, 'showrooms_manage');
+
+  const loadShowrooms = () => {
+    sb.from('showrooms').select('*').order('code').then(({data}) => {
+      const all = data || [];
+      const pool = canManage ? all : all.filter(s => s.is_active);
+      setShowrooms(pool);
+      setShowroomId(prev => (prev && pool.some(s=>s.id===prev)) ? prev : (pool[0]?.id || ''));
+      setLoading(false);
+    });
+  };
+  useEffect(() => { loadShowrooms(); }, []);
+
+  const showroom = showrooms.find(s => s.id === showroomId);
+
+  const tabs = [
+    { id:'pos', label:'نقطة البيع', icon:'🛒' },
+    { id:'overview', label:'نظرة عامة', icon:'📊' },
+    { id:'stock', label:'المخزون', icon:'📦' },
+    { id:'sales', label:'المبيعات', icon:'🧾' },
+    { id:'purchases', label:'المشتريات', icon:'🛍️' },
+    { id:'transfers', label:'التحويلات', icon:'🔁' },
+    { id:'activity', label:'دفتر المعرض', icon:'📒' },
+    { id:'cash', label:'الصندوق', icon:'💵' },
+    ...(canManage ? [{ id:'settings', label:'إعدادات المعارض', icon:'⚙️' }] : []),
+  ];
+
+  if (loading) return <LoadingScreen msg="جاري تحميل المعارض..."/>;
+
+  return (
+    <div>
+      {showrooms.length>0 && (
+        <div style={{marginBottom:16}}>
+          <select className="form-control" style={{width:260, fontWeight:700}} value={showroomId} onChange={e=>setShowroomId(e.target.value)}>
+            {showrooms.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active?' (غير نشط)':''}</option>)}
+          </select>
+        </div>
+      )}
+
+      <div style={{display:'flex', borderBottom:'2px solid var(--gray-200)', marginBottom:20, flexWrap:'wrap'}}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            padding:'10px 18px', border:'none', background:'transparent', cursor:'pointer',
+            borderBottom: tab===t.id ? '2px solid var(--primary)' : '2px solid transparent',
+            color: tab===t.id ? 'var(--primary)' : 'var(--gray-500)',
+            fontWeight: tab===t.id ? 700 : 400, fontSize:14, marginBottom:'-2px', transition:'all .15s'
+          }}>{t.icon} {t.label}</button>
+        ))}
+      </div>
+
+      {tab==='settings' && canManage ? (
+        <ShowroomSettings showrooms={showrooms} user={user} onReload={loadShowrooms}/>
+      ) : !showroom ? (
+        <div className="empty-state"><p>{canManage ? 'أضف معرضاً من تبويب "إعدادات المعارض"' : 'لا يوجد معارض نشطة بعد'}</p></div>
+      ) : <>
+        {tab==='pos' && <ShowroomPOS showroom={showroom} user={user}/>}
+        {tab==='overview' && <ShowroomOverview showroom={showroom} user={user}/>}
+        {tab==='stock' && <ShowroomStock showroom={showroom} user={user}/>}
+        {tab==='sales' && <ShowroomSales showroom={showroom} user={user}/>}
+        {tab==='purchases' && <ShowroomPurchases showroom={showroom} user={user}/>}
+        {tab==='transfers' && <ShowroomTransfers showrooms={showrooms} showroom={showroom} user={user}/>}
+        {tab==='activity' && <ShowroomActivity showroom={showroom} user={user}/>}
+        {tab==='cash' && <ShowroomCash showroom={showroom} user={user}/>}
+      </>}
+    </div>
+  );
+}
+
+/* ---------- نقطة البيع ---------- */
+function ShowroomPOS({ showroom, user }) {
+  const [items, setItems] = useState([]);
+  const [balances, setBalances] = useState({});
+  const [search, setSearch] = useState('');
+  const [cart, setCart] = useState([]);
+  const [customerId, setCustomerId] = useState(null);
+  const [customerName, setCustomerName] = useState('');
+  const [customerFree, setCustomerFree] = useState('');
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [payMode, setPayMode] = useState('full');
+  const [partialAmount, setPartialAmount] = useState('');
+  const [payMethod, setPayMethod] = useState('cash');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const canSell = hasPerm(user, 'showrooms_sell');
+
+  const load = () => {
+    sb.from('catalog_items').select('id,name,unit,unit_price,category').eq('is_active', true).order('name')
+      .then(({data}) => setItems(data||[]));
+    sb.from('showroom_stock_balances').select('catalog_id,qty_balance').eq('showroom_id', showroom.id)
+      .then(({data}) => { const m={}; (data||[]).forEach(r=>{m[r.catalog_id]=Number(r.qty_balance);}); setBalances(m); });
+  };
+  useEffect(() => { load(); }, [showroom.id]);
+
+  // ما بنحصر البحث بالأصناف "المخصصة" للمعرض — بيدوّر بكامل الكتالوج، بس البيع الفعلي يضل محكوم بالرصيد الحقيقي بهذا المعرض (addToCart/handleCheckout تحت)
+  const filtered = items.filter(it => !search || it.name.toLowerCase().includes(search.toLowerCase()));
+
+  const addToCart = (it) => {
+    if (!canSell) return;
+    setCart(c => {
+      const ex = c.find(x => x.catalog_id === it.id);
+      if (ex) return c.map(x => x.catalog_id === it.id ? {...x, qty: Number(x.qty)+1} : x);
+      return [...c, { catalog_id: it.id, item_name: it.name, unit: it.unit, qty: 1, unit_price: it.unit_price||0, tax_pct: 0 }];
+    });
+  };
+  const updRow = (idx, patch) => setCart(c => c.map((x,i) => i===idx ? {...x, ...patch} : x));
+  const removeRow = (idx) => setCart(c => c.filter((_,i) => i!==idx));
+
+  const subtotal = cart.reduce((s,r) => s + (Number(r.qty)||0) * (Number(r.unit_price)||0), 0);
+  const taxTotal = cart.reduce((s,r) => s + (Number(r.qty)||0) * (Number(r.unit_price)||0) * (Number(r.tax_pct)||0)/100, 0);
+  const total = subtotal + taxTotal;
+  const initialPayment = payMode==='full' ? total : payMode==='partial' ? (Number(partialAmount)||0) : 0;
+
+  const reset = () => {
+    setCart([]); setCustomerId(null); setCustomerName(''); setCustomerFree('');
+    setPayMode('full'); setPartialAmount(''); setNotes('');
+  };
+
+  const handleCheckout = async () => {
+    if (!cart.length) { toast('أضف صنف واحد على الأقل', 'error'); return; }
+    // تلميح غير مانع فقط — المخزون لسا غير مجرود بدقة، فالبيع يُسمح حتى لو الرصيد المسجّل أقل من المطلوب (بند مؤقت بطلب المستخدم)
+    for (const r of cart) {
+      const avail = balances[r.catalog_id] ?? 0;
+      if (Number(r.qty) > avail) { toast(`تنبيه: الرصيد المسجّل لـ"${r.item_name}" بهذا المعرض ${avail} فقط — بيع جاري بأي حال`, 'info'); }
+    }
+    if (payMode==='partial' && (!partialAmount || Number(partialAmount)<=0)) { toast('أدخل المبلغ المدفوع', 'error'); return; }
+    setSaving(true);
+    try {
+      const { data, error } = await sb.rpc('create_showroom_sale', {
+        p_showroom_id: showroom.id,
+        p_items: cart.map(r => ({ catalog_id:r.catalog_id, item_name:r.item_name, unit:r.unit, qty:Number(r.qty), unit_price:Number(r.unit_price), tax_pct:Number(r.tax_pct)||0 })),
+        p_customer_id: customerId,
+        p_customer_name_free: customerId ? null : (customerFree.trim() || null),
+        p_employee_id: user.id,
+        p_currency: showroom.default_currency || 'JOD',
+        p_discount_amt: 0,
+        p_notes: notes.trim() || null,
+        p_initial_payment_amount: initialPayment > 0 ? initialPayment : null,
+        p_initial_payment_method: payMethod,
+      });
+      if (error) throw error;
+      await sb.from('showroom_activity_log').insert({
+        showroom_id: showroom.id, activity_type: 'sale',
+        customer_name: customerId ? customerName : (customerFree.trim() || null),
+        employee_id: user.id, sale_id: data.id, created_by: user.id,
+      });
+      toast(`تم البيع ✓ ${data.number}`, 'success');
+      reset(); load();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{display:'flex', gap:20, flexWrap:'wrap', alignItems:'flex-start'}}>
+      <div style={{flex:'2 1 420px', minWidth:320}}>
+        <input className="form-control" style={{marginBottom:12}} placeholder="بحث عن صنف..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px,1fr))', gap:10, maxHeight:520, overflowY:'auto'}}>
+          {filtered.map(it => {
+            const avail = balances[it.id] ?? 0;
+            return (
+              <div key={it.id} onClick={()=>addToCart(it)} style={{
+                border:'1px solid var(--gray-200)', borderRadius:10, padding:'10px 12px', cursor:'pointer', background:'#fff',
+              }}>
+                <div style={{fontSize:13, fontWeight:700, marginBottom:4}}>{it.name}</div>
+                <div style={{fontSize:12, color:'var(--primary)', fontWeight:700}}>{numFmt(it.unit_price)} {showroom.default_currency}</div>
+                <div style={{fontSize:11, color: avail>0 ? 'var(--gray-500)' : 'var(--danger)'}}>متوفر: {numFmt(avail,2)} {it.unit}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{flex:'1 1 320px', minWidth:300, border:'1px solid var(--gray-200)', borderRadius:12, padding:16, background:'#fafafa'}}>
+        <h3 style={{fontSize:15, fontWeight:800, marginBottom:12}}>🛒 السلة</h3>
+        {cart.length===0 ? <div style={{color:'var(--gray-400)', fontSize:13, padding:'20px 0', textAlign:'center'}}>السلة فاضية — اختر أصناف من اليسار</div> : (
+          <div style={{display:'flex', flexDirection:'column', gap:8, marginBottom:14}}>
+            {cart.map((r,i) => (
+              <div key={i} style={{display:'flex', alignItems:'center', gap:6, background:'#fff', borderRadius:8, padding:'6px 8px'}}>
+                <div style={{flex:1, fontSize:12, fontWeight:600}}>{r.item_name}</div>
+                <input type="number" min="0.001" step="any" value={r.qty} onChange={e=>updRow(i,{qty:e.target.value})}
+                  style={{width:55, fontSize:12, padding:'3px 4px', border:'1px solid var(--gray-200)', borderRadius:5, textAlign:'center'}}/>
+                <input type="number" min="0" step="any" value={r.unit_price} onChange={e=>updRow(i,{unit_price:e.target.value})}
+                  style={{width:65, fontSize:12, padding:'3px 4px', border:'1px solid var(--gray-200)', borderRadius:5, textAlign:'center'}}/>
+                <button onClick={()=>removeRow(i)} style={{background:'none', border:'none', color:'var(--danger)', cursor:'pointer', fontSize:14}}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{borderTop:'1px dashed var(--gray-300)', paddingTop:10, marginBottom:12, fontSize:13}}>
+          <div style={{display:'flex', justifyContent:'space-between'}}><span>المجموع</span><strong>{numFmt(subtotal)} {showroom.default_currency}</strong></div>
+          <div style={{display:'flex', justifyContent:'space-between', fontSize:18, fontWeight:900, marginTop:4}}><span>الإجمالي</span><span>{numFmt(total)} {showroom.default_currency}</span></div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          {customerId ? (
+            <div style={{display:'flex', alignItems:'center', gap:6, background:'#eff6ff', color:'#1C6A99', padding:'6px 10px', borderRadius:20, fontSize:12, fontWeight:700}}>
+              🔗 {customerName}
+              <button onClick={()=>{setCustomerId(null); setCustomerName('');}} style={{background:'none', border:'none', color:'#1C6A99', cursor:'pointer', marginRight:'auto'}}>✕</button>
+            </div>
+          ) : (
+            <div style={{display:'flex', gap:6}}>
+              <input className="form-control" style={{fontSize:12}} placeholder="زبون عابر (اختياري)" value={customerFree} onChange={e=>setCustomerFree(e.target.value)}/>
+              <button className="btn btn-ghost btn-sm" onClick={()=>setShowCustomerPicker(true)} title="ربط بعميل مسجّل">🔗</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{display:'flex', gap:6, marginBottom:6}}>
+            {[['full','كاش كامل'],['partial','دفعة جزئية'],['credit','دين كامل']].map(([k,l]) => (
+              <button key={k} onClick={()=>setPayMode(k)} style={{
+                flex:1, fontSize:11, padding:'6px 4px', borderRadius:6, border:'1px solid var(--gray-300)', cursor:'pointer',
+                background: payMode===k ? 'var(--primary)' : '#fff', color: payMode===k ? '#fff' : 'var(--gray-600)', fontWeight:700,
+              }}>{l}</button>
+            ))}
+          </div>
+          {payMode==='partial' && (
+            <input type="number" className="form-control" style={{fontSize:12}} placeholder="المبلغ المدفوع الآن" value={partialAmount} onChange={e=>setPartialAmount(e.target.value)}/>
+          )}
+          {payMode!=='credit' && (
+            <select className="form-control" style={{fontSize:12, marginTop:6}} value={payMethod} onChange={e=>setPayMethod(e.target.value)}>
+              {SHOWROOM_PAY_METHODS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
+          )}
+        </div>
+
+        <textarea className="form-control" style={{fontSize:12, marginBottom:12}} rows={2} placeholder="ملاحظات (اختياري)" value={notes} onChange={e=>setNotes(e.target.value)}/>
+
+        <button className="btn btn-primary" style={{width:'100%'}} disabled={!canSell || saving || !cart.length} onClick={handleCheckout}>
+          {saving ? '⏳ جاري الحفظ...' : `✅ إتمام البيع — ${numFmt(total)} ${showroom.default_currency}`}
+        </button>
+      </div>
+
+      {showCustomerPicker && <CustomerPickerModal
+        onSelect={(c)=>{ setCustomerId(c.id); setCustomerName(c.name); setCustomerFree(''); setShowCustomerPicker(false); }}
+        onClose={()=>setShowCustomerPicker(false)}
+      />}
+    </div>
+  );
+}
+
+/* ---------- نظرة عامة ---------- */
+function ShowroomOverview({ showroom, user }) {
+  const [stock, setStock] = useState([]);
+  const [cashBalance, setCashBalance] = useState(0);
+  const [receivables, setReceivables] = useState(0);
+  const [recent, setRecent] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      sb.from('showroom_stock_balances').select('catalog_id,qty_balance').eq('showroom_id', showroom.id),
+      sb.from('catalog_items').select('id,name,unit_price'),
+      sb.from('showroom_cash_balance').select('balance').eq('showroom_id', showroom.id).maybeSingle(),
+      sb.from('showroom_sales').select('total,amount_paid').eq('showroom_id', showroom.id).is('deleted_at', null).neq('payment_status','paid'),
+      sb.from('showroom_activity_log').select('*').eq('showroom_id', showroom.id).order('visit_at',{ascending:false}).limit(10),
+    ]).then(([stockR, catR, cashR, recvR, actR]) => {
+      const catMap = Object.fromEntries((catR.data||[]).map(c => [c.id, c]));
+      setStock((stockR.data||[]).filter(r => Number(r.qty_balance) !== 0).map(r => ({...r, item: catMap[r.catalog_id]})));
+      setCashBalance(Number(cashR.data?.balance || 0));
+      setReceivables((recvR.data||[]).reduce((s,r) => s + (Number(r.total) - Number(r.amount_paid)), 0));
+      setRecent(actR.data || []);
+      setLoading(false);
+    });
+  }, [showroom.id]);
+
+  const stockQty = stock.reduce((s,r) => s + Number(r.qty_balance), 0);
+  const stockValue = stock.reduce((s,r) => s + Number(r.qty_balance) * Number(r.item?.unit_price || 0), 0);
+
+  if (loading) return <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>;
+
+  return (
+    <div>
+      <div style={{display:'flex', gap:12, flexWrap:'wrap', marginBottom:24}}>
+        <div style={{background:'#dbeafe', border:'1px solid #1d4ed840', borderRadius:10, padding:'14px 18px', minWidth:150}}>
+          <div style={{fontSize:20, fontWeight:800, color:'#1d4ed8'}}>{numFmt(stockQty,0)}</div>
+          <div style={{fontSize:12, color:'#1d4ed8'}}>كمية المخزون</div>
+        </div>
+        <div style={{background:'#dcfce7', border:'1px solid #16a34a40', borderRadius:10, padding:'14px 18px', minWidth:150}}>
+          <div style={{fontSize:20, fontWeight:800, color:'#16a34a'}}>{numFmt(stockValue)} {showroom.default_currency}</div>
+          <div style={{fontSize:12, color:'#16a34a'}}>قيمة المخزون</div>
+        </div>
+        <div style={{background:'#ccfbf1', border:'1px solid #0d948840', borderRadius:10, padding:'14px 18px', minWidth:150}}>
+          <div style={{fontSize:20, fontWeight:800, color:'#0d9488'}}>{numFmt(cashBalance)} {showroom.default_currency}</div>
+          <div style={{fontSize:12, color:'#0d9488'}}>رصيد الصندوق</div>
+        </div>
+        <div style={{background:'#fee2e2', border:'1px solid #dc262640', borderRadius:10, padding:'14px 18px', minWidth:150}}>
+          <div style={{fontSize:20, fontWeight:800, color:'#dc2626'}}>{numFmt(receivables)} {showroom.default_currency}</div>
+          <div style={{fontSize:12, color:'#dc2626'}}>ذمم مستحقة</div>
+        </div>
+      </div>
+
+      <h3 style={{fontSize:15, fontWeight:700, marginBottom:10}}>آخر النشاطات</h3>
+      {recent.length===0 ? <div style={{color:'var(--gray-400)', fontSize:13}}>لا يوجد نشاطات بعد</div> : (
+        <div className="table-container"><table className="table">
+          <thead><tr><th>الوقت</th><th>النوع</th><th>الزبون</th><th>ملاحظات</th></tr></thead>
+          <tbody>
+            {recent.map(r => (
+              <tr key={r.id}>
+                <td className="text-sm text-muted">{new Date(r.visit_at).toLocaleString('ar')}</td>
+                <td><span className="badge" style={r.activity_type==='sale' ? {background:'#dcfce7',color:'#16a34a'} : {background:'#fef3c7',color:'#d97706'}}>{r.activity_type==='sale' ? 'بيع' : 'استفسار'}</span></td>
+                <td>{r.customer_name || '—'}</td>
+                <td className="text-sm text-muted">{r.notes || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- المخزون ---------- */
+function ShowroomStock({ showroom, user }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [historyFor, setHistoryFor] = useState(null);
+  const [adjusting, setAdjusting] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const canManage = hasPerm(user, 'showrooms_manage');
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([
+      sb.from('showroom_catalog_items').select('catalog_items(id,name,unit,unit_price,category,is_active)').eq('showroom_id', showroom.id),
+      sb.from('showroom_stock_balances').select('catalog_id,qty_balance').eq('showroom_id', showroom.id),
+    ]).then(([itR, balR]) => {
+      const balMap = Object.fromEntries((balR.data||[]).map(b => [b.catalog_id, Number(b.qty_balance)]));
+      const items = (itR.data||[]).map(r=>r.catalog_items).filter(it=>it && it.is_active);
+      setRows(items.map(it => ({...it, qty: balMap[it.id] || 0})));
+      setLoading(false);
+    });
+  };
+  useEffect(() => { load(); }, [showroom.id]);
+
+  const filtered = rows.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div>
+      <div style={{display:'flex', gap:10, marginBottom:14, flexWrap:'wrap'}}>
+        <input className="form-control" style={{maxWidth:280}} placeholder="بحث بالصنف..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        {canManage && <button className="btn btn-ghost" onClick={()=>setAdjusting(true)}>⚖️ تسوية/جرد يدوي</button>}
+        {canManage && <button className="btn btn-ghost" onClick={()=>setAssigning(true)}>📋 إدارة الأصناف المخصصة</button>}
+      </div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>الصنف</th><th>الوحدة</th><th>السعر</th><th>الرصيد بالمعرض</th><th></th></tr></thead>
+        <tbody>
+          {loading ? <tr><td colSpan={5} style={{textAlign:'center', padding:30}}>جاري التحميل...</td></tr> :
+           filtered.length===0 ? <tr><td colSpan={5} style={{textAlign:'center', padding:30, color:'var(--gray-400)'}}>
+             {rows.length===0 ? (canManage ? 'لا يوجد أصناف مخصصة لهذا المعرض بعد — أضفها من "📋 إدارة الأصناف المخصصة" أو من أول عملية شراء/تحويل' : 'لا يوجد أصناف مخصصة لهذا المعرض بعد') : 'لا توجد نتائج'}
+           </td></tr> :
+           filtered.map(r => (
+            <tr key={r.id}>
+              <td style={{fontWeight:600}}>{r.name}</td>
+              <td>{r.unit}</td>
+              <td>{numFmt(r.unit_price)}</td>
+              <td style={{fontWeight:700, color: r.qty>0 ? 'var(--gray-800)' : r.qty<0 ? 'var(--danger)' : 'var(--gray-400)'}}>{numFmt(r.qty,2)}</td>
+              <td><button className="btn btn-ghost btn-sm" onClick={()=>setHistoryFor(r)}>📜 الحركات</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+      {historyFor && <ShowroomStockHistoryModal showroom={showroom} item={historyFor} onClose={()=>setHistoryFor(null)}/>}
+      {adjusting && <ShowroomStockAdjustForm showroom={showroom} items={rows} user={user} onClose={()=>setAdjusting(false)} onSave={()=>{setAdjusting(false); load();}}/>}
+      {assigning && <ShowroomCatalogAssignModal showroom={showroom} balances={Object.fromEntries(rows.map(r=>[r.id,r.qty]))} user={user} onClose={()=>setAssigning(false)} onSave={load}/>}
+    </div>
+  );
+}
+
+function ShowroomCatalogAssignModal({ showroom, balances, user, onClose, onSave }) {
+  const [allItems, setAllItems] = useState([]);
+  const [assignedIds, setAssignedIds] = useState(new Set());
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      sb.from('catalog_items').select('id,name,unit,category').eq('is_active', true).order('name'),
+      sb.from('showroom_catalog_items').select('catalog_id').eq('showroom_id', showroom.id),
+    ]).then(([itR, asR]) => {
+      setAllItems(itR.data || []);
+      setAssignedIds(new Set((asR.data||[]).map(r => r.catalog_id)));
+      setLoading(false);
+    });
+  }, [showroom.id]);
+
+  const toggle = async (catalogId) => {
+    const isAssigned = assignedIds.has(catalogId);
+    if (isAssigned) {
+      const bal = balances[catalogId] || 0;
+      if (bal !== 0) { toast('ما تقدر تشيل صنف عنده رصيد بالمعرض — صفّر الرصيد أولاً', 'error'); return; }
+      const { error } = await sb.from('showroom_catalog_items').delete().eq('showroom_id', showroom.id).eq('catalog_id', catalogId);
+      if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+      setAssignedIds(s => { const n = new Set(s); n.delete(catalogId); return n; });
+    } else {
+      const { error } = await sb.from('showroom_catalog_items').insert({ showroom_id: showroom.id, catalog_id: catalogId, created_by: user.id });
+      if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+      setAssignedIds(s => new Set(s).add(catalogId));
+    }
+  };
+
+  const filtered = allItems.filter(it => !search || it.name.toLowerCase().includes(search.toLowerCase()));
+  const exactMatch = search.trim() && allItems.some(it => it.name.trim().toLowerCase() === search.trim().toLowerCase());
+
+  const createAndAssign = async () => {
+    const name = search.trim();
+    if (!name) return;
+    const { data: newCat, error } = await sb.from('catalog_items').insert({ name, unit:'EACH', created_by: user.id }).select().single();
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    setAllItems(a => [...a, newCat].sort((x,y)=>x.name.localeCompare(y.name)));
+    const { error: asErr } = await sb.from('showroom_catalog_items').insert({ showroom_id: showroom.id, catalog_id: newCat.id, created_by: user.id });
+    if (asErr) { toast('خطأ: ' + asErr.message, 'error'); return; }
+    setAssignedIds(s => new Set(s).add(newCat.id));
+    toast('تمت إضافة الصنف وتخصيصه ✓', 'success');
+    setSearch('');
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:500, maxHeight:'85vh', display:'flex', flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">📋 الأصناف المخصصة — {showroom.name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:'12px 16px', borderBottom:'1px solid var(--gray-200)'}}>
+          <input className="form-control" placeholder="بحث، أو اكتب اسم صنف جديد..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          {search.trim() && !exactMatch && (
+            <button type="button" className="btn btn-primary btn-sm" style={{marginTop:8, width:'100%'}} onClick={createAndAssign}>
+              ➕ إضافة "{search.trim()}" كصنف جديد وتخصيصه لهذا المعرض
+            </button>
+          )}
+        </div>
+        <div style={{overflowY:'auto', flex:1, padding:'8px 16px'}}>
+          {loading ? <div style={{textAlign:'center', padding:20}}>جاري التحميل...</div> : filtered.length===0 ? (
+            <div style={{textAlign:'center', padding:20, color:'var(--gray-400)'}}>لا توجد نتائج</div>
+          ) : filtered.map(it => (
+            <label key={it.id} style={{display:'flex', alignItems:'center', gap:10, padding:'7px 2px', cursor:'pointer', borderBottom:'1px solid var(--gray-100)', fontSize:13}}>
+              <input type="checkbox" checked={assignedIds.has(it.id)} onChange={()=>toggle(it.id)}/>
+              <span style={{flex:1}}>{it.name}</span>
+              {balances[it.id] ? <span style={{fontSize:11, color:'var(--gray-500)'}}>رصيد: {numFmt(balances[it.id],2)}</span> : null}
+            </label>
+          ))}
+        </div>
+        <div className="modal-footer"><button className="btn btn-primary" onClick={()=>{onSave(); onClose();}}>تم</button></div>
+      </div>
+    </div>
+  );
+}
+
+function ShowroomStockHistoryModal({ showroom, item, onClose }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    sb.from('showroom_stock_movements').select('*').eq('showroom_id', showroom.id).eq('catalog_id', item.id).order('created_at', {ascending:false})
+      .then(({data}) => { setRows(data||[]); setLoading(false); });
+  }, [showroom.id, item.id]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:560, maxHeight:'80vh', overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">📜 حركات "{item.name}" — {showroom.name}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:16}}>
+          {loading ? <div style={{textAlign:'center', padding:20}}>جاري التحميل...</div> : rows.length===0 ? (
+            <div style={{color:'var(--gray-400)', fontSize:13, textAlign:'center', padding:20}}>لا توجد حركات بعد</div>
+          ) : (
+            <table style={{width:'100%', fontSize:13, borderCollapse:'collapse'}}>
+              <thead><tr style={{borderBottom:'1px solid var(--gray-200)'}}>
+                <th style={{textAlign:'right', padding:'6px 4px'}}>التاريخ</th>
+                <th style={{padding:'6px 4px'}}>النوع</th>
+                <th style={{padding:'6px 4px'}}>الكمية</th>
+              </tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} style={{borderTop:'1px solid var(--gray-100)'}}>
+                    <td style={{padding:'6px 4px'}}>{new Date(r.created_at).toLocaleString('ar')}</td>
+                    <td style={{textAlign:'center', padding:'6px 4px'}}>{SHOWROOM_MOVEMENT_LABELS[r.movement_type] || r.movement_type}</td>
+                    <td style={{textAlign:'center', padding:'6px 4px', fontWeight:700, color: r.qty>0 ? '#16a34a' : '#dc2626'}}>{r.qty>0?'+':''}{numFmt(r.qty,2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShowroomStockAdjustForm({ showroom, items, user, onClose, onSave }) {
+  const [catalogId, setCatalogId] = useState('');
+  const [newQty, setNewQty] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const current = items.find(i => i.id === catalogId)?.qty ?? 0;
+  const delta = newQty==='' ? 0 : Number(newQty) - current;
+
+  const handleSave = async () => {
+    if (!catalogId) { toast('اختر صنفاً', 'error'); return; }
+    if (newQty==='' || isNaN(Number(newQty))) { toast('أدخل الرصيد الفعلي الجديد', 'error'); return; }
+    if (delta === 0) { toast('لا يوجد فرق بالرصيد', 'error'); return; }
+    setSaving(true);
+    const { error } = await sb.from('showroom_stock_movements').insert({
+      showroom_id: showroom.id, catalog_id: catalogId, movement_type:'adjust', qty: delta,
+      ref_type:'manual_adjust', notes: notes.trim() || null, created_by: user.id,
+    });
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم تحديث الرصيد ✓', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>⚖️ تسوية/جرد يدوي</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">الصنف</label>
+            <select className="form-control" value={catalogId} onChange={e=>setCatalogId(e.target.value)}>
+              <option value="">اختر صنف...</option>
+              {items.map(i => <option key={i.id} value={i.id}>{i.name} (الحالي: {numFmt(i.qty,2)})</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">الرصيد الفعلي الجديد</label>
+            <input type="number" step="any" className="form-control" value={newQty} onChange={e=>setNewQty(e.target.value)}/>
+            {catalogId && newQty!=='' && <div style={{fontSize:12, color: delta>=0?'#16a34a':'#dc2626', marginTop:4}}>الفرق: {delta>0?'+':''}{numFmt(delta,2)}</div>}
+          </div>
+          <div className="form-group">
+            <label className="form-label">سبب التسوية</label>
+            <textarea className="form-control" rows={2} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="مثال: جرد فعلي، تلف، فرق عد..."/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جاري الحفظ...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- المبيعات ---------- */
+function ShowroomSales({ showroom, user }) {
+  const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [detailFor, setDetailFor] = useState(null);
+  const canManage = hasPerm(user, 'showrooms_manage');
+
+  const load = () => {
+    setLoading(true);
+    sb.from('showroom_sales').select('*').eq('showroom_id', showroom.id).is('deleted_at', null).order('created_at', {ascending:false})
+      .then(({data}) => { setSales(data||[]); setLoading(false); });
+  };
+  useEffect(() => { load(); }, [showroom.id]);
+
+  return (
+    <div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>الرقم</th><th>التاريخ</th><th>الزبون</th><th>الإجمالي</th><th>المدفوع</th><th>الحالة</th><th></th></tr></thead>
+        <tbody>
+          {loading ? <tr><td colSpan={7} style={{textAlign:'center', padding:30}}>جاري التحميل...</td></tr> :
+           sales.length===0 ? <tr><td colSpan={7} style={{textAlign:'center', padding:30, color:'var(--gray-400)'}}>لا توجد مبيعات</td></tr> :
+           sales.map(s => {
+            const b = SHOWROOM_SALE_STATUS[s.payment_status] || SHOWROOM_SALE_STATUS.unpaid;
+            return (
+              <tr key={s.id}>
+                <td className="font-bold" style={{color:'var(--primary)'}}>{s.number}</td>
+                <td>{s.sale_date}</td>
+                <td>{s.customer_name_free || '—'}</td>
+                <td className="font-bold">{numFmt(s.total)} {s.currency}</td>
+                <td>{numFmt(s.amount_paid)} {s.currency}</td>
+                <td><span className="badge" style={{background:b.bg, color:b.color}}>{b.label}</span></td>
+                <td><button className="btn btn-ghost btn-sm" onClick={()=>setDetailFor(s)}>👁 تفاصيل</button></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table></div>
+      {detailFor && <ShowroomSaleDetail sale={detailFor} user={user} canManage={canManage} onClose={()=>setDetailFor(null)} onChanged={load}/>}
+    </div>
+  );
+}
+
+function ShowroomSaleDetail({ sale, user, canManage, onClose, onChanged }) {
+  const [items, setItems] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [collecting, setCollecting] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState('cash');
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([
+      sb.from('showroom_sale_items').select('*').eq('sale_id', sale.id).order('sort_order'),
+      sb.from('showroom_sale_payments').select('*').eq('sale_id', sale.id).order('created_at'),
+    ]).then(([i,p]) => { setItems(i.data||[]); setPayments(p.data||[]); setLoading(false); });
+  };
+  useEffect(() => { load(); }, [sale.id]);
+
+  const remaining = Number(sale.total) - Number(sale.amount_paid);
+
+  const collect = async () => {
+    const amt = Number(amount);
+    if (!amt || amt<=0) { toast('أدخل مبلغاً صحيحاً', 'error'); return; }
+    const { error } = await sb.from('showroom_sale_payments').insert({ sale_id: sale.id, showroom_id: sale.showroom_id, amount: amt, method, created_by: user.id });
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم تسجيل التحصيل ✓', 'success');
+    setCollecting(false); setAmount(''); load(); onChanged();
+  };
+
+  const cancelSale = async () => {
+    if (!reason.trim()) { toast('اكتب سبب الإلغاء', 'error'); return; }
+    try {
+      for (const it of items) {
+        const { error: mErr } = await sb.from('showroom_stock_movements').insert({
+          showroom_id: sale.showroom_id, catalog_id: it.catalog_id, movement_type:'adjust',
+          qty: it.qty, ref_type:'sale_void', ref_id: sale.id, notes:'إلغاء بيع ' + sale.number, created_by: user.id,
+        });
+        if (mErr) throw mErr;
+      }
+      const { error } = await sb.from('showroom_sales').update({
+        deleted_at: new Date().toISOString(), deleted_by: user.id, delete_reason: reason.trim(),
+      }).eq('id', sale.id);
+      if (error) throw error;
+      toast('تم إلغاء البيع وإرجاع المخزون ✓', 'success');
+      onChanged(); onClose();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:600, maxHeight:'85vh', overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <span className="modal-title">🧾 {sale.number}</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:18}}>
+          {loading ? <div style={{textAlign:'center', padding:20}}>جاري التحميل...</div> : <>
+            <div style={{display:'flex', gap:16, fontSize:13, marginBottom:14, flexWrap:'wrap'}}>
+              <div><strong>التاريخ:</strong> {sale.sale_date}</div>
+              <div><strong>الزبون:</strong> {sale.customer_name_free || '—'}</div>
+            </div>
+            <table style={{width:'100%', fontSize:13, borderCollapse:'collapse', marginBottom:16}}>
+              <thead><tr style={{borderBottom:'1px solid var(--gray-200)'}}>
+                <th style={{textAlign:'right', padding:'5px'}}>الصنف</th><th style={{padding:'5px'}}>الكمية</th><th style={{padding:'5px'}}>السعر</th><th style={{padding:'5px'}}>الإجمالي</th>
+              </tr></thead>
+              <tbody>
+                {items.map(it => (
+                  <tr key={it.id} style={{borderTop:'1px solid var(--gray-100)'}}>
+                    <td style={{padding:'5px'}}>{it.item_name}</td>
+                    <td style={{textAlign:'center', padding:'5px'}}>{numFmt(it.qty,2)}</td>
+                    <td style={{textAlign:'center', padding:'5px'}}>{numFmt(it.unit_price)}</td>
+                    <td style={{textAlign:'center', padding:'5px', fontWeight:700}}>{numFmt(it.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{background:'var(--gray-50)', borderRadius:8, padding:'10px 14px', fontSize:13, marginBottom:16}}>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>الإجمالي</span><strong>{numFmt(sale.total)} {sale.currency}</strong></div>
+              <div style={{display:'flex', justifyContent:'space-between'}}><span>المدفوع</span><strong style={{color:'#16a34a'}}>{numFmt(sale.amount_paid)} {sale.currency}</strong></div>
+              {remaining>0 && <div style={{display:'flex', justifyContent:'space-between'}}><span>المتبقي</span><strong style={{color:'#dc2626'}}>{numFmt(remaining)} {sale.currency}</strong></div>}
+            </div>
+
+            {payments.length>0 && (
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:13, fontWeight:700, marginBottom:6}}>التحصيلات</div>
+                {payments.map(p => (
+                  <div key={p.id} style={{display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--gray-600)', padding:'4px 0'}}>
+                    <span>{p.payment_date} — {SHOWROOM_PAY_METHODS.find(m=>m.key===p.method)?.label || p.method}</span>
+                    <span style={{fontWeight:700}}>{numFmt(p.amount)} {sale.currency}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {remaining>0 && (collecting ? (
+              <div style={{display:'flex', gap:8, alignItems:'center', marginBottom:14, flexWrap:'wrap'}}>
+                <input type="number" className="form-control" style={{maxWidth:140}} placeholder="المبلغ" value={amount} onChange={e=>setAmount(e.target.value)}/>
+                <select className="form-control" style={{maxWidth:140}} value={method} onChange={e=>setMethod(e.target.value)}>
+                  {SHOWROOM_PAY_METHODS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </select>
+                <button className="btn btn-primary btn-sm" onClick={collect}>حفظ</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setCollecting(false)}>إلغاء</button>
+              </div>
+            ) : (
+              <button className="btn btn-primary btn-sm" style={{marginBottom:14}} onClick={()=>setCollecting(true)}>💰 تسجيل تحصيل</button>
+            ))}
+
+            {canManage && (cancelling ? (
+              <div style={{borderTop:'1px solid var(--gray-200)', paddingTop:14}}>
+                <textarea className="form-control" rows={2} placeholder="سبب الإلغاء *" value={reason} onChange={e=>setReason(e.target.value)}/>
+                <div style={{display:'flex', gap:8, marginTop:8}}>
+                  <button className="btn btn-danger btn-sm" onClick={cancelSale}>تأكيد الإلغاء وإرجاع المخزون</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>setCancelling(false)}>تراجع</button>
+                </div>
+              </div>
+            ) : (
+              <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)', borderTop:'1px solid var(--gray-200)', paddingTop:14, width:'100%'}} onClick={()=>setCancelling(true)}>🗑️ إلغاء البيع</button>
+            ))}
+          </>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- المشتريات ---------- */
+function ShowroomPurchases({ showroom, user }) {
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const canCreate = hasPerm(user, 'showrooms_purchase');
+
+  const load = () => {
+    setLoading(true);
+    sb.from('showroom_purchases').select('*').eq('showroom_id', showroom.id).is('deleted_at', null).order('created_at', {ascending:false})
+      .then(({data}) => { setPurchases(data||[]); setLoading(false); });
+  };
+  useEffect(() => { load(); }, [showroom.id]);
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}>{canCreate && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ شراء جديد</button>}</div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>الرقم</th><th>التاريخ</th><th>المورد</th><th>الإجمالي</th><th>المدفوع</th></tr></thead>
+        <tbody>
+          {loading ? <tr><td colSpan={5} style={{textAlign:'center', padding:30}}>جاري التحميل...</td></tr> :
+           purchases.length===0 ? <tr><td colSpan={5} style={{textAlign:'center', padding:30, color:'var(--gray-400)'}}>لا توجد مشتريات</td></tr> :
+           purchases.map(p => (
+            <tr key={p.id}>
+              <td className="font-bold" style={{color:'var(--primary)'}}>{p.number}</td>
+              <td>{p.purchase_date}</td>
+              <td>{p.supplier_name || '—'}</td>
+              <td className="font-bold">{numFmt(p.total)} {p.currency}</td>
+              <td>{numFmt(p.paid_amount)} {p.currency}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+      {showForm && <ShowroomPurchaseForm showroom={showroom} user={user} onClose={()=>setShowForm(false)} onSave={()=>{setShowForm(false); load();}}/>}
+    </div>
+  );
+}
+
+function ShowroomPurchaseForm({ showroom, user, onClose, onSave }) {
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierName, setSupplierName] = useState('');
+  const [date, setDate] = useState(today());
+  const [paidAmount, setPaidAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [rows, setRows] = useState([{ catalog_id:null, item_name:'', unit:'', qty:'', unit_cost:'' }]);
+  const [catalogPickerIdx, setCatalogPickerIdx] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { sb.from('suppliers').select('id,name').eq('is_active', true).order('name').then(({data}) => setSuppliers(data||[])); }, []);
+
+  const updRow = (i, patch) => setRows(r => r.map((x,idx) => idx===i ? {...x, ...patch} : x));
+  const addRow = () => setRows(r => [...r, { catalog_id:null, item_name:'', unit:'', qty:'', unit_cost:'' }]);
+  const removeRow = (i) => setRows(r => r.filter((_,idx) => idx!==i));
+  const applyCatalog = (i, cat) => { updRow(i, { catalog_id: cat.id, item_name: cat.name, unit: cat.unit, unit_cost: cat.unit_price || '' }); setCatalogPickerIdx(null); };
+
+  const subtotal = rows.reduce((s,r) => s + (Number(r.qty)||0) * (Number(r.unit_cost)||0), 0);
+
+  const handleSave = async () => {
+    const valid = rows.filter(r => r.item_name.trim() && Number(r.qty) > 0);
+    if (!valid.length) { toast('أضف صنف واحد على الأقل بكمية صحيحة', 'error'); return; }
+    setSaving(true);
+    try {
+      // أي صف مكتوب بنص حر بدون ربط بالكتالوج: نحاول نربطه بصنف موجود بنفس الاسم،
+      // وإلا ننشئ صنف كتالوج جديد تلقائياً (نفس نمط POForm — ما تحتاج تدخل الكتالوج أولاً)
+      const unresolved = valid.filter(r => !r.catalog_id);
+      if (unresolved.length) {
+        const { data: existingCat } = await sb.from('catalog_items').select('id,name,unit,unit_price');
+        const nameMap = {};
+        (existingCat||[]).forEach(c => { nameMap[c.name.trim().toLowerCase()] = c; });
+        for (const r of unresolved) {
+          const key = r.item_name.trim().toLowerCase();
+          if (nameMap[key]) { r.catalog_id = nameMap[key].id; if (!r.unit) r.unit = nameMap[key].unit; continue; }
+          const { data: newCat, error: ce } = await sb.from('catalog_items').insert({
+            name: r.item_name.trim(), unit: r.unit || 'EACH', unit_price: Number(r.unit_cost) || 0, created_by: user.id,
+          }).select().single();
+          if (ce) throw ce;
+          r.catalog_id = newCat.id;
+          nameMap[key] = newCat;
+        }
+      }
+
+      const { data: purchase, error } = await sb.from('showroom_purchases').insert({
+        showroom_id: showroom.id,
+        supplier_id: supplierId || null,
+        supplier_name: supplierId ? (suppliers.find(s=>s.id===supplierId)?.name) : (supplierName.trim() || null),
+        purchase_date: date, currency: showroom.default_currency || 'JOD',
+        subtotal, total: subtotal, paid_amount: Number(paidAmount) || 0,
+        notes: notes.trim() || null, created_by: user.id,
+      }).select().single();
+      if (error) throw error;
+      const itemRows = valid.map((r,i) => ({
+        purchase_id: purchase.id, catalog_id: r.catalog_id, item_name: r.item_name.trim(), unit: r.unit || 'EACH',
+        qty: Number(r.qty), unit_cost: Number(r.unit_cost)||0, total: Number(r.qty)*(Number(r.unit_cost)||0), sort_order: i,
+      }));
+      const { error: itErr } = await sb.from('showroom_purchase_items').insert(itemRows);
+      if (itErr) throw itErr;
+      toast('تم تسجيل الشراء ✓ ' + purchase.number, 'success');
+      onSave();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:680, maxHeight:'85vh', overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>🛍️ شراء جديد — {showroom.name}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group">
+              <label className="form-label">المورد</label>
+              <select className="form-control" value={supplierId} onChange={e=>{setSupplierId(e.target.value); setSupplierName('');}}>
+                <option value="">بدون / اسم حر أدناه</option>
+                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              {!supplierId && <input className="form-control" style={{marginTop:6}} placeholder="أو اسم مورد حر" value={supplierName} onChange={e=>setSupplierName(e.target.value)}/>}
+            </div>
+            <div className="form-group">
+              <label className="form-label">التاريخ</label>
+              <input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)}/>
+            </div>
+          </div>
+
+          <div style={{marginTop:10}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+              <label className="form-label" style={{margin:0}}>الأصناف</label>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>➕ إضافة صف</button>
+            </div>
+            <div style={{fontSize:11, color:'var(--gray-400)', marginBottom:6}}>اختر من الكتالوج 🗂️ أو اكتب اسم صنف جديد — رح يُضاف للكتالوج تلقائياً لو مش موجود</div>
+            {rows.map((r,i) => (
+              <div key={i} style={{display:'flex', gap:6, alignItems:'center', marginBottom:6, flexWrap:'wrap'}}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setCatalogPickerIdx(i)} title="اختر من الكتالوج">🗂️</button>
+                <input placeholder="اسم الصنف" value={r.item_name} onChange={e=>updRow(i,{item_name:e.target.value, catalog_id:null})}
+                  style={{flex:2, minWidth:120, fontSize:12, padding:'5px 6px', border:'1px solid var(--gray-200)', borderRadius:5}}/>
+                {r.item_name.trim() && !r.catalog_id && <span style={{fontSize:10, color:'#d97706', whiteSpace:'nowrap'}}>صنف جديد</span>}
+                <input type="number" step="any" placeholder="الكمية" value={r.qty} onChange={e=>updRow(i,{qty:e.target.value})} style={{flex:1, minWidth:70, fontSize:12, padding:'5px 6px', border:'1px solid var(--gray-200)', borderRadius:5}}/>
+                <input type="number" step="any" placeholder="تكلفة الوحدة" value={r.unit_cost} onChange={e=>updRow(i,{unit_cost:e.target.value})} style={{flex:1, minWidth:80, fontSize:12, padding:'5px 6px', border:'1px solid var(--gray-200)', borderRadius:5}}/>
+                <button type="button" onClick={()=>removeRow(i)} style={{background:'none', border:'none', color:'var(--danger)', cursor:'pointer'}}>✕</button>
+              </div>
+            ))}
+            <div style={{textAlign:'left', fontSize:13, fontWeight:700, marginTop:8}}>الإجمالي: {numFmt(subtotal)} {showroom.default_currency}</div>
+          </div>
+
+          <div className="form-group" style={{marginTop:10}}>
+            <label className="form-label">المبلغ المدفوع كاش الآن (اختياري)</label>
+            <input type="number" className="form-control" value={paidAmount} onChange={e=>setPaidAmount(e.target.value)} placeholder="اتركه فارغاً لو شراء بالدين"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جاري الحفظ...':'حفظ'}</button>
+        </div>
+      </div>
+      {catalogPickerIdx!==null && <CatalogPicker onSelect={cat=>applyCatalog(catalogPickerIdx, cat)} onClose={()=>setCatalogPickerIdx(null)}/>}
+    </div>
+  );
+}
+
+/* ---------- التحويلات ---------- */
+function ShowroomTransfers({ showrooms, showroom, user }) {
+  const [transfers, setTransfers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const canCreate = hasPerm(user, 'showrooms_purchase');
+
+  const load = () => {
+    setLoading(true);
+    sb.from('showroom_stock_transfers').select('*').or(`from_showroom_id.eq.${showroom.id},to_showroom_id.eq.${showroom.id}`).order('created_at', {ascending:false})
+      .then(({data}) => { setTransfers(data||[]); setLoading(false); });
+  };
+  useEffect(() => { load(); }, [showroom.id]);
+
+  const roomName = (id) => id ? (showrooms.find(s=>s.id===id)?.name || '—') : 'المستودع الرئيسي';
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}>{canCreate && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ تحويل جديد</button>}</div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>الرقم</th><th>التاريخ</th><th>من</th><th>إلى</th></tr></thead>
+        <tbody>
+          {loading ? <tr><td colSpan={4} style={{textAlign:'center', padding:30}}>جاري التحميل...</td></tr> :
+           transfers.length===0 ? <tr><td colSpan={4} style={{textAlign:'center', padding:30, color:'var(--gray-400)'}}>لا توجد تحويلات</td></tr> :
+           transfers.map(t => (
+            <tr key={t.id}>
+              <td className="font-bold" style={{color:'var(--primary)'}}>{t.number}</td>
+              <td>{t.transfer_date}</td>
+              <td>{roomName(t.from_showroom_id)}</td>
+              <td>{roomName(t.to_showroom_id)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+      {showForm && <ShowroomTransferForm showrooms={showrooms} currentShowroom={showroom} user={user} onClose={()=>setShowForm(false)} onSave={()=>{setShowForm(false); load();}}/>}
+    </div>
+  );
+}
+
+function ShowroomTransferForm({ showrooms, currentShowroom, user, onClose, onSave }) {
+  const [direction, setDirection] = useState('in');
+  const [otherShowroomId, setOtherShowroomId] = useState('');
+  const [rows, setRows] = useState([{ catalog_id:null, item_name:'', unit:'', qty:'' }]);
+  const [notes, setNotes] = useState('');
+  const [catalogPickerIdx, setCatalogPickerIdx] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const otherRooms = showrooms.filter(s => s.id !== currentShowroom.id);
+
+  const updRow = (i, patch) => setRows(r => r.map((x,idx) => idx===i ? {...x, ...patch} : x));
+  const addRow = () => setRows(r => [...r, { catalog_id:null, item_name:'', unit:'', qty:'' }]);
+  const removeRow = (i) => setRows(r => r.filter((_,idx) => idx!==i));
+  const applyCatalog = (i, cat) => { updRow(i, { catalog_id: cat.id, item_name: cat.name, unit: cat.unit }); setCatalogPickerIdx(null); };
+
+  const handleSave = async () => {
+    const valid = rows.filter(r => r.item_name.trim() && Number(r.qty) > 0);
+    if (!valid.length) { toast('أضف صنف بكمية صحيحة', 'error'); return; }
+    const from_showroom_id = direction==='in' ? (otherShowroomId || null) : currentShowroom.id;
+    const to_showroom_id   = direction==='in' ? currentShowroom.id : (otherShowroomId || null);
+    setSaving(true);
+    try {
+      const unresolved = valid.filter(r => !r.catalog_id);
+      if (unresolved.length) {
+        const { data: existingCat } = await sb.from('catalog_items').select('id,name,unit,unit_price');
+        const nameMap = {};
+        (existingCat||[]).forEach(c => { nameMap[c.name.trim().toLowerCase()] = c; });
+        for (const r of unresolved) {
+          const key = r.item_name.trim().toLowerCase();
+          if (nameMap[key]) { r.catalog_id = nameMap[key].id; continue; }
+          const { data: newCat, error: ce } = await sb.from('catalog_items').insert({
+            name: r.item_name.trim(), unit: r.unit || 'EACH', created_by: user.id,
+          }).select().single();
+          if (ce) throw ce;
+          r.catalog_id = newCat.id;
+          nameMap[key] = newCat;
+        }
+      }
+      const { data, error } = await sb.rpc('create_showroom_transfer', {
+        p_from_showroom_id: from_showroom_id, p_to_showroom_id: to_showroom_id,
+        p_items: valid.map(r => ({ catalog_id: r.catalog_id, qty: Number(r.qty) })),
+        p_notes: notes.trim() || null,
+      });
+      if (error) throw error;
+      toast('تم التحويل ✓ ' + data.number, 'success');
+      onSave();
+    } catch(e) { toast('خطأ: ' + e.message, 'error'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:600, maxHeight:'85vh', overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>🔁 تحويل جديد — {currentShowroom.name}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div style={{display:'flex', gap:8, marginBottom:12}}>
+            <button type="button" onClick={()=>setDirection('in')} style={{flex:1, padding:'8px', borderRadius:7, border:'1px solid var(--gray-300)', cursor:'pointer', background: direction==='in' ? 'var(--primary)' : '#fff', color: direction==='in' ? '#fff' : 'var(--gray-600)', fontWeight:700}}>⬇️ وارد لهذا المعرض</button>
+            <button type="button" onClick={()=>setDirection('out')} style={{flex:1, padding:'8px', borderRadius:7, border:'1px solid var(--gray-300)', cursor:'pointer', background: direction==='out' ? 'var(--primary)' : '#fff', color: direction==='out' ? '#fff' : 'var(--gray-600)', fontWeight:700}}>⬆️ صادر من هذا المعرض</button>
+          </div>
+          <div className="form-group">
+            <label className="form-label">{direction==='in' ? 'من' : 'إلى'}</label>
+            <select className="form-control" value={otherShowroomId} onChange={e=>setOtherShowroomId(e.target.value)}>
+              <option value="">المستودع الرئيسي</option>
+              {otherRooms.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+
+          <div style={{marginTop:10}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+              <label className="form-label" style={{margin:0}}>الأصناف</label>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addRow}>➕ إضافة صف</button>
+            </div>
+            <div style={{fontSize:11, color:'var(--gray-400)', marginBottom:6}}>اختر من الكتالوج 🗂️ أو اكتب اسم صنف جديد — رح يُضاف للكتالوج تلقائياً لو مش موجود</div>
+            {rows.map((r,i) => (
+              <div key={i} style={{display:'flex', gap:6, alignItems:'center', marginBottom:6, flexWrap:'wrap'}}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={()=>setCatalogPickerIdx(i)} title="اختر من الكتالوج">🗂️</button>
+                <input placeholder="اسم الصنف" value={r.item_name} onChange={e=>updRow(i,{item_name:e.target.value, catalog_id:null})}
+                  style={{flex:2, minWidth:120, fontSize:12, padding:'5px 6px', border:'1px solid var(--gray-200)', borderRadius:5}}/>
+                {r.item_name.trim() && !r.catalog_id && <span style={{fontSize:10, color:'#d97706', whiteSpace:'nowrap'}}>صنف جديد</span>}
+                <input type="number" step="any" placeholder="الكمية" value={r.qty} onChange={e=>updRow(i,{qty:e.target.value})} style={{flex:1, minWidth:70, fontSize:12, padding:'5px 6px', border:'1px solid var(--gray-200)', borderRadius:5}}/>
+                <button type="button" onClick={()=>removeRow(i)} style={{background:'none', border:'none', color:'var(--danger)', cursor:'pointer'}}>✕</button>
+              </div>
+            ))}
+          </div>
+
+          <div className="form-group" style={{marginTop:10}}>
+            <label className="form-label">ملاحظات</label>
+            <textarea className="form-control" rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جاري الحفظ...':'تحويل'}</button>
+        </div>
+      </div>
+      {catalogPickerIdx!==null && <CatalogPicker onSelect={cat=>applyCatalog(catalogPickerIdx, cat)} onClose={()=>setCatalogPickerIdx(null)}/>}
+    </div>
+  );
+}
+
+/* ---------- دفتر المعرض ---------- */
+function ShowroomActivity({ showroom, user }) {
+  const [rows, setRows] = useState([]);
+  const [profiles, setProfiles] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const canLog = hasPerm(user, 'showrooms_sell');
+
+  const load = () => {
+    setLoading(true);
+    sb.from('showroom_activity_log').select('*').eq('showroom_id', showroom.id).order('visit_at', {ascending:false}).limit(200)
+      .then(({data}) => { setRows(data||[]); setLoading(false); });
+  };
+  useEffect(() => {
+    load();
+    sb.from('profiles').select('id,full_name').then(({data}) => {
+      setProfiles(Object.fromEntries((data||[]).map(p => [p.id, p.full_name])));
+    });
+  }, [showroom.id]);
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}>{canLog && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ تسجيل زيارة/استفسار</button>}</div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>الوقت</th><th>النوع</th><th>الزبون</th><th>الأصناف</th><th>ملاحظات</th><th>الموظف</th></tr></thead>
+        <tbody>
+          {loading ? <tr><td colSpan={6} style={{textAlign:'center', padding:30}}>جاري التحميل...</td></tr> :
+           rows.length===0 ? <tr><td colSpan={6} style={{textAlign:'center', padding:30, color:'var(--gray-400)'}}>لا يوجد نشاطات</td></tr> :
+           rows.map(r => (
+            <tr key={r.id}>
+              <td className="text-sm text-muted">{new Date(r.visit_at).toLocaleString('ar')}</td>
+              <td><span className="badge" style={r.activity_type==='sale' ? {background:'#dcfce7',color:'#16a34a'} : {background:'#fef3c7',color:'#d97706'}}>{r.activity_type==='sale' ? 'بيع' : 'استفسار'}</span></td>
+              <td>{r.customer_name || '—'}</td>
+              <td className="text-sm">{r.items_interest || '—'}</td>
+              <td className="text-sm text-muted">{r.notes || '—'}</td>
+              <td className="text-sm text-muted">{profiles[r.employee_id] || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+      {showForm && <ShowroomActivityForm showroom={showroom} user={user} onClose={()=>setShowForm(false)} onSave={()=>{setShowForm(false); load();}}/>}
+    </div>
+  );
+}
+
+function ShowroomActivityForm({ showroom, user, onClose, onSave }) {
+  const [activityType, setActivityType] = useState('inquiry');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [itemsInterest, setItemsInterest] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await sb.from('showroom_activity_log').insert({
+      showroom_id: showroom.id, activity_type: activityType,
+      customer_name: customerName.trim() || null, customer_phone: customerPhone.trim() || null,
+      items_interest: itemsInterest.trim() || null, notes: notes.trim() || null,
+      employee_id: user.id, created_by: user.id,
+    });
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم التسجيل ✓', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:480}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>📒 تسجيل زيارة</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">النوع</label>
+            <div style={{display:'flex', gap:8}}>
+              <button type="button" onClick={()=>setActivityType('inquiry')} style={{flex:1, padding:'8px', borderRadius:7, border:'1px solid var(--gray-300)', cursor:'pointer', background: activityType==='inquiry' ? '#d97706' : '#fff', color: activityType==='inquiry' ? '#fff' : 'var(--gray-600)', fontWeight:700}}>استفسار</button>
+              <button type="button" onClick={()=>setActivityType('sale')} style={{flex:1, padding:'8px', borderRadius:7, border:'1px solid var(--gray-300)', cursor:'pointer', background: activityType==='sale' ? '#16a34a' : '#fff', color: activityType==='sale' ? '#fff' : 'var(--gray-600)', fontWeight:700}}>بيع (سجّل من نقطة البيع)</button>
+            </div>
+          </div>
+          <div className="form-grid-2">
+            <div className="form-group"><label className="form-label">اسم الزبون</label><input className="form-control" value={customerName} onChange={e=>setCustomerName(e.target.value)}/></div>
+            <div className="form-group"><label className="form-label">رقم الهاتف</label><input className="form-control" value={customerPhone} onChange={e=>setCustomerPhone(e.target.value)}/></div>
+          </div>
+          <div className="form-group"><label className="form-label">الأصناف اللي استفسر عنها</label><input className="form-control" value={itemsInterest} onChange={e=>setItemsInterest(e.target.value)}/></div>
+          <div className="form-group"><label className="form-label">ملاحظات</label><textarea className="form-control" rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جاري الحفظ...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- الصندوق ---------- */
+function ShowroomCash({ showroom, user }) {
+  const [rows, setRows] = useState([]);
+  const [balance, setBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const canCash = hasPerm(user, 'showrooms_cash');
+  const canManage = hasPerm(user, 'showrooms_manage');
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([
+      sb.from('showroom_cash_entries').select('*').eq('showroom_id', showroom.id).order('created_at', {ascending:false}).limit(200),
+      sb.from('showroom_cash_balance').select('balance').eq('showroom_id', showroom.id).maybeSingle(),
+    ]).then(([r,b]) => { setRows(r.data||[]); setBalance(Number(b.data?.balance||0)); setLoading(false); });
+  };
+  useEffect(() => { load(); }, [showroom.id]);
+
+  const del = async (id) => {
+    if (!confirm('حذف هذا القيد؟')) return;
+    const { error } = await sb.from('showroom_cash_entries').delete().eq('id', id);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحذف', 'success'); load();
+  };
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:8}}>
+        <div style={{fontSize:16, fontWeight:800}}>رصيد الصندوق: <span style={{color:'#0d9488'}}>{numFmt(balance)} {showroom.default_currency}</span></div>
+        {canCash && <button className="btn btn-primary" onClick={()=>setShowForm(true)}>+ قيد يدوي</button>}
+      </div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>التاريخ</th><th>الاتجاه</th><th>المبلغ</th><th>البيان</th><th>ملاحظات</th><th></th></tr></thead>
+        <tbody>
+          {loading ? <tr><td colSpan={6} style={{textAlign:'center', padding:30}}>جاري التحميل...</td></tr> :
+           rows.length===0 ? <tr><td colSpan={6} style={{textAlign:'center', padding:30, color:'var(--gray-400)'}}>لا يوجد قيود</td></tr> :
+           rows.map(r => (
+            <tr key={r.id}>
+              <td>{r.entry_date}</td>
+              <td><span className="badge" style={r.direction==='in' ? {background:'#dcfce7',color:'#16a34a'} : {background:'#fee2e2',color:'#dc2626'}}>{r.direction==='in' ? '⬇️ وارد' : '⬆️ صادر'}</span></td>
+              <td className="font-bold">{numFmt(r.amount)}</td>
+              <td>{r.category || '—'}</td>
+              <td className="text-sm text-muted">{r.notes || '—'}</td>
+              <td>{!r.ref_type && canManage && <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={()=>del(r.id)}>🗑️</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+      {showForm && <ShowroomCashForm showroom={showroom} user={user} onClose={()=>setShowForm(false)} onSave={()=>{setShowForm(false); load();}}/>}
+    </div>
+  );
+}
+
+function ShowroomCashForm({ showroom, user, onClose, onSave }) {
+  const [direction, setDirection] = useState('out');
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!amount || Number(amount) <= 0) { toast('أدخل مبلغاً صحيحاً', 'error'); return; }
+    setSaving(true);
+    const { error } = await sb.from('showroom_cash_entries').insert({
+      showroom_id: showroom.id, direction, amount: Number(amount),
+      category: category.trim() || null, notes: notes.trim() || null, created_by: user.id,
+    });
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast('تم الحفظ ✓', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:420}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>💵 قيد صندوق يدوي</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label className="form-label">الاتجاه</label>
+            <div style={{display:'flex', gap:8}}>
+              <button type="button" onClick={()=>setDirection('in')} style={{flex:1, padding:'8px', borderRadius:7, border:'1px solid var(--gray-300)', cursor:'pointer', background: direction==='in' ? '#16a34a' : '#fff', color: direction==='in' ? '#fff' : 'var(--gray-600)', fontWeight:700}}>⬇️ وارد</button>
+              <button type="button" onClick={()=>setDirection('out')} style={{flex:1, padding:'8px', borderRadius:7, border:'1px solid var(--gray-300)', cursor:'pointer', background: direction==='out' ? '#dc2626' : '#fff', color: direction==='out' ? '#fff' : 'var(--gray-600)', fontWeight:700}}>⬆️ صادر</button>
+            </div>
+          </div>
+          <div className="form-group"><label className="form-label">المبلغ</label><input type="number" className="form-control" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+          <div className="form-group"><label className="form-label">البيان</label><input className="form-control" value={category} onChange={e=>setCategory(e.target.value)} placeholder="مثال: مصاريف، إيداع بالبنك..."/></div>
+          <div className="form-group"><label className="form-label">ملاحظات</label><textarea className="form-control" rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جاري الحفظ...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- إعدادات المعارض ---------- */
+function ShowroomSettings({ showrooms, user, onReload }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}><button className="btn btn-primary" onClick={()=>{setEditing(null); setShowForm(true);}}>+ معرض جديد</button></div>
+      <div className="table-container"><table className="table">
+        <thead><tr><th>الكود</th><th>الاسم</th><th>المدينة</th><th>العملة</th><th>نشط</th><th></th></tr></thead>
+        <tbody>
+          {showrooms.map(s => (
+            <tr key={s.id}>
+              <td className="font-bold">{s.code}</td><td>{s.name}</td><td>{s.city || '—'}</td><td>{s.default_currency}</td>
+              <td>{s.is_active ? '✅' : '❌'}</td>
+              <td><button className="btn btn-ghost btn-sm" onClick={()=>{setEditing(s); setShowForm(true);}}>تعديل</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+      {showForm && <ShowroomSettingsForm showroom={editing} user={user} onClose={()=>setShowForm(false)} onSave={()=>{setShowForm(false); onReload();}}/>}
+    </div>
+  );
+}
+
+function ShowroomSettingsForm({ showroom, user, onClose, onSave }) {
+  const isNew = !showroom?.id;
+  const [form, setForm] = useState({
+    code: showroom?.code || '', name: showroom?.name || '', city: showroom?.city || '',
+    address: showroom?.address || '', default_currency: showroom?.default_currency || 'JOD',
+    is_active: showroom?.is_active ?? true,
+  });
+  const [saving, setSaving] = useState(false);
+  const upd = (k,v) => setForm(f => ({...f, [k]:v}));
+
+  const handleSave = async () => {
+    if (!form.code.trim() || !form.name.trim()) { toast('الكود والاسم مطلوبين', 'error'); return; }
+    setSaving(true);
+    const payload = { ...form, code: form.code.trim().toUpperCase() };
+    const { error } = isNew
+      ? await sb.from('showrooms').insert({ ...payload, created_by: user.id })
+      : await sb.from('showrooms').update(payload).eq('id', showroom.id);
+    setSaving(false);
+    if (error) { toast('خطأ: ' + error.message, 'error'); return; }
+    toast(isNew ? 'تمت الإضافة' : 'تم الحفظ', 'success');
+    onSave();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{maxWidth:460}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header"><h3>{isNew ? 'معرض جديد' : 'تعديل المعرض'}</h3><button className="modal-close" onClick={onClose}>×</button></div>
+        <div className="modal-body">
+          <div className="form-grid-2">
+            <div className="form-group"><label className="form-label">الكود (مختصر)</label><input className="form-control" value={form.code} onChange={e=>upd('code', e.target.value)} placeholder="AMM" disabled={!isNew}/></div>
+            <div className="form-group"><label className="form-label">الاسم</label><input className="form-control" value={form.name} onChange={e=>upd('name', e.target.value)}/></div>
+            <div className="form-group"><label className="form-label">المدينة</label><input className="form-control" value={form.city} onChange={e=>upd('city', e.target.value)}/></div>
+            <div className="form-group"><label className="form-label">العملة الافتراضية</label><input className="form-control" value={form.default_currency} onChange={e=>upd('default_currency', e.target.value)}/></div>
+            <div className="form-group" style={{gridColumn:'1 / -1'}}><label className="form-label">العنوان</label><input className="form-control" value={form.address} onChange={e=>upd('address', e.target.value)}/></div>
+          </div>
+          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, fontWeight:600, marginTop:6}}>
+            <input type="checkbox" checked={form.is_active} onChange={e=>upd('is_active', e.target.checked)}/> نشط
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>إلغاء</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving?'جاري الحفظ...':'حفظ'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ===================== HR MODULE ===================== */
 
 function HRPage({ user }) {
@@ -25090,7 +26405,7 @@ function App() {
   if (loading) return <LoadingScreen msg="جاري تحميل النظام..."/>;
   if (!user) return <><AuthPage onLogin={handleLogin}/><Toasts/></>;
 
-  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'correspondence':'إدارة الديوان والأرشيف', properties:'إدارة الأصول', chemicals:'إدارة الكيماويات' };
+  const titles = { dashboard:'لوحة التحكم', quotes:'عروض الأسعار', 'new-quote':'عرض جديد', accounting:'إدارة المحاسبة', orders:'الطلبات', customers:'العملاء', catalog:'الكتالوج', archive:'الأرشيف', activity:'سجل النشاط', users:'المستخدمون', hr:'الموارد البشرية', 'tasks':'المهام', 'change-requests':'طلبات التعديل', 'correspondence':'إدارة الديوان والأرشيف', properties:'إدارة الأصول', chemicals:'إدارة الكيماويات', showrooms:'إدارة المعارض' };
 
   return (
     <div className="app-layout">
@@ -25114,6 +26429,7 @@ function App() {
           {page==='customers' && hasPerm(user,'customers_access') && <CustomersPage user={user}/>}
           {page==='catalog' && hasPerm(user,'catalog_access') && <CatalogPage user={user}/>}
           {page==='chemicals' && hasPerm(user,'chemicals_access') && <ChemicalsPage user={user}/>}
+          {page==='showrooms' && hasPerm(user,'showrooms_access') && <ShowroomsPage user={user}/>}
           {page==='correspondence' && (hasPerm(user,'letters_access')||hasPerm(user,'inbox_access')) && <CorrespondenceArchivePage user={user}/>}
           {page==='archive' && hasPerm(user,'archive_access') && <ArchivePage user={user} quotes={quotes} orders={orders} onReload={reload}/>}
           {page==='activity' && hasPerm(user,'activity_access') && <ActivityPage/>}
