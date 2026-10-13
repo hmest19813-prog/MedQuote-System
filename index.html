@@ -8210,8 +8210,12 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
       password:    '',
       show_pass:   false,
       permissions: initPerms,
+      showroom_id: editUser?.showroom_id || '',
     };
   });
+
+  const [showrooms, setShowrooms] = useState([]);
+  useEffect(() => { sb.from('showrooms').select('id,name').order('code').then(({data}) => setShowrooms(data||[])); }, []);
 
   const [loading, setLoading] = useState(false);
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -8263,6 +8267,7 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
           role:        form.role,
           is_active:   form.is_active,
           permissions: permsToSave,
+          showroom_id: (form.role==='employee' && form.showroom_id) ? form.showroom_id : null,
           updated_at:  new Date().toISOString(),
         };
         const { error } = await sb.from('profiles').update(updateData).eq('id', editUser.id);
@@ -8347,6 +8352,17 @@ function UserForm({ editUser, currentUser, onSave, onClose }) {
               {editUser?.id===currentUser?.id && <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>لا يمكن تعطيل حسابك الخاص</div>}
             </div>
           </div>
+
+          {form.role === 'employee' && showrooms.length>0 && (
+            <div className="form-group">
+              <label className="form-label">المعرض المخصص (إدارة المعارض)</label>
+              <select className="form-control" value={form.showroom_id} onChange={e=>setF('showroom_id', e.target.value)}>
+                <option value="">كل المعارض (بدون قيد)</option>
+                {showrooms.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <div style={{fontSize:11,color:'var(--gray-400)',marginTop:3}}>لو حدّدت معرض، الموظف رح يقدر يشوف ويشتغل بهذا المعرض بس بقسم إدارة المعارض — اتركها فاضية ليشوف كل المعارض</div>
+            </div>
+          )}
 
           {/* Checklist الصلاحيات — للموظفين */}
           {(form.role === 'employee') && (() => {
@@ -22879,10 +22895,7 @@ function ShowroomPOS({ showroom, user }) {
   const [balances, setBalances] = useState({});
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
-  const [customerId, setCustomerId] = useState(null);
-  const [customerName, setCustomerName] = useState('');
   const [customerFree, setCustomerFree] = useState('');
-  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [payMode, setPayMode] = useState('full');
   const [partialAmount, setPartialAmount] = useState('');
   const [payMethod, setPayMethod] = useState('cash');
@@ -22918,7 +22931,7 @@ function ShowroomPOS({ showroom, user }) {
   const initialPayment = payMode==='full' ? total : payMode==='partial' ? (Number(partialAmount)||0) : 0;
 
   const reset = () => {
-    setCart([]); setCustomerId(null); setCustomerName(''); setCustomerFree('');
+    setCart([]); setCustomerFree('');
     setPayMode('full'); setPartialAmount(''); setNotes('');
   };
 
@@ -22935,8 +22948,8 @@ function ShowroomPOS({ showroom, user }) {
       const { data, error } = await sb.rpc('create_showroom_sale', {
         p_showroom_id: showroom.id,
         p_items: cart.map(r => ({ catalog_id:r.catalog_id, item_name:r.item_name, unit:r.unit, qty:Number(r.qty), unit_price:Number(r.unit_price), tax_pct:Number(r.tax_pct)||0 })),
-        p_customer_id: customerId,
-        p_customer_name_free: customerId ? null : (customerFree.trim() || null),
+        p_customer_id: null,
+        p_customer_name_free: customerFree.trim() || null,
         p_employee_id: user.id,
         p_currency: showroom.default_currency || 'JOD',
         p_discount_amt: 0,
@@ -22947,7 +22960,7 @@ function ShowroomPOS({ showroom, user }) {
       if (error) throw error;
       await sb.from('showroom_activity_log').insert({
         showroom_id: showroom.id, activity_type: 'sale',
-        customer_name: customerId ? customerName : (customerFree.trim() || null),
+        customer_name: customerFree.trim() || null,
         employee_id: user.id, sale_id: data.id, created_by: user.id,
       });
       toast(`تم البيع ✓ ${data.number}`, 'success');
@@ -22999,17 +23012,7 @@ function ShowroomPOS({ showroom, user }) {
         </div>
 
         <div style={{marginBottom:10}}>
-          {customerId ? (
-            <div style={{display:'flex', alignItems:'center', gap:6, background:'#eff6ff', color:'#1C6A99', padding:'6px 10px', borderRadius:20, fontSize:12, fontWeight:700}}>
-              🔗 {customerName}
-              <button onClick={()=>{setCustomerId(null); setCustomerName('');}} style={{background:'none', border:'none', color:'#1C6A99', cursor:'pointer', marginRight:'auto'}}>✕</button>
-            </div>
-          ) : (
-            <div style={{display:'flex', gap:6}}>
-              <input className="form-control" style={{fontSize:12}} placeholder="زبون عابر (اختياري)" value={customerFree} onChange={e=>setCustomerFree(e.target.value)}/>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setShowCustomerPicker(true)} title="ربط بعميل مسجّل">🔗</button>
-            </div>
-          )}
+          <input className="form-control" style={{fontSize:12}} placeholder="اسم الزبون (اختياري)" value={customerFree} onChange={e=>setCustomerFree(e.target.value)}/>
         </div>
 
         <div style={{marginBottom:10}}>
@@ -23037,11 +23040,6 @@ function ShowroomPOS({ showroom, user }) {
           {saving ? '⏳ جاري الحفظ...' : `✅ إتمام البيع — ${numFmt(total)} ${showroom.default_currency}`}
         </button>
       </div>
-
-      {showCustomerPicker && <CustomerPickerModal
-        onSelect={(c)=>{ setCustomerId(c.id); setCustomerName(c.name); setCustomerFree(''); setShowCustomerPicker(false); }}
-        onClose={()=>setShowCustomerPicker(false)}
-      />}
     </div>
   );
 }

@@ -755,16 +755,27 @@ GRANT EXECUTE ON FUNCTION public.generate_showroom_number(uuid, text)           
 GRANT EXECUTE ON FUNCTION public.create_showroom_sale(uuid, jsonb, uuid, text, uuid, text, numeric, text, numeric, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_showroom_transfer(uuid, uuid, jsonb, text)           TO authenticated;
 
--- Realtime (نفس نمط باقي الجداول الحساسة بالنظام)
-ALTER PUBLICATION supabase_realtime ADD TABLE public.showroom_sales;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.showroom_activity_log;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.showroom_cash_entries;
+-- Realtime (نفس نمط باقي الجداول الحساسة بالنظام) — DO block لتجنّب خطأ
+-- "relation already member of publication" لو اتشغّل الملف قبل جزئياً
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='showroom_sales') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.showroom_sales;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='showroom_activity_log') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.showroom_activity_log;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public' AND tablename='showroom_cash_entries') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.showroom_cash_entries;
+  END IF;
+END $$;
 
 -- ══════════════════════════════════════════════
--- 13) سجل التحديثات
+-- 13) سجل التحديثات (idempotent — ما بيتكرر لو الملف اتشغّل أكتر من مرة)
 -- ══════════════════════════════════════════════
-INSERT INTO public.changelog_entries (title, description) VALUES
-  ('إدارة المعارض', 'قسم جديد كامل لإدارة معرضي عمان ودمشق: مخزون خاص بكل معرض، مبيعات (نقطة بيع) بالكاش أو بالدين، مشتريات، تحويلات من/إلى المستودع الرئيسي، دفتر زيارات واستفسارات، وصندوق كاش يومي.');
+INSERT INTO public.changelog_entries (title, description)
+SELECT 'إدارة المعارض', 'قسم جديد كامل لإدارة معرضي عمان ودمشق: مخزون خاص بكل معرض، مبيعات (نقطة بيع) بالكاش أو بالدين، مشتريات، تحويلات من/إلى المستودع الرئيسي، دفتر زيارات واستفسارات، وصندوق كاش يومي.'
+WHERE NOT EXISTS (SELECT 1 FROM public.changelog_entries WHERE title='إدارة المعارض');
 
 COMMIT;
 
