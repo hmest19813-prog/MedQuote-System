@@ -23856,12 +23856,41 @@ const ATT_STATUS = [
   { key:'leave_sick',     label:'إجازة مرضية',       color:'#0891b2', bg:'#cffafe' },
   { key:'leave_unpaid',   label:'إجازة غير مدفوعة', color:'#9f1239', bg:'#ffe4e6' },
   { key:'leave_personal', label:'إجازة شخصية',       color:'#a855f7', bg:'#fae8ff' },
-  { key:'holiday',        label:'عطلة',              color:'#64748b', bg:'#f1f5f9' },
+  { key:'departure_official',   label:'مغادرة رسمية',     color:'#0d9488', bg:'#ccfbf1' },
+  { key:'departure_unofficial', label:'مغادرة غير رسمية', color:'#b45309', bg:'#fef3c7' },
+  { key:'holiday',        label:'عطلة رسمية',       color:'#64748b', bg:'#f1f5f9' },
 ];
 const ATT_MAP = Object.fromEntries(ATT_STATUS.map(s => [s.key, s]));
+// الحالات اللي فيها دوام فعلي — بيظهر لها حقول وقت الحضور/الانصراف وتُحسب منها الساعات
+const ATT_WORKED_STATUSES = ['present','late','departure_official','departure_unofficial'];
+const attHours = (rec) => {
+  if (!rec?.check_in || !rec?.check_out) return 0;
+  const [h1,m1] = rec.check_in.split(':').map(Number);
+  const [h2,m2] = rec.check_out.split(':').map(Number);
+  const mins = (h2*60+m2) - (h1*60+m1);
+  return mins > 0 ? mins/60 : 0;
+};
+const fmtHours = (h) => h ? (Math.round(h*10)/10).toLocaleString('ar') : '0';
 const MONTHS_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 
 function HRAttendance() {
+  const [sub, setSub] = useState('register');
+  const tabStyle = (t) => ({
+    padding:'7px 16px', fontSize:13, fontWeight:700, border:'none', cursor:'pointer',
+    background: sub===t ? 'var(--primary)' : '#fff', color: sub===t ? '#fff' : 'var(--primary)',
+  });
+  return (
+    <div>
+      <div style={{display:'flex', borderRadius:8, overflow:'hidden', border:'1.5px solid var(--primary)', width:'fit-content', marginBottom:20}}>
+        <button type="button" onClick={()=>setSub('register')} style={tabStyle('register')}>📋 سجل الحضور</button>
+        <button type="button" onClick={()=>setSub('summary')} style={tabStyle('summary')}>📊 ملخص الدوام</button>
+      </div>
+      {sub==='register' ? <HRAttendanceRegister/> : <HRAttendanceSummary/>}
+    </div>
+  );
+}
+
+function HRAttendanceRegister() {
   const [employees, setEmployees]   = useState([]);
   const [selectedEmp, setSelectedEmp] = useState('');
   const [month, setMonth]           = useState(new Date().getMonth() + 1);
@@ -23869,6 +23898,7 @@ function HRAttendance() {
   const [attendance, setAttendance] = useState({});
   const [loading, setLoading]       = useState(false);
   const [saving, setSaving]         = useState(false);
+  const canEdit = hasPerm(CURRENT_USER,'hr_attendance_edit');
 
   useEffect(() => {
     sb.from('hr_employees').select('id,full_name').eq('status','active').order('full_name')
@@ -23883,11 +23913,11 @@ function HRAttendance() {
     setLoading(true);
     const yStr = String(year);
     const mStr = String(month).padStart(2,'0');
-    sb.from('hr_attendance').select('date,status').eq('employee_id', selectedEmp)
+    sb.from('hr_attendance').select('date,status,check_in,check_out').eq('employee_id', selectedEmp)
       .gte('date', `${yStr}-${mStr}-01`).lte('date', `${yStr}-${mStr}-31`)
       .then(({ data }) => {
         const map = {};
-        (data||[]).forEach(r => { map[r.date] = r.status; });
+        (data||[]).forEach(r => { map[r.date] = { status:r.status, check_in:r.check_in||'', check_out:r.check_out||'' }; });
         setAttendance(map);
         setLoading(false);
       });
@@ -23898,32 +23928,39 @@ function HRAttendance() {
 
   const dateStr = (day) => `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
   const isFriday = (day) => new Date(year, month-1, day).getDay() === 5;
-  const getDayStatus = (day) => attendance[dateStr(day)] || (isFriday(day) ? 'holiday' : 'present');
+  const getDay = (day) => attendance[dateStr(day)] || { status: isFriday(day) ? 'holiday' : 'present', check_in:'', check_out:'' };
   const getDayName = (day) => new Date(year, month-1, day).toLocaleDateString('ar', { weekday:'short' });
   const isWeekend = (day) => { const d = new Date(year, month-1, day).getDay(); return d===5||d===6; };
 
-  const setDay = (day, status) => {
-    setAttendance(prev => ({ ...prev, [dateStr(day)]: status }));
+  const setDay = (day, patch) => {
+    setAttendance(prev => ({ ...prev, [dateStr(day)]: { ...getDay(day), ...prev[dateStr(day)], ...patch } }));
   };
 
   const handleSave = async () => {
     if (!selectedEmp) return;
     setSaving(true);
     const rows = Object.entries(attendance)
-      .filter(([,s]) => s)
-      .map(([date, status]) => ({ employee_id: selectedEmp, date, status }));
+      .filter(([,r]) => r?.status)
+      .map(([date, r]) => ({
+        employee_id: selectedEmp, date, status: r.status,
+        check_in:  ATT_WORKED_STATUSES.includes(r.status) && r.check_in  ? r.check_in  : null,
+        check_out: ATT_WORKED_STATUSES.includes(r.status) && r.check_out ? r.check_out : null,
+      }));
     const { error } = await sb.from('hr_attendance').upsert(rows, { onConflict: 'employee_id,date' });
     setSaving(false);
     if (error) { toast('خطأ في الحفظ: ' + error.message, 'error'); return; }
     toast('تم حفظ سجل الحضور', 'success');
   };
 
+  const totalHours = days.reduce((s,d) => s + attHours(getDay(d)), 0);
   const stats = [
-    { key:'present', label:'حاضر',  color:'#16a34a', bg:'#dcfce7', count: days.filter(d => getDayStatus(d)==='present').length },
-    { key:'absent',  label:'غائب',  color:'#dc2626', bg:'#fee2e2', count: days.filter(d => getDayStatus(d)==='absent').length },
-    { key:'late',    label:'متأخر', color:'#d97706', bg:'#fef3c7', count: days.filter(d => getDayStatus(d)==='late').length },
-    { key:'leave',   label:'إجازة', color:'#7c3aed', bg:'#ede9fe', count: days.filter(d => getDayStatus(d).startsWith('leave_')).length },
-    { key:'holiday', label:'عطلة',  color:'#64748b', bg:'#f1f5f9', count: days.filter(d => getDayStatus(d)==='holiday').length },
+    { key:'present', label:'حاضر',  color:'#16a34a', bg:'#dcfce7', count: days.filter(d => getDay(d).status==='present').length },
+    { key:'absent',  label:'غائب',  color:'#dc2626', bg:'#fee2e2', count: days.filter(d => getDay(d).status==='absent').length },
+    { key:'late',    label:'متأخر', color:'#d97706', bg:'#fef3c7', count: days.filter(d => getDay(d).status==='late').length },
+    { key:'leave',   label:'إجازة', color:'#7c3aed', bg:'#ede9fe', count: days.filter(d => getDay(d).status.startsWith('leave_')).length },
+    { key:'departure', label:'مغادرة', color:'#0d9488', bg:'#ccfbf1', count: days.filter(d => getDay(d).status.startsWith('departure_')).length },
+    { key:'holiday', label:'عطلة رسمية', color:'#64748b', bg:'#f1f5f9', count: days.filter(d => getDay(d).status==='holiday').length },
+    { key:'hours',   label:'ساعات الدوام', color:'#1d4ed8', bg:'#dbeafe', count: fmtHours(totalHours) },
   ];
 
   return (
@@ -23938,7 +23975,7 @@ function HRAttendance() {
         <select className="form-control" style={{width:90}} value={year} onChange={e => setYear(Number(e.target.value))}>
           {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
-        {hasPerm(CURRENT_USER,'hr_attendance_edit') && <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>}
+        {canEdit && <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'جاري الحفظ...' : 'حفظ'}</button>}
       </div>
 
       <div style={{display:'flex', gap:10, marginBottom:16, flexWrap:'wrap'}}>
@@ -23953,19 +23990,21 @@ function HRAttendance() {
       {loading ? (
         <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
       ) : (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(7, minmax(70px,1fr))', gap:6}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(110px,1fr))', gap:6}}>
           {days.map(day => {
-            const status = getDayStatus(day);
+            const rec = getDay(day);
+            const status = rec.status;
             const att = status ? ATT_MAP[status] : null;
             const weekend = isWeekend(day);
+            const worked = ATT_WORKED_STATUSES.includes(status);
             return (
               <div key={day} style={{
-                border:'1px solid var(--gray-200)', borderRadius:8, padding:'8px 4px',
+                border:'1px solid var(--gray-200)', borderRadius:8, padding:'8px 6px',
                 textAlign:'center', background: att ? att.bg : weekend ? '#f8fafc' : 'white'
               }}>
                 <div style={{fontSize:10, color:'var(--gray-400)', marginBottom:2}}>{getDayName(day)}</div>
                 <div style={{fontSize:16, fontWeight:600, color: weekend&&!att ? 'var(--gray-400)' : 'var(--gray-700)'}}>{day}</div>
-                <select value={status} onChange={e => setDay(day, e.target.value)} disabled={!hasPerm(CURRENT_USER,'hr_attendance_edit')}
+                <select value={status} onChange={e => setDay(day, { status: e.target.value })} disabled={!canEdit}
                   style={{
                     fontSize:10, borderRadius:4, cursor:'pointer', width:'100%', marginTop:4,
                     textAlign:'center', fontWeight:600, outline:'none',
@@ -23974,6 +24013,15 @@ function HRAttendance() {
                   }}>
                   {ATT_STATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
+                {worked && (
+                  <div style={{display:'flex', flexDirection:'column', gap:2, marginTop:4}}>
+                    <input type="time" value={rec.check_in||''} disabled={!canEdit} onChange={e=>setDay(day,{check_in:e.target.value})}
+                      title="وقت الحضور" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
+                    <input type="time" value={rec.check_out||''} disabled={!canEdit} onChange={e=>setDay(day,{check_out:e.target.value})}
+                      title="وقت الانصراف" style={{fontSize:10, padding:'2px', border:'1px solid var(--gray-200)', borderRadius:4, width:'100%'}}/>
+                    {attHours(rec)>0 && <div style={{fontSize:9, color:'var(--gray-500)'}}>{fmtHours(attHours(rec))} ساعة</div>}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -23988,6 +24036,165 @@ function HRAttendance() {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ---------- ملخص الدوام (يومي/أسبوعي/شهري) ----------
+   كل حسابات التواريخ هنا تعتمد على addDays (UTC-anchored) بدل new Date()+toISOString المباشر،
+   لتجنّب نقص يوم بسبب فرق المنطقة الزمنية +3 بالأردن (راجع تعليق addDays أعلى الملف) */
+const attRangeDates = (startStr, endStr) => {
+  const out = []; let d = startStr;
+  while (d <= endStr) { out.push(d); d = addDays(d, 1); }
+  return out;
+};
+const attWeekRange = (dateStr) => {
+  const dow = new Date(dateStr + 'T00:00:00Z').getUTCDay(); // 0=الأحد..6=السبت
+  const start = addDays(dateStr, -dow);
+  const end = addDays(start, 6);
+  return [start, end];
+};
+const attMonthRange = (year, month) => {
+  const mm = String(month).padStart(2,'0');
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return [`${year}-${mm}-01`, `${year}-${mm}-${String(lastDay).padStart(2,'0')}`];
+};
+
+function HRAttendanceSummary() {
+  const [period, setPeriod] = useState('month');
+  const [pickDate, setPickDate] = useState(today());
+  const [month, setMonth] = useState(new Date().getMonth()+1);
+  const [year, setYear]   = useState(new Date().getFullYear());
+  const [employees, setEmployees] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    sb.from('hr_employees').select('id,full_name').eq('status','active').order('full_name')
+      .then(({ data }) => setEmployees(data||[]));
+  }, []);
+
+  const [rangeStart, rangeEnd] = React.useMemo(() => {
+    if (period==='day') return [pickDate, pickDate];
+    if (period==='week') return attWeekRange(pickDate);
+    return attMonthRange(year, month);
+  }, [period, pickDate, month, year]);
+
+  const rangeDates = React.useMemo(() => attRangeDates(rangeStart, rangeEnd), [rangeStart, rangeEnd]);
+
+  useEffect(() => {
+    if (!employees.length) return;
+    setLoading(true);
+    sb.from('hr_attendance').select('employee_id,date,status,check_in,check_out')
+      .gte('date', rangeDates[0]).lte('date', rangeDates[rangeDates.length-1])
+      .then(({ data }) => { setRows(data||[]); setLoading(false); });
+  }, [employees, rangeDates[0], rangeDates[rangeDates.length-1]]);
+
+  const byEmp = {};
+  rows.forEach(r => { (byEmp[r.employee_id] ||= []).push(r); });
+
+  const dayStatusDefault = (dateStr) => new Date(dateStr + 'T00:00:00Z').getUTCDay()===5 ? 'holiday' : 'present';
+
+  const summary = employees.map(emp => {
+    const recMap = Object.fromEntries((byEmp[emp.id]||[]).map(r => [r.date, r]));
+    const recs = rangeDates.map(d => recMap[d] || { status: dayStatusDefault(d), check_in:null, check_out:null });
+    const count = (pred) => recs.filter(pred).length;
+    return {
+      employee: emp,
+      recs,
+      present:   count(r=>r.status==='present'),
+      absent:    count(r=>r.status==='absent'),
+      late:      count(r=>r.status==='late'),
+      leave:     count(r=>r.status?.startsWith('leave_')),
+      departure: count(r=>r.status?.startsWith('departure_')),
+      holiday:   count(r=>r.status==='holiday'),
+      hours:     recs.reduce((s,r)=>s+attHours(r),0),
+    };
+  });
+
+  const totals = summary.reduce((t,s) => ({
+    present:t.present+s.present, absent:t.absent+s.absent, late:t.late+s.late,
+    leave:t.leave+s.leave, departure:t.departure+s.departure, holiday:t.holiday+s.holiday, hours:t.hours+s.hours,
+  }), { present:0, absent:0, late:0, leave:0, departure:0, holiday:0, hours:0 });
+
+  const fmtAr = (s) => new Date(s + 'T00:00:00Z').toLocaleDateString('ar');
+  const periodLabel = period==='day' ? `يوم ${fmtAr(pickDate)}`
+    : period==='week' ? `أسبوع ${fmtAr(rangeStart)} — ${fmtAr(rangeEnd)}`
+    : `${MONTHS_AR[month-1]} ${year}`;
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:16, flexWrap:'wrap'}}>
+        <div style={{display:'flex', borderRadius:8, overflow:'hidden', border:'1px solid var(--gray-300)'}}>
+          {[['day','يومي'],['week','أسبوعي'],['month','شهري']].map(([k,l]) => (
+            <button key={k} type="button" onClick={()=>setPeriod(k)} style={{
+              padding:'6px 14px', fontSize:12, fontWeight:700, border:'none', cursor:'pointer',
+              background: period===k ? 'var(--primary)' : '#fff', color: period===k ? '#fff' : 'var(--gray-600)',
+            }}>{l}</button>
+          ))}
+        </div>
+        {period!=='month' ? (
+          <input type="date" className="form-control" style={{width:170}} value={pickDate} onChange={e=>setPickDate(e.target.value)}/>
+        ) : (<>
+          <select className="form-control" style={{width:130}} value={month} onChange={e=>setMonth(Number(e.target.value))}>
+            {MONTHS_AR.map((m,i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+          <select className="form-control" style={{width:90}} value={year} onChange={e=>setYear(Number(e.target.value))}>
+            {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </>)}
+        <span style={{fontSize:13, color:'var(--gray-500)'}}>{periodLabel} — {rangeDates.length} يوم</span>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
+      ) : (
+        <div className="table-container">
+          <table className="table">
+            <thead><tr>
+              <th>الموظف</th>
+              {period==='day' ? (<><th>الحالة</th><th>الحضور</th><th>الانصراف</th></>) : (<>
+                <th>حاضر</th><th>غائب</th><th>متأخر</th><th>إجازة</th><th>مغادرة</th><th>عطلة رسمية</th>
+              </>)}
+              <th>ساعات الدوام</th>
+            </tr></thead>
+            <tbody>
+              {summary.length===0 ? (
+                <tr><td colSpan={period==='day'?5:8} style={{textAlign:'center', padding:32, color:'var(--gray-400)'}}>لا يوجد موظفون</td></tr>
+              ) : summary.map(s => (
+                <tr key={s.employee.id}>
+                  <td style={{fontWeight:600}}>{s.employee.full_name}</td>
+                  {period==='day' ? (<>
+                    <td><span className="badge" style={{background:ATT_MAP[s.recs[0]?.status]?.bg, color:ATT_MAP[s.recs[0]?.status]?.color}}>{ATT_MAP[s.recs[0]?.status]?.label||'—'}</span></td>
+                    <td style={{direction:'ltr',textAlign:'center'}}>{s.recs[0]?.check_in||'—'}</td>
+                    <td style={{direction:'ltr',textAlign:'center'}}>{s.recs[0]?.check_out||'—'}</td>
+                  </>) : (<>
+                    <td style={{textAlign:'center'}}>{s.present}</td>
+                    <td style={{textAlign:'center'}}>{s.absent}</td>
+                    <td style={{textAlign:'center'}}>{s.late}</td>
+                    <td style={{textAlign:'center'}}>{s.leave}</td>
+                    <td style={{textAlign:'center'}}>{s.departure}</td>
+                    <td style={{textAlign:'center'}}>{s.holiday}</td>
+                  </>)}
+                  <td style={{textAlign:'center', fontWeight:700, color:'#1d4ed8'}}>{fmtHours(s.hours)}</td>
+                </tr>
+              ))}
+            </tbody>
+            {summary.length>0 && period!=='day' && (
+              <tfoot><tr style={{fontWeight:700, background:'var(--gray-50)'}}>
+                <td>الإجمالي</td>
+                <td style={{textAlign:'center'}}>{totals.present}</td>
+                <td style={{textAlign:'center'}}>{totals.absent}</td>
+                <td style={{textAlign:'center'}}>{totals.late}</td>
+                <td style={{textAlign:'center'}}>{totals.leave}</td>
+                <td style={{textAlign:'center'}}>{totals.departure}</td>
+                <td style={{textAlign:'center'}}>{totals.holiday}</td>
+                <td style={{textAlign:'center', color:'#1d4ed8'}}>{fmtHours(totals.hours)}</td>
+              </tr></tfoot>
+            )}
+          </table>
+        </div>
+      )}
     </div>
   );
 }
