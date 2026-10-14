@@ -12178,129 +12178,6 @@ function DailyOrdersPrepView({ user }) {
   );
 }
 
-const normPhoneForDup = (p) => {
-  if (!p) return '';
-  let d = String(p).replace(/\D/g,'');
-  if (d.startsWith('00962')) d = d.slice(5);
-  else if (d.startsWith('962')) d = d.slice(3);
-  if (d.startsWith('0')) d = d.slice(1);
-  d = d.slice(-9);
-  return d.length >= 7 ? d : '';
-};
-const normNameForDup = (n) => (n||'').trim().replace(/\s+/g,' ');
-
-function findDuplicateCustomerGroups(customers, relatedCounts) {
-  const candidates = customers.filter(c => !c.deleted_at && c.approval_status !== 'rejected');
-  const parent = {};
-  candidates.forEach(c => { parent[c.id] = c.id; });
-  const find = (x) => { while (parent[x] !== x) { x = parent[x]; } return x; };
-  const union = (a,b) => { const ra=find(a), rb=find(b); if (ra!==rb) parent[ra]=rb; };
-
-  const byPhone = {}, byName = {};
-  candidates.forEach(c => {
-    [c.phone, c.mobile].forEach(ph => {
-      const key = normPhoneForDup(ph);
-      if (!key) return;
-      if (byPhone[key] !== undefined) union(c.id, byPhone[key]); else byPhone[key] = c.id;
-    });
-    const nkey = normNameForDup(c.name);
-    if (nkey) {
-      if (byName[nkey] !== undefined) union(c.id, byName[nkey]); else byName[nkey] = c.id;
-    }
-  });
-
-  const groups = {};
-  candidates.forEach(c => { const root = find(c.id); (groups[root] = groups[root] || []).push(c); });
-
-  const activityOf = (c) => (relatedCounts.quotes[c.id]||0) + (relatedCounts.orders[c.id]||0) + (relatedCounts.letters[c.id]||0);
-
-  return Object.values(groups)
-    .filter(g => g.length > 1)
-    .map(members => {
-      const sorted = [...members].sort((a,b) => activityOf(b)-activityOf(a) || new Date(a.created_at||0)-new Date(b.created_at||0));
-      return { key: sorted.map(c=>c.id).sort().join('-'), members: sorted };
-    });
-}
-
-function DuplicateCustomersTab({ user, groups, profiles, relatedCounts, onMerged }) {
-  const [winners, setWinners] = useState({});
-  const [merging, setMerging] = useState(null);
-  const [dismissed, setDismissed] = useState(new Set());
-
-  const assignedNameOf = (c) => c.rep_name || profiles.find(p=>p.id===c.assigned_to)?.full_name || '—';
-  const activityOf = (c) => (relatedCounts.quotes[c.id]||0) + (relatedCounts.orders[c.id]||0) + (relatedCounts.letters[c.id]||0);
-
-  const doMerge = async (group) => {
-    const winnerId = winners[group.key];
-    if (!winnerId) { toast('اختر العميل المُعتمد أولاً من المجموعة','error'); return; }
-    const winner = group.members.find(c=>c.id===winnerId);
-    const losers = group.members.filter(c=>c.id!==winnerId);
-    if (!confirm(`سيتم نقل كل عروض الأسعار والطلبات والكتب الرسمية من:\n${losers.map(c=>c.name).join('، ')}\n\nإلى العميل المعتمد: "${winner.name}"\n\nوحذف السجلات المكررة حذفاً ناعماً (قابل للاستعادة من تبويب "العملاء المحذوفون"). متابعة؟`)) return;
-    setMerging(group.key);
-    const { error } = await sb.rpc('merge_customers', { p_winner_id: winnerId, p_loser_ids: losers.map(c=>c.id) });
-    setMerging(null);
-    if (error) { toast('خطأ بالدمج: ' + error.message, 'error'); return; }
-    createLog(user, `دمج ${losers.length} عميل مكرر داخل "${winner.name}"`, 'customer', winner.id, winner.name);
-    toast('تم الدمج بنجاح ✓','success');
-    onMerged && onMerged();
-  };
-
-  const visibleGroups = groups.filter(g => !dismissed.has(g.key));
-
-  if (visibleGroups.length === 0) {
-    return (
-      <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5',marginTop:16}}>
-        <div style={{fontSize:48,marginBottom:12}}>✅</div>
-        <p>لا يوجد عملاء مكررون محتملون حالياً</p>
-        <small>يتم رصد التكرار تلقائياً عند تطابق رقم هاتف أو اسم بالضبط بين عميلين أو أكثر</small>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:14}}>
-      <div style={{fontSize:12,color:'#7a8fa6',background:'#fff',border:'1.5px solid #e2edf5',borderRadius:10,padding:'10px 14px'}}>
-        ℹ️ اختر العميل الصحيح من كل مجموعة (غالباً الأكثر نشاطاً بعروض الأسعار/الطلبات) ثم اضغط "دمج" — تُنقل كل البيانات المرتبطة للعميل المُعتمد ويُحذف الباقي حذفاً ناعماً (قابل للاستعادة).
-      </div>
-      {visibleGroups.map(group => (
-        <div key={group.key} className="card" style={{padding:16}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:8}}>
-            <div style={{fontWeight:800,fontSize:13,color:'#1a2e3d'}}>🧩 مجموعة مكررة — {group.members.length} سجلات</div>
-            <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-ghost btn-sm" onClick={()=>setDismissed(d=>new Set([...d, group.key]))}>تجاهل (ليست تكراراً)</button>
-              <button className="btn btn-primary btn-sm" disabled={!winners[group.key] || merging===group.key} onClick={()=>doMerge(group)}>
-                {merging===group.key ? 'جارِ الدمج...' : '✅ دمج واعتماد المحدد'}
-              </button>
-            </div>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:10}}>
-            {group.members.map(c => (
-              <label key={c.id} style={{border: winners[group.key]===c.id ? '2px solid var(--primary)' : '1.5px solid #e2edf5', borderRadius:10, padding:12, cursor:'pointer', background: winners[group.key]===c.id?'#f0f8ff':'#fff', display:'block'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                  <input type="radio" name={`dup-${group.key}`} checked={winners[group.key]===c.id} onChange={()=>setWinners(w=>({...w,[group.key]:c.id}))}/>
-                  <div style={{fontWeight:800,fontSize:13}}>{c.name}</div>
-                </div>
-                <div style={{fontSize:11,color:'#7a8fa6',display:'flex',flexDirection:'column',gap:2}}>
-                  <div>📞 {c.phone||c.mobile||'—'}</div>
-                  <div>📍 {c.city||'—'}{c.customer_code?' · '+c.customer_code:''}</div>
-                  <div>👤 {assignedNameOf(c)}</div>
-                  <div>🗓️ أُضيف: {c.created_at?.slice(0,10)||'—'}</div>
-                </div>
-                <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
-                  <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>📋 {relatedCounts.quotes[c.id]||0}</span>
-                  <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>📦 {relatedCounts.orders[c.id]||0}</span>
-                  <span className="erp-badge erp-badge-primary" style={{fontSize:10}}>✉️ {relatedCounts.letters[c.id]||0}</span>
-                  {activityOf(c)===0 && <span className="erp-badge erp-badge-warning" style={{fontSize:10}}>بلا نشاط حقيقي</span>}
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function CustomersPage({ user }) {
   const [tab, setTab] = useState('customers');
   const [customers, setCustomers] = useState([]);
@@ -12407,7 +12284,6 @@ function CustomersPage({ user }) {
 
   const usedCities = [...new Set(visibleCustomers.map(c=>c.city).filter(Boolean))].sort();
   const usedCategories = [...new Set(visibleCustomers.map(c=>c.category).filter(Boolean))].sort();
-  const duplicateGroups = findDuplicateCustomerGroups(customers, relatedCounts);
 
   const filtered = visibleCustomers.filter(c => {
     if (cityFilter !== 'all' && c.city !== cityFilter) return false;
@@ -12489,7 +12365,6 @@ function CustomersPage({ user }) {
         {hasPerm(user,'prospects_access') && <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>}
         <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
         <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
-        {hasPerm(user,'customers_delete') && <button style={tabStyle('duplicates')} onClick={()=>setTab('duplicates')}>🧩 العملاء المكررون {duplicateGroups.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{duplicateGroups.length}</span>}</button>}
         {hasPerm(user,'customers_delete') && <button style={tabStyle('deleted')} onClick={()=>setTab('deleted')}>🗑️ العملاء المحذوفون {deletedCustomers.length>0 && <span style={{background:'#fee2e2',color:'var(--danger)',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{deletedCustomers.length}</span>}</button>}
       </div>
 
@@ -12538,10 +12413,6 @@ function CustomersPage({ user }) {
       {tab === 'online' && <OnlineCustomersTab user={user} onCountChange={setOnlineCount}/>}
 
       {tab === 'export' && <ExportCustomersTab user={user} profiles={profiles} onCountChange={setExportCount}/>}
-
-      {tab === 'duplicates' && hasPerm(user,'customers_delete') && (
-        <DuplicateCustomersTab user={user} groups={duplicateGroups} profiles={profiles} relatedCounts={relatedCounts} onMerged={load}/>
-      )}
 
       {tab === 'deleted' && hasPerm(user,'customers_delete') && (
         <div style={{marginTop:16}}>
