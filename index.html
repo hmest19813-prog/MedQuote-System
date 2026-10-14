@@ -2846,7 +2846,7 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
       .then(({data})=>{ if(data?.length) setDbTitles(data.map(t=>t.name)); });
   }, []);
 
-  const missingRequired = !name.trim() || !phone.trim() || !contactName.trim() || !contactTitle.trim() || !contactPhone.trim() || !category.trim() || !city.trim();
+  const missingRequired = !name.trim() || !contactName.trim() || !contactTitle.trim() || !contactPhone.trim() || !category.trim() || !city.trim();
 
   const handleSave = async () => {
     if (missingRequired && !isSuperAdmin(user)) { toast('كل الحقول إلزامية — رجاءً عبّي جميع الخانات', 'error'); return; }
@@ -2884,7 +2884,7 @@ function QuickCustomerForm({ prefillName, prefillPhone, user, onSave, onClose })
             <input className="form-control" autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="اسم الجهة / الشركة"/>
           </div>
           <div className="form-group mb-3">
-            <label className="form-label">رقم الهاتف <span style={{color:'var(--danger)'}}>*</span></label>
+            <label className="form-label">رقم هاتف المنشأة</label>
             <input className="form-control" dir="ltr" value={phone} onChange={e=>setPhone(e.target.value)}/>
           </div>
           <div className="form-group mb-3">
