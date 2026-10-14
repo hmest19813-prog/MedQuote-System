@@ -12196,6 +12196,7 @@ function CustomersPage({ user }) {
   const [cityFilter, setCityFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [repFilter, setRepFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'list'
   const [relatedCounts, setRelatedCounts] = useState({ quotes:{}, orders:{}, letters:{} });
 
   const load = async () => {
@@ -12331,6 +12332,12 @@ function CustomersPage({ user }) {
         </div>
         <div style={{flex:1}}/>
         {tab==='customers' && <>
+          <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)',flexShrink:0}}>
+            <button type="button" onClick={()=>setViewMode('cards')} title="بطاقات"
+              style={{padding:'7px 12px',fontSize:13,border:'none',cursor:'pointer',background: viewMode==='cards'?'var(--primary)':'#fff',color: viewMode==='cards'?'#fff':'var(--primary)'}}>🔳</button>
+            <button type="button" onClick={()=>setViewMode('list')} title="قائمة"
+              style={{padding:'7px 12px',fontSize:13,border:'none',cursor:'pointer',background: viewMode==='list'?'var(--primary)':'#fff',color: viewMode==='list'?'#fff':'var(--primary)'}}>📋</button>
+          </div>
           <input className="search-input" placeholder="بحث: الاسم، الهاتف، رقم العميل، المدينة..." value={search} onChange={e=>setSearch(e.target.value)} style={{minWidth:280}}/>
           <FilterPopover active={hasActiveFilters} onClear={clearFilters}>
             <div className="form-group" style={{margin:0}}>
@@ -12378,6 +12385,36 @@ function CustomersPage({ user }) {
               <div style={{fontSize:48,marginBottom:12}}>🏢</div>
               <p>لا يوجد عملاء مطابقون</p>
               <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث أو الفلاتر'}</small>
+            </div>
+          ) : viewMode === 'list' ? (
+            <div className="card">
+              <div className="table-wrap">
+                <table>
+                  <thead><tr>
+                    <th>رقم العميل</th><th>اسم العميل</th><th>التصنيف</th><th>العنوان</th><th>المسؤول</th><th>المسمى الوظيفي</th><th>الموبايل</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {filtered.map(c=>(
+                      <tr key={c.id} onClick={()=>setSelected(c)} style={{cursor:'pointer'}}>
+                        <td className="text-sm" style={{fontWeight:700,color:'var(--primary)'}}>{c.customer_code||'—'}</td>
+                        <td style={{fontWeight:600}}>{c.name}{c.approval_status==='pending' && <span className="erp-badge erp-badge-warning" style={{fontSize:9,marginRight:6}}>⏳</span>}</td>
+                        <td className="text-sm">{c.category||'—'}</td>
+                        <td className="text-sm">{[c.city, c.address].filter(Boolean).join(' - ')||'—'}</td>
+                        <td className="text-sm">{c.contact1_name||'—'}</td>
+                        <td className="text-sm">{c.contact1_title||'—'}</td>
+                        <td className="text-sm" dir="ltr">{c.contact1_phone||'—'}</td>
+                        <td onClick={e=>e.stopPropagation()}>
+                          <ActionMenu actions={[
+                            { icon:'👁', label:'عرض', onClick:()=>setSelected(c) },
+                            { icon:'✏️', label:'تعديل', hidden:!hasPerm(user,'customers_edit'), onClick:()=>{ setEditing(c); setShowForm(true); } },
+                            { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'customers_delete'), onClick:()=>deleteCustomer(c) },
+                          ]}/>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : (
             <div style={ENTITY_GRID_STYLE}>
