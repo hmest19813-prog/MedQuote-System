@@ -8778,14 +8778,14 @@ const printDoc = (containerId, title, orientation='portrait') => {
 };
 
 /* ===================== CUSTOMERS ===================== */
-function ErpField({label, value, onChange, type, placeholder, span}) {
+function ErpField({label, value, onChange, type, placeholder, span, dir}) {
   return (
     <div className="erp-field" style={span?{gridColumn:'1/-1'}:{}}>
       <label>{label}</label>
       {type==='textarea' ? (
-        <textarea className="erp-input" rows="2" value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder||''}/>
+        <textarea className="erp-input" rows="2" dir={dir} value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder||''}/>
       ) : (
-        <input className="erp-input" type={type||'text'} value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder||''}/>
+        <input className="erp-input" type={type||'text'} dir={dir} value={value||''} onChange={e=>onChange(e.target.value)} placeholder={placeholder||''}/>
       )}
     </div>
   );
@@ -8853,7 +8853,7 @@ const CUST_TITLES    = ['مدير المشتريات','مسؤول المشتري
 
 function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose }) {
   const empty = {
-    name:'', customer_code:'', phone:'', fax:'', alt_phone:'',
+    name:'', name_en:'', customer_code:'', phone:'', fax:'', alt_phone:'',
     email:'', address:'', district:'', city:'', website:'', notes:'', category:'', tags:'', assigned_to:'', rep_name:'',
     contact1_name:'', contact1_last_name:'', contact1_title:'', contact1_phone:'', contact1_mobile2:'', contact1_ext:'', contact1_email:'', contact1_notes:'',
     contact2_name:'', contact2_last_name:'', contact2_title:'', contact2_phone:'', contact2_mobile2:'', contact2_ext:'', contact2_email:'', contact2_notes:'',
@@ -8914,7 +8914,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
     try {
       const fullAddress = form.district ? `${form.district} - ${form.address||''}`.trim().replace(/\s*-\s*$/,'') : form.address||null;
       const payload = {
-        name:form.name, customer_code:form.customer_code||null,
+        name:form.name, name_en:form.name_en||null, customer_code:form.customer_code||null,
         phone:form.phone||null, fax:form.fax||null,
         alt_phone:form.alt_phone||null, email:form.email||null,
         address:fullAddress||null, city:form.city||null,
@@ -8994,7 +8994,8 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
                   </datalist>
                 </div>
               </div>
-              <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name',v)} placeholder="اسم الشركة أو الجهة" span/>
+              <ErpField label="اسم الشركة / العميل *" value={form.name} onChange={v=>setF('name', v.replace(/[A-Za-z]/g,''))} placeholder="اسم الشركة أو الجهة (عربي فقط)" span/>
+              <ErpField label="الاسم بالإنجليزي (اختياري، للمرجعية فقط)" value={form.name_en} onChange={v=>setF('name_en',v)} placeholder="Company Name" dir="ltr" span/>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                 <ErpField label="هاتف" value={form.alt_phone} onChange={v=>setF('alt_phone',v)} placeholder="+962-6-..."/>
                 <ErpField label="فاكس" value={form.fax} onChange={v=>setF('fax',v)} placeholder="+962-6-..."/>
@@ -9314,7 +9315,8 @@ function CustomerDetail({ customer, user, profiles, onBack, onApprove, onReject 
           {(customer.name||'?').charAt(0)}
         </div>
         <div style={{flex:1}}>
-          <div style={{fontSize:20,fontWeight:900,color:'#1a2e3d',marginBottom:6}}>{customer.name}</div>
+          <div style={{fontSize:20,fontWeight:900,color:'#1a2e3d',marginBottom:customer.name_en?2:6}}>{customer.name}</div>
+          {customer.name_en && <div style={{fontSize:12,color:'#7a8fa6',marginBottom:6}} dir="ltr">{customer.name_en}</div>}
           <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
             {customer.approval_status === 'pending' && <span className="erp-badge erp-badge-warning">⏳ قيد الموافقة</span>}
             {customer.approval_status === 'rejected' && <span className="erp-badge erp-badge-danger">❌ مرفوض</span>}
