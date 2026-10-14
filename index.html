@@ -24495,7 +24495,7 @@ const hrDefaultWeeklySchedule = () => {
   const sch = {};
   for (let d=0; d<7; d++) {
     const weekendDay = d===5 || d===6; // جمعة وسبت
-    sch[d] = { is_work_day: !weekendDay, start: weekendDay?'':'08:00', end: weekendDay?'':'17:00', break_minutes: weekendDay?0:60 };
+    sch[d] = { is_work_day: !weekendDay, start: weekendDay?'':'09:00', end: weekendDay?'':'17:00', break_minutes: weekendDay?0:60 };
   }
   return sch;
 };
@@ -25416,27 +25416,25 @@ const attDepartureHours = (rec) => {
 const fmtHours = (h) => h ? (Math.round(h*10)/10).toLocaleString('ar') : '0';
 const MONTHS_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 
-// منتقي وقت مخصص (ساعة / دقيقة / ص-م) بدل input[type=time] الأصلي —
+// منتقي وقت مخصص (ساعة / ص-م، بدون دقائق) بدل input[type=time] الأصلي —
 // المتصفح بيعرض AM/PM بالإنجليزي حتى مع lang="ar"، وحتى وقت الاختيار نفسه (الأداة الأصلية)،
-// فبنبني أدواتنا الخاصة اللي كلها عربي من الداخل. القيمة المخزّنة تبقى "HH:MM" بصيغة 24 ساعة.
-const ATT_MINUTES_12 = Array.from({length:60}, (_,i) => String(i).padStart(2,'0'));
+// فبنبني أدواتنا الخاصة اللي كلها عربي من الداخل. القيمة المخزّنة تبقى "HH:00" بصيغة 24 ساعة.
 const ATT_HOURS_12   = Array.from({length:12}, (_,i) => i+1);
+// بالساعة فقط بدون دقائق — دوام الموظفين كله بالساعات الكاملة، فمنخزّن دايماً "HH:00"
 function TimeInputAr({ value, onChange, disabled, title, style }) {
-  const [hStr, mStr] = (value || '').split(':');
+  const [hStr] = (value || '').split(':');
   const h24 = hStr ? Number(hStr) : null;
-  const m   = (value && mStr !== undefined) ? Number(mStr) : null;
   const period = h24 === null ? 'ص' : (h24 >= 12 ? 'م' : 'ص');
   const h12 = h24 === null ? '' : (h24 % 12 === 0 ? 12 : h24 % 12);
-  const mm  = m === null ? '00' : String(m).padStart(2,'0');
 
-  const emit = (h12v, mv, per) => {
+  const emit = (h12v, per) => {
     if (h12v === '') { onChange({ target:{ value:'' } }); return; }
     let hh = Number(h12v) % 12;
     if (per === 'م') hh += 12;
-    onChange({ target:{ value: `${String(hh).padStart(2,'0')}:${mv}` } });
+    onChange({ target:{ value: `${String(hh).padStart(2,'0')}:00` } });
   };
 
-  // صندوق واحد مُجمّع (ساعة : دقيقة | ص-م) بدل 3 عناصر منفصلة —
+  // صندوق واحد مُجمّع (ساعة | ص-م) بدل 3 عناصر منفصلة —
   // كان كل select بالسابق ياخد className="form-control" مباشرة، وCSS الكلاس بيفرض width:100%
   // على سيلكت الـص/م اللي كان flex:'0 0 auto'، فيكسّر الصف كامل بفورم الموظف (بدي اختار اوقات دوامه مش زابط).
   // هلأ className ما بينزل على الـselects الداخلية إطلاقاً، فما في تعارض عرض.
@@ -25451,15 +25449,11 @@ function TimeInputAr({ value, onChange, disabled, title, style }) {
       border:'1.5px solid var(--gray-200)', borderRadius:8,
       background: disabled ? 'var(--gray-50)' : '#fff', ...style,
     }}>
-      <select disabled={disabled} value={h12} onChange={e=>emit(e.target.value, mm, period)} style={partStyle}>
+      <select disabled={disabled} value={h12} onChange={e=>emit(e.target.value, period)} style={partStyle}>
         <option value="">-</option>
         {ATT_HOURS_12.map(h => <option key={h} value={h}>{h}</option>)}
       </select>
-      <span style={{color:'var(--gray-300)', fontWeight:700, padding:'7px 0', flexShrink:0}}>:</span>
-      <select disabled={disabled} value={mm} onChange={e=>emit(h12===''?'1':h12, e.target.value, period)} style={partStyle}>
-        {ATT_MINUTES_12.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
-      <select disabled={disabled} value={period} onChange={e=>emit(h12===''?'1':h12, mm, e.target.value)}
+      <select disabled={disabled} value={period} onChange={e=>emit(h12===''?'1':h12, e.target.value)}
         style={{...partStyle, flex:'0 0 auto', minWidth:30, borderInlineStart:'1.5px solid var(--gray-200)', background: disabled?'transparent':'var(--gray-50)'}}>
         <option value="ص">ص</option>
         <option value="م">م</option>
@@ -25600,7 +25594,7 @@ function HRAttendanceRegister() {
       {loading ? (
         <div style={{textAlign:'center', padding:40, color:'var(--gray-400)'}}>جاري التحميل...</div>
       ) : (
-        <div style={{display:'flex', flexDirection:'column', gap:8}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px,1fr))', gap:8}}>
           {days.map(day => {
             const rec = getDay(day);
             const status = rec.status;
@@ -25610,53 +25604,39 @@ function HRAttendanceRegister() {
             const hours = attHours(rec);
             return (
               <div key={day} style={{
-                display:'flex', alignItems:'center', gap:16, flexWrap:'wrap', padding:'10px 16px',
+                display:'flex', flexDirection:'column', gap:6, padding:'8px 10px',
                 borderRadius:10, border:'1.5px solid #e2edf5',
                 background: weekend && !worked ? '#f8fafc' : '#fff',
               }}>
-                <div style={{display:'flex', flexDirection:'column', alignItems:'center', width:46, flexShrink:0}}>
-                  <div style={{fontSize:17, fontWeight:800, color: weekend&&!worked ? 'var(--gray-400)' : 'var(--gray-700)'}}>{day}</div>
-                  <div style={{fontSize:10, color:'var(--gray-400)'}}>{getDayName(day)}</div>
+                <div style={{display:'flex', alignItems:'baseline', justifyContent:'space-between'}}>
+                  <span style={{fontSize:16, fontWeight:800, color: weekend&&!worked ? 'var(--gray-400)' : 'var(--gray-700)'}}>{day}</span>
+                  <span style={{fontSize:10, color:'var(--gray-400)'}}>{getDayName(day)}</span>
                 </div>
 
                 <select value={status} onChange={e => setDay(day, { status: e.target.value })} disabled={!canEdit}
                   style={{
-                    fontSize:12, borderRadius:20, cursor: canEdit ? 'pointer':'default', width:150, flexShrink:0,
+                    fontSize:11, borderRadius:20, cursor: canEdit ? 'pointer':'default', width:'100%',
                     textAlign:'center', fontWeight:700, outline:'none',
                     background: att ? att.color : ATT_MAP['present'].color,
-                    color:'white', border:'none', padding:'6px 10px', appearance:'auto',
+                    color:'white', border:'none', padding:'4px 6px', appearance:'auto',
                   }}>
                   {ATT_STATUS.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
 
-                {worked ? (
-                  <div style={{display:'flex', alignItems:'center', gap:18, flexWrap:'wrap', flex:1}}>
-                    <div style={{display:'flex', flexDirection:'column', gap:3, minWidth:110}}>
-                      <span style={{fontSize:10, color:'var(--gray-500)', fontWeight:600}}>وقت الحضور</span>
-                      <TimeInputAr value={rec.check_in} disabled={!canEdit} onChange={e=>setDay(day,{check_in:e.target.value})} title="وقت الحضور"/>
-                    </div>
-                    <div style={{display:'flex', flexDirection:'column', gap:3, minWidth:110}}>
-                      <span style={{fontSize:10, color:'var(--gray-500)', fontWeight:600}}>وقت المغادرة</span>
-                      <TimeInputAr value={rec.check_out} disabled={!canEdit} onChange={e=>setDay(day,{check_out:e.target.value})} title="وقت المغادرة"/>
-                    </div>
-                    {status==='departure_official' && (<>
-                      <div style={{display:'flex', flexDirection:'column', gap:3, minWidth:110}}>
-                        <span style={{fontSize:10, color:'var(--gray-500)', fontWeight:600}}>المغادرة من الساعة</span>
+                {worked && (
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    <TimeInputAr value={rec.check_in} disabled={!canEdit} onChange={e=>setDay(day,{check_in:e.target.value})} title="وقت الحضور"/>
+                    <TimeInputAr value={rec.check_out} disabled={!canEdit} onChange={e=>setDay(day,{check_out:e.target.value})} title="وقت المغادرة"/>
+                    {status==='departure_official' && (
+                      <div style={{display:'flex', gap:4}}>
                         <TimeInputAr value={rec.departure_start} disabled={!canEdit} onChange={e=>setDay(day,{departure_start:e.target.value})} title="فترة المغادرة - من الساعة"/>
-                      </div>
-                      <div style={{display:'flex', flexDirection:'column', gap:3, minWidth:110}}>
-                        <span style={{fontSize:10, color:'var(--gray-500)', fontWeight:600}}>المغادرة إلى الساعة</span>
                         <TimeInputAr value={rec.departure_end} disabled={!canEdit} onChange={e=>setDay(day,{departure_end:e.target.value})} title="فترة المغادرة - إلى الساعة"/>
                       </div>
-                    </>)}
+                    )}
+                    {hours>0 && (
+                      <div style={{textAlign:'center', fontSize:11, fontWeight:700, color:'#1d4ed8'}}>{fmtHours(hours)} ساعة</div>
+                    )}
                   </div>
-                ) : <div style={{flex:1}}/>}
-
-                {hours>0 && (
-                  <span style={{
-                    display:'flex', alignItems:'center', gap:4, fontSize:12, fontWeight:700, padding:'5px 12px',
-                    borderRadius:20, background:'#dbeafe', color:'#1d4ed8', flexShrink:0, marginInlineStart:'auto',
-                  }}>{fmtHours(hours)} ساعة</span>
                 )}
               </div>
             );
