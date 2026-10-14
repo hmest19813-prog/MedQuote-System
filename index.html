@@ -20955,7 +20955,7 @@ function ChangelogForm({ entry, user, onClose, onSaved }) {
    المعرّفات السبعة الأساسية والفرعية اللي تحتها مزروعة بـ id ثابت بالـ seed
    حتى تصنيفات الكتب القديمة (المخزّنة كنص مسطّح) تربط عليها صح. */
 const LETTER_CAT_OTHER_ID = '00000000-0000-0000-0000-000000000007';
-// تصنيف "موارد بشرية" الرئيسي — كتبه تُدار من صفحة الموارد البشرية بدل الديوان (نفس جدول official_letters وتسلسل الترقيم، فقط مكان العرض يتغيّر)
+// تصنيف "موارد بشرية" الرئيسي — كتبه تُدار من صفحة الموارد البشرية بدل الديوان (نفس جدول official_letters، لكن تسلسل ترقيم مستقل بذاته بدأ من 1 — راجع sql_archive/hr_letters_independent_number_sequence.sql)
 const HR_LETTER_CAT_MAIN_ID = 'a78b584f-552c-4015-a8cc-471a62cc49f8';
 
 // تصنيفات قديمة كانت مخزّنة كقيمة مسطّحة — تُعاد لمعرّف التصنيف الجديد المكافئ لها للعرض والفلترة
@@ -21097,7 +21097,7 @@ function LettersPage({ user, scope='diwan' }) {
 
   const catTree = buildLetterCatTree(categories); // شجرة كاملة بكل التصنيفات — تُستخدم فقط لفحص عضوية تصنيف "موارد بشرية"
   const inHrScope = (category) => letterCatMainId(catTree, category) === HR_LETTER_CAT_MAIN_ID;
-  // كتب "موارد بشرية" تظهر فقط ضمن صفحة الموارد البشرية، وتبقى مخفية عن قائمة الديوان — نفس الجدول ونفس تسلسل الترقيم
+  // كتب "موارد بشرية" تظهر فقط ضمن صفحة الموارد البشرية، وتبقى مخفية عن قائمة الديوان — نفس الجدول، تسلسل ترقيم مستقل
   const scopedCategories = categories.filter(c => scope==='hr' ? (c.id===HR_LETTER_CAT_MAIN_ID || c.parent_id===HR_LETTER_CAT_MAIN_ID) : (c.id!==HR_LETTER_CAT_MAIN_ID && c.parent_id!==HR_LETTER_CAT_MAIN_ID));
   const visibleCatTree = buildLetterCatTree(scopedCategories);
 
@@ -21620,6 +21620,16 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
       .then(({data})=>setLinkedCustomerName(data?.name || null));
   }, [form.customer_id]);
 
+  // تسلسل ترقيم كتب "موارد بشرية" مستقل عن تسلسل الديوان — نجيب كل معرّفات
+  // تصنيف موارد بشرية وفروعه (بغض النظر عن نطاق categories المُمرّر، اللي ممكن يكون مُفلتَر لنطاق واحد)
+  // حتى نقدر نحسب رقم الكتاب الجديد ضمن نطاقه الصحيح لحاله بدل تسلسل عالمي واحد
+  const [hrCategoryIds, setHrCategoryIds] = useState([]);
+  useEffect(() => {
+    sb.from('letter_categories').select('id,parent_id').then(({data}) => {
+      setHrCategoryIds((data||[]).filter(c => c.id===HR_LETTER_CAT_MAIN_ID || c.parent_id===HR_LETTER_CAT_MAIN_ID).map(c=>c.id));
+    });
+  }, []);
+
   /* يحقن بيانات الكتاب (السادة/عناية/التاريخ/الموضوع) كنص عادي بأول صندوق التحرير —
      نص حر بعدها، المستخدم يقدر يعدّله أو يحذف أي سطر منه متل أي نص كتبه بنفسه */
   const insertInfoAsText = () => {
@@ -21732,7 +21742,13 @@ function LetterForm({ user, letter, contacts, letters, categories, onCategoriesC
         if (error) throw error;
         savedRow = data;
       } else {
-        const { data: maxRow } = await sb.from('official_letters').select('number').order('number',{ascending:false}).limit(1);
+        // كتب "موارد بشرية" تسلسلها مستقل عن الديوان — نحصر البحث عن آخر رقم بنفس النطاق
+        const isHrLetter = hrCategoryIds.includes(form.category);
+        let maxQuery = sb.from('official_letters').select('number').order('number',{ascending:false}).limit(1);
+        if (hrCategoryIds.length) {
+          maxQuery = isHrLetter ? maxQuery.in('category', hrCategoryIds) : maxQuery.not('category', 'in', `(${hrCategoryIds.join(',')})`);
+        }
+        const { data: maxRow } = await maxQuery;
         payload.number = (maxRow?.[0]?.number || 0) + 1;
         payload.created_by = user?.id || null;
         const { data, error } = await sb.from('official_letters').insert(payload).select().single();
