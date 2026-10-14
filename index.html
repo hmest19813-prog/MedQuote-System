@@ -8960,7 +8960,7 @@ function CustomerForm({ customer, profiles: profilesProp, user, onSave, onClose 
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:920,maxHeight:'90vh',overflowY:'auto'}}>
         <div className="modal-header" style={{background:'linear-gradient(135deg,#1C6A99,#2B8FC4)',color:'white',borderRadius:'12px 12px 0 0',position:'sticky',top:0,zIndex:10}}>
-          <span className="modal-title" style={{color:'white'}}>{customer ? 'تعديل بيانات العميل' : 'إضافة عميل جديد'}</span>
+          <span className="modal-title" style={{color:'white'}}>{customer?.id ? 'تعديل بيانات العميل' : 'إضافة عميل جديد'}</span>
           <button className="modal-close" style={{color:'white',opacity:1}} onClick={onClose}>✕</button>
         </div>
         <div style={{background:'#f0f4f8',padding:'20px'}}>
@@ -12285,10 +12285,17 @@ function CustomersPage({ user }) {
   const visibleCustomers = customers.filter(c => c.approval_status !== 'rejected' && c.approval_status !== 'pending' && !c.deleted_at);
   const deletedCustomers = customers.filter(c => c.deleted_at).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
 
-  const usedCities = [...new Set(visibleCustomers.map(c=>c.city).filter(Boolean))].sort();
-  const usedCategories = [...new Set(visibleCustomers.map(c=>c.category).filter(Boolean))].sort();
+  // "العملاء الأفراد" تبويب مستقل لكل عميل مصنّف "أفراد" — يختفي من تبويب "العملاء" العادي حتى لا يتكرر
+  // المقارنة متسامحة مع اختلاف همزة الألف (أفراد/افراد/إفراد) لأن المستخدمين بيكتبوها بأشكال مختلفة
+  const isIndividualCat = (cat) => (cat||'').trim().replace(/[إأآ]/g,'ا') === 'افراد';
+  const individualCustomers = visibleCustomers.filter(c => isIndividualCat(c.category));
+  const institutionCustomers = visibleCustomers.filter(c => !isIndividualCat(c.category));
+  const baseList = tab === 'individuals' ? individualCustomers : institutionCustomers;
 
-  const filtered = visibleCustomers.filter(c => {
+  const usedCities = [...new Set(baseList.map(c=>c.city).filter(Boolean))].sort();
+  const usedCategories = [...new Set(baseList.map(c=>c.category).filter(Boolean))].sort();
+
+  const filtered = baseList.filter(c => {
     if (cityFilter !== 'all' && c.city !== cityFilter) return false;
     if (categoryFilter !== 'all' && c.category !== categoryFilter) return false;
     if (repFilter !== 'all' && (c.assigned_to||'') !== repFilter) return false;
@@ -12331,7 +12338,7 @@ function CustomersPage({ user }) {
           </div>
         </div>
         <div style={{flex:1}}/>
-        {tab==='customers' && <>
+        {(tab==='customers' || tab==='individuals') && <>
           <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1.5px solid var(--primary)',flexShrink:0}}>
             <button type="button" onClick={()=>setViewMode('cards')} title="بطاقات"
               style={{padding:'7px 12px',fontSize:13,border:'none',cursor:'pointer',background: viewMode==='cards'?'var(--primary)':'#fff',color: viewMode==='cards'?'#fff':'var(--primary)'}}>🔳</button>
@@ -12363,28 +12370,29 @@ function CustomersPage({ user }) {
             </div>
           </FilterPopover>
           {hasPerm(user, 'customers_delete') && <button className="btn btn-ghost" onClick={()=>setShowListMgr(true)} style={{whiteSpace:'nowrap'}}>⚙️ إدارة القوائم</button>}
-          {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
+          {hasPerm(user, 'customers_create') && <button className="btn btn-primary" onClick={()=>{ setEditing(tab==='individuals' ? {category: individualCustomers[0]?.category || 'أفراد'} : null); setShowForm(true); }} style={{whiteSpace:'nowrap'}}>➕ عميل جديد</button>}
         </>}
       </div>
 
       {/* Tabs */}
       <div style={{background:'#fff',borderLeft:'1.5px solid #e2edf5',borderRight:'1.5px solid #e2edf5',display:'flex',gap:0,marginBottom:16,borderBottom:'1.5px solid #e2edf5'}}>
-        <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({visibleCustomers.length})</button>
+        <button style={tabStyle('customers')} onClick={()=>setTab('customers')}>🏢 العملاء ({institutionCustomers.length})</button>
+        <button style={tabStyle('individuals')} onClick={()=>setTab('individuals')}>👤 عملاء أفراد {individualCustomers.length>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{individualCustomers.length}</span>}</button>
         {hasPerm(user,'customers_approve') && <button style={tabStyle('approvals')} onClick={()=>setTab('approvals')}>⏳ بانتظار الموافقة {pendingCustomers.length>0 && <span style={{background:'#B45309',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{pendingCustomers.length}</span>}</button>}
         {hasPerm(user,'prospects_access') && <button style={tabStyle('prospects')} onClick={()=>setTab('prospects')}>🎯 المحتملون {prospectCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{prospectCount}</span>}</button>}
-        <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء الأونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
+        <button style={tabStyle('online')} onClick={()=>setTab('online')}>🛒 عملاء اونلاين {onlineCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{onlineCount}</span>}</button>
         <button style={tabStyle('export')} onClick={()=>setTab('export')}>🌍 عملاء التصدير {exportCount>0 && <span style={{background:'var(--primary)',color:'#fff',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{exportCount}</span>}</button>
-        {hasPerm(user,'customers_delete') && <button style={tabStyle('deleted')} onClick={()=>setTab('deleted')}>🗑️ العملاء المحذوفون {deletedCustomers.length>0 && <span style={{background:'#fee2e2',color:'var(--danger)',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{deletedCustomers.length}</span>}</button>}
+        {hasPerm(user,'customers_delete') && <button style={tabStyle('deleted')} onClick={()=>setTab('deleted')}>🗑️ عملاء محذوفون {deletedCustomers.length>0 && <span style={{background:'#fee2e2',color:'var(--danger)',borderRadius:20,fontSize:10,padding:'1px 6px',marginRight:4}}>{deletedCustomers.length}</span>}</button>}
       </div>
 
-      {tab === 'customers' && <>
+      {(tab === 'customers' || tab === 'individuals') && <>
         <div style={{marginTop:16}}/>
         {loading ? <div style={{textAlign:'center',padding:60}}><div className="spinner" style={{margin:'auto'}}/></div> : (
           filtered.length === 0 ? (
             <div className="empty-state" style={{padding:'60px 20px',background:'#fff',borderRadius:12,border:'1.5px solid #e2edf5'}}>
-              <div style={{fontSize:48,marginBottom:12}}>🏢</div>
-              <p>لا يوجد عملاء مطابقون</p>
-              <small>{customers.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث أو الفلاتر'}</small>
+              <div style={{fontSize:48,marginBottom:12}}>{tab==='individuals' ? '👤' : '🏢'}</div>
+              <p>{tab==='individuals' ? 'لا يوجد عملاء أفراد مطابقون' : 'لا يوجد عملاء مطابقون'}</p>
+              <small>{baseList.length===0 ? 'اضغط "عميل جديد" لإضافة أول عميل' : 'جرّب تغيير كلمة البحث أو الفلاتر'}</small>
             </div>
           ) : viewMode === 'list' ? (
             <div className="card">
@@ -12419,7 +12427,7 @@ function CustomersPage({ user }) {
           ) : (
             <div style={ENTITY_GRID_STYLE}>
               {filtered.map(c=>(
-                <EntityCard key={c.id} onClick={()=>setSelected(c)} avatar="🏢" title={c.name} subtitle={c.customer_code||'—'}
+                <EntityCard key={c.id} onClick={()=>setSelected(c)} avatar={tab==='individuals' ? '👤' : '🏢'} title={c.name} subtitle={c.customer_code||'—'}
                   badge={<>
                     {c.approval_status==='pending' && <span className="erp-badge erp-badge-warning" style={{fontSize:10,whiteSpace:'nowrap'}}>⏳ قيد الموافقة</span>}
                     {c.category && <span className="erp-badge erp-badge-primary" style={{fontSize:10,whiteSpace:'nowrap'}}>{c.category}</span>}
