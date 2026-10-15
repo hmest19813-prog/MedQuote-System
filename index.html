@@ -4060,16 +4060,17 @@ function DeletedQuotesPage({ user, quotes, onReload }) {
 }
 
 /* ===================== ARCHIVE MODAL ===================== */
-function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
+function ArchiveModal({ label, onConfirm, onClose, initialNote='', icon='🗄️', fieldLabel='سبب الأرشفة', placeholder='مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة...', required=true, requiredMsg='هذا الحقل إلزامي — لا يمكن الأرشفة بدون سبب', confirmLabel='تأكيد الأرشفة', suggestionsTable='archive_reasons' }) {
   const [note, setNote] = React.useState(initialNote);
   const [allReasons, setAllReasons] = React.useState([]);
   const [suggestions, setSuggestions] = React.useState([]);
   const [showSug, setShowSug] = React.useState(false);
 
   React.useEffect(() => {
-    sb.from('archive_reasons').select('reason').order('last_used_at', {ascending:false}).limit(50)
+    if (!suggestionsTable) return;
+    sb.from(suggestionsTable).select('reason').order('last_used_at', {ascending:false}).limit(50)
       .then(({data}) => setAllReasons((data||[]).map(r=>r.reason)));
-  }, []);
+  }, [suggestionsTable]);
 
   const handleChange = (val) => {
     setNote(val);
@@ -4087,11 +4088,13 @@ function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
 
   const handleConfirm = async () => {
     const trimmed = note.trim();
-    if (!trimmed && !isSuperAdmin()) { toast('يجب إدخال سبب الأرشفة', 'error'); return; }
-    await sb.from('archive_reasons').upsert(
-      { reason: trimmed, last_used_at: new Date().toISOString() },
-      { onConflict: 'reason' }
-    );
+    if (required && !trimmed && !isSuperAdmin()) { toast(`يجب إدخال ${fieldLabel}`, 'error'); return; }
+    if (suggestionsTable && trimmed) {
+      await sb.from(suggestionsTable).upsert(
+        { reason: trimmed, last_used_at: new Date().toISOString() },
+        { onConflict: 'reason' }
+      );
+    }
     onConfirm(trimmed);
   };
 
@@ -4099,17 +4102,17 @@ function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
     <div className="modal-overlay">
       <div className="modal" style={{maxWidth:420}}>
         <div className="modal-header">
-          <span className="modal-title">🗄️ {label}</span>
+          <span className="modal-title">{icon} {label}</span>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{paddingBottom: showSug ? 190 : undefined}}>
           <div className="form-group" style={{position:'relative'}}>
-            <label className="form-label">سبب الأرشفة <span style={{color:'var(--danger)'}}>*</span></label>
+            <label className="form-label">{fieldLabel} {required && <span style={{color:'var(--danger)'}}>*</span>}</label>
             <input className="form-control" value={note} onChange={e=>handleChange(e.target.value)}
               onBlur={()=>setTimeout(()=>setShowSug(false),150)}
-              placeholder="مثال: رفض العميل، تجاوز المنافسة، انتهت الحاجة..." autoComplete="off"
-              style={!note.trim() ? {borderColor:'var(--danger)'} : undefined}/>
-            {!note.trim() && <p style={{color:'var(--danger)',fontSize:12,marginTop:5,marginBottom:0}}>⚠️ هذا الحقل إلزامي — لا يمكن الأرشفة بدون سبب</p>}
+              placeholder={placeholder} autoComplete="off"
+              style={required && !note.trim() ? {borderColor:'var(--danger)'} : undefined}/>
+            {required && !note.trim() && <p style={{color:'var(--danger)',fontSize:12,marginTop:5,marginBottom:0}}>⚠️ {requiredMsg}</p>}
             {showSug && (
               <div style={{position:'absolute',top:'100%',marginTop:4,right:0,left:0,background:'var(--white)',border:'1px solid var(--gray-200)',borderRadius:8,boxShadow:'0 4px 16px rgba(0,0,0,.1)',zIndex:999,maxHeight:180,overflowY:'auto'}}>
                 {suggestions.map((r,i)=>(
@@ -4124,7 +4127,7 @@ function ArchiveModal({ label, onConfirm, onClose, initialNote='' }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>إلغاء</button>
-          <button className="btn btn-primary" onClick={handleConfirm} disabled={!note.trim()}>تأكيد الأرشفة</button>
+          <button className="btn btn-primary" onClick={handleConfirm} disabled={required && !note.trim()}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -4513,6 +4516,8 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
   const [archiveConvertedQ, setArchiveConvertedQ] = useState(null);
   const [archiveTarget, setArchiveTarget] = useState(null);
   const [editArchiveTarget, setEditArchiveTarget] = useState(null);
+  const [referenceTarget, setReferenceTarget] = useState(null);
+  const [editReferenceTarget, setEditReferenceTarget] = useState(null);
   const [editDeleteTarget, setEditDeleteTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [discussTarget, setDiscussTarget]   = useState(null);
@@ -4841,6 +4846,8 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
   const altCoQuotes   = active.filter(isAltCo);
   const archivedQuotesOnly = visibleQuotes.filter(q => q.archived && q.quote_type !== 'tender');
   const archivedTendersOnly = visibleQuotes.filter(q => q.archived && q.quote_type === 'tender');
+  const referenceQuotesOnly = visibleQuotes.filter(q => q.is_reference && q.quote_type !== 'tender' && !q.deleted_at);
+  const referenceTendersOnly = visibleQuotes.filter(q => q.is_reference && q.quote_type === 'tender' && !q.deleted_at);
   const deletedQuotes  = visibleQuotes.filter(q => q.deleted_at && (isTenderScope ? q.quote_type === 'tender' : q.quote_type !== 'tender')).sort((a,b)=>new Date(b.deleted_at)-new Date(a.deleted_at));
   const [archiveSearch, setArchiveSearch] = useState('');
   const [deletedSearch, setDeletedSearch] = useState('');
@@ -4914,6 +4921,8 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
   };
   const filteredArchiveOfficial = archivedQuotesOnly.filter(archiveFilterFn).sort(sortByNum);
   const filteredArchiveTenders = archivedTendersOnly.filter(archiveFilterFn).sort(sortByNum);
+  const filteredReferenceOfficial = referenceQuotesOnly.filter(archiveFilterFn).sort(sortByNum);
+  const filteredReferenceTenders = referenceTendersOnly.filter(archiveFilterFn).sort(sortByNum);
   const filteredDeleted = deletedQuotes.filter(q =>
     !deletedSearch || q.customer_name?.toLowerCase().includes(deletedSearch.toLowerCase()) || q.number?.includes(deletedSearch)
   );
@@ -5218,6 +5227,27 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
     toast('تم تحديث سبب الأرشفة ✓', 'success'); onReload();
   };
 
+  const doSetReference = async (note) => {
+    const q = referenceTarget;
+    setReferenceTarget(null);
+    await sb.from('quotations').update({ is_reference:true, reference_note: note||null }).eq('id', q.id);
+    createLog(user, `وضع العرض ${q.number} كمرجع${note ? ` — ${note}` : ''}`, 'quote', q.id, q.number);
+    toast('تمت الإضافة للمراجع ✓', 'success'); onReload();
+  };
+
+  const doEditReferenceNote = async (note) => {
+    const q = editReferenceTarget;
+    setEditReferenceTarget(null);
+    await sb.from('quotations').update({ reference_note: note||null }).eq('id', q.id);
+    toast('تم تحديث ملاحظة المرجع ✓', 'success'); onReload();
+  };
+
+  const removeReference = async (q) => {
+    await sb.from('quotations').update({ is_reference:false, reference_note:null }).eq('id', q.id);
+    createLog(user, `أزال العرض ${q.number} من المراجع`, 'quote', q.id, q.number);
+    toast('تمت الإزالة من المراجع', 'success'); onReload();
+  };
+
   const doEditDeleteReason = async (reason) => {
     const q = editDeleteTarget;
     setEditDeleteTarget(null);
@@ -5246,9 +5276,9 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
     setEditing({ ...q, _convertToInvoice: true });
   };
 
-  const isQuotesGroup = tab === 'official' || tab === 'archive_official';
+  const isQuotesGroup = tab === 'official' || tab === 'archive_official' || tab === 'reference_official';
   // بسكوب العطاءات، المسودات والمحذوفة صاروا تبويبات فرعية تحت "العطاءات" (مو مستقلين بالصف الأول)
-  const isTendersGroup = tab === 'tenders' || tab === 'archive_tenders' || (isTenderScope && (tab === 'drafts' || tab === 'deleted'));
+  const isTendersGroup = tab === 'tenders' || tab === 'archive_tenders' || tab === 'reference_tenders' || (isTenderScope && (tab === 'drafts' || tab === 'deleted'));
 
   return (
     <div>
@@ -5314,6 +5344,11 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
           <button onClick={()=>setTab('archive_official')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='archive_official'?'var(--primary)':'#e5e7eb',background:tab==='archive_official'?'var(--primary)':'#f9fafb',color:tab==='archive_official'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
             مؤرشفة <span style={{opacity:.8}}>({archivedQuotesOnly.length})</span>
           </button>
+          {hasPerm(user,'quotes_reference_access') && (
+          <button onClick={()=>setTab('reference_official')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='reference_official'?'#0369a1':'#e5e7eb',background:tab==='reference_official'?'#0369a1':'#f9fafb',color:tab==='reference_official'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            🔖 مراجع <span style={{opacity:.8}}>({referenceQuotesOnly.length})</span>
+          </button>
+          )}
         </div>
         )}
         {isTenderScope && isTendersGroup && (
@@ -5324,6 +5359,11 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
           <button onClick={()=>setTab('archive_tenders')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='archive_tenders'?'#854d0e':'#e5e7eb',background:tab==='archive_tenders'?'#854d0e':'#f9fafb',color:tab==='archive_tenders'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
             مؤرشفة <span style={{opacity:.8}}>({archivedTendersOnly.length})</span>
           </button>
+          {hasPerm(user,'quotes_reference_access') && (
+          <button onClick={()=>setTab('reference_tenders')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='reference_tenders'?'#0369a1':'#e5e7eb',background:tab==='reference_tenders'?'#0369a1':'#f9fafb',color:tab==='reference_tenders'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
+            🔖 مراجع <span style={{opacity:.8}}>({referenceTendersOnly.length})</span>
+          </button>
+          )}
           <button onClick={()=>setTab('drafts')} style={{padding:'5px 14px',borderRadius:20,border:'1.5px solid',borderColor:tab==='drafts'?'#f59e0b':'#e5e7eb',background:tab==='drafts'?'#f59e0b':'#f9fafb',color:tab==='drafts'?'#fff':'#374151',fontSize:12,fontWeight:700,cursor:'pointer',transition:'all .15s'}}>
             المسودات <span style={{opacity:.8}}>({draftQuotes.length})</span>
           </button>
@@ -5376,6 +5416,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                   <button className="btn btn-ghost btn-sm" onClick={()=>setDiscussTarget(q)}>🗨️ نقاش</button>
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 مرفقات</button>
+                  {hasPerm(user,'quotes_reference_access') && <button className="btn btn-ghost btn-sm" style={{color:'#0369a1',borderColor:'#0369a1'}} onClick={()=> q.is_reference ? removeReference(q) : setReferenceTarget(q)}>🔖 {q.is_reference?'إزالة من المراجع':'إضافة كمرجع'}</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
@@ -5426,6 +5467,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                       { icon:'🗨️', label:'نقاش', onClick:()=>setDiscussTarget(q) },
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'📎', label:'مرفقات', onClick:()=>setAttachTarget(q) },
+                      { icon:'🔖', label: q.is_reference ? 'إزالة من المراجع' : 'إضافة كمرجع', hidden:!hasPerm(user,'quotes_reference_access'), onClick:()=> q.is_reference ? removeReference(q) : setReferenceTarget(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العرض قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
@@ -5478,6 +5520,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                   {q.status!=='converted'&&q.status!=='invoiced'&&<button className="btn btn-ghost btn-sm" onClick={()=>setOrderingQ(q)}>📦 طلب</button>}
                   <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>
                   <button className="btn btn-ghost btn-sm" style={{color:'#0f766e',borderColor:'#0f766e'}} onClick={()=>setGuaranteeTarget(q)}>📜 كفالات</button>
+                  {hasPerm(user,'quotes_reference_access') && <button className="btn btn-ghost btn-sm" style={{color:'#0369a1',borderColor:'#0369a1'}} onClick={()=> q.is_reference ? removeReference(q) : setReferenceTarget(q)}>🔖 {q.is_reference?'إزالة من المراجع':'إضافة كمرجع'}</button>}
                   <button className="btn btn-ghost btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setArchiveTarget(q);}}>🗄️ أرشفة</button>
                   {hasPerm(user,'quotes_delete')&&<button className="btn btn-danger btn-sm" onClick={()=>{if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;}setDeleteTarget(q);}}>🗑️ حذف</button>}
                 </div>
@@ -5527,6 +5570,7 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                       { icon:'📦', label:'طلب', hidden:q.status==='converted'||q.status==='invoiced', onClick:()=>setOrderingQ(q) },
                       { icon:'📎', label:'ملحقات', onClick:()=>setAttachTarget(q) },
                       { icon:'📜', label:'كفالات', onClick:()=>setGuaranteeTarget(q) },
+                      { icon:'🔖', label: q.is_reference ? 'إزالة من المراجع' : 'إضافة كمرجع', hidden:!hasPerm(user,'quotes_reference_access'), onClick:()=> q.is_reference ? removeReference(q) : setReferenceTarget(q) },
                       { icon:'🗄️', label:'أرشفة', onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setArchiveTarget(q); } },
                       { icon:'🗑️', label:'حذف', danger:true, hidden:!hasPerm(user,'quotes_delete'), onClick:()=>{ if(q.status==='sent' && !isSuperAdmin(user)){toast('⚠️ العطاء قيد الدراسة — غيّر الحالة أولاً','error');return;} setDeleteTarget(q); } },
                     ]}/>
@@ -5778,12 +5822,60 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
                       {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 ملحقات</button>}
                       {tab==='archive_official' && <button className="btn btn-ghost btn-sm" style={{color:'#854d0e',borderColor:'#854d0e'}} onClick={()=>setAttachTarget(q)}>📎 مرفقات</button>}
                       {tab==='archive_tenders' && <button className="btn btn-ghost btn-sm" style={{color:'#0f766e',borderColor:'#0f766e'}} onClick={()=>setGuaranteeTarget(q)}>📜 كفالات</button>}
+                      {hasPerm(user,'quotes_reference_access') && <button className="btn btn-ghost btn-sm" style={{color:'#0369a1',borderColor:'#0369a1'}} onClick={()=> q.is_reference ? removeReference(q) : setReferenceTarget(q)}>🔖 {q.is_reference?'إزالة من المراجع':'إضافة كمرجع'}</button>}
                       <button className="btn btn-ghost btn-sm" onClick={()=>restoreQ(q)}>↩ استعادة</button>
                     </div>
                   </td>
                 </tr>
               ))}
               {rows.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>الأرشيف فارغ</p></div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+        );
+      })()}
+
+      {(tab === 'reference_official' || tab === 'reference_tenders') && hasPerm(user,'quotes_reference_access') && (() => {
+        const rows = tab === 'reference_official' ? filteredReferenceOfficial : filteredReferenceTenders;
+        return (
+      <div className="card">
+        <div className="filter-bar">
+          <input className="search-input" placeholder="بحث بالاسم أو الرقم..." value={archiveSearch} onChange={e=>setArchiveSearch(e.target.value)}/>
+          <span style={{color:'var(--gray-400)',fontSize:13,marginRight:'auto'}}>{rows.length} عرض</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>الرقم</th><th>العميل</th><th>التاريخ</th><th>الحالة</th><th>ملاحظة المرجع</th><th></th>
+            </tr></thead>
+            <tbody>
+              {rows.map(q => (
+                <tr key={q.id}>
+                  <td className="font-bold">{q.number}</td>
+                  <td>{q.customer_name}</td>
+                  <td className="text-sm text-muted">{q.date}</td>
+                  <td style={{textAlign:'center'}}>
+                    <SBadge status={q.status}/>
+                    {q.archived && <div style={{fontSize:10,color:'var(--gray-400)',marginTop:2}}>🗄️ مؤرشف</div>}
+                  </td>
+                  <td className="text-sm text-muted" style={{maxWidth:220}}>
+                    {q.reference_note||'—'}
+                  </td>
+                  <td style={{textAlign:'center',padding:'8px 6px',whiteSpace:'nowrap'}}>
+                    <ActionMenu actions={[
+                      { icon:'👁', label:'معاينة', onClick:()=>openPreview(q) },
+                      { icon:'✏️', label:'تعديل', hidden:!(q.created_by===user?.id||hasPerm(user,'quotes_edit_all')), onClick:()=>setEditing(q) },
+                      { icon:'📝', label:'تعديل ملاحظة المرجع', onClick:()=>setEditReferenceTarget(q) },
+                      { icon:'📎', label: tab==='reference_tenders' ? 'ملحقات' : 'مرفقات', onClick:()=>setAttachTarget(q) },
+                      { icon:'📜', label:'كفالات', hidden: tab!=='reference_tenders', onClick:()=>setGuaranteeTarget(q) },
+                      { icon:'↩️', label:'استعادة من الأرشيف', hidden:!q.archived, onClick:()=>restoreQ(q) },
+                      { icon:'🔖', label:'إزالة من المراجع', danger:true, onClick:()=>removeReference(q) },
+                    ]}/>
+                  </td>
+                </tr>
+              ))}
+              {rows.length===0 && <tr><td colSpan="6"><div className="empty-state"><p>لا توجد مراجع</p></div></td></tr>}
             </tbody>
           </table>
         </div>
@@ -5862,6 +5954,8 @@ function QuotesList({ user, quotes, onReload, scope='quotes' }) {
       {archiveConvertedQ && <ArchiveModal label={`أرشفة العرض ${archiveConvertedQ.number}؟`} initialNote={`تم تحويل العرض إلى طلب${archiveConvertedQ._orderNo ? ` رقم ${archiveConvertedQ._orderNo}` : ''}`} onConfirm={doArchiveConverted} onClose={()=>setArchiveConvertedQ(null)}/>}
       {archiveTarget && <ArchiveModal label={`أرشفة العرض ${archiveTarget.number}`} onConfirm={doArchiveQ} onClose={()=>setArchiveTarget(null)}/>}
       {editArchiveTarget && <ArchiveModal label={`تعديل سبب أرشفة ${editArchiveTarget.number}`} initialNote={editArchiveTarget.archive_note||''} onConfirm={doEditArchiveNote} onClose={()=>setEditArchiveTarget(null)}/>}
+      {referenceTarget && <ArchiveModal label={`إضافة ${referenceTarget.number} كمرجع`} icon="🔖" fieldLabel="ملاحظة المرجع" placeholder="مثال: مرجعية لغايات التسعير..." required={false} confirmLabel="إضافة كمرجع" suggestionsTable={null} onConfirm={doSetReference} onClose={()=>setReferenceTarget(null)}/>}
+      {editReferenceTarget && <ArchiveModal label={`تعديل ملاحظة مرجع ${editReferenceTarget.number}`} icon="🔖" fieldLabel="ملاحظة المرجع" placeholder="مثال: مرجعية لغايات التسعير..." required={false} confirmLabel="حفظ" suggestionsTable={null} initialNote={editReferenceTarget.reference_note||''} onConfirm={doEditReferenceNote} onClose={()=>setEditReferenceTarget(null)}/>}
       {editDeleteTarget && <DeleteReasonModal quote={editDeleteTarget} initialReason={editDeleteTarget.delete_reason||''} editMode={true} onConfirm={doEditDeleteReason} onClose={()=>setEditDeleteTarget(null)}/>}
       {followUpTarget && <FollowUpModal quote={followUpTarget} user={user} onClose={()=>setFollowUpTarget(null)}/>}
       {discussTarget && <QuoteDiscussionModal quote={discussTarget} user={user} onClose={()=>setDiscussTarget(null)}/>}
@@ -8173,6 +8267,7 @@ const PERM_GROUPS = [
     { key: 'quotes_view_issuer',     label: 'مشاهدة مصدر العرض والتصفية حسبه' },
     { key: 'quotes_reassign_issuer', label: 'تغيير مُصدِر العرض (إحالة لموظف آخر)' },
     { key: 'deleted_quotes_access',  label: 'الوصول لعروض الأسعار المحذوفة' },
+    { key: 'quotes_reference_access', label: 'الوصول لتبويب المراجع (وضع/إزالة عرض أو عطاء كمرجع)' },
   ]},
   { label: 'الطلبات', icon: '📦', perms: [
     { key: 'orders_access', label: 'الوصول لصفحة الطلبات' },
@@ -8286,6 +8381,7 @@ const DEFAULT_EMPLOYEE_PERMS = {
   quotes_create: true,  quotes_clone: true,     quotes_clone_other_company: false, quotes_view_all: false, quotes_edit_all: false, quotes_delete: false,
   quotes_validity_override: false, quotes_view_issuer: false, quotes_reassign_issuer: false,
   deleted_quotes_access: false,
+  quotes_reference_access: false,
   orders_access: true,  orders_create: true,    orders_edit: true,      orders_delete: false,
   daily_orders_access: true, daily_orders_create: true, daily_orders_edit: true, daily_orders_delete: false, daily_orders_prepare: false,
   cashvan_access: false, cashvan_create: false, cashvan_edit: false, cashvan_delete: false, cashvan_view_all: false,
