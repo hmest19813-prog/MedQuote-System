@@ -12475,6 +12475,16 @@ function CustomersPage({ user }) {
     toast('تم الحذف النهائي','success'); load();
   };
 
+  const emptyDeletedCustomers = async () => {
+    if (deletedCustomers.length === 0) return;
+    if (!confirm(`حذف نهائي لكل العملاء المحذوفين (${deletedCustomers.length})؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    const ids = deletedCustomers.map(c => c.id);
+    const {error} = await sb.from('customers').delete().in('id', ids);
+    if(error) { toast('خطأ: ' + error.message,'error'); return; }
+    createLog(user, `تفريغ المحذوفات نهائياً (${ids.length} عميل)`, 'customer');
+    toast('تم تفريغ المحذوفات نهائياً','success'); load();
+  };
+
   const approveCustomer = async (c) => {
     const {error} = await sb.from('customers').update({
       approval_status:'approved', reviewed_by:user.id, reviewed_at:new Date().toISOString(), rejection_reason:null
@@ -12686,6 +12696,12 @@ function CustomersPage({ user }) {
             </div>
           ) : (
             <div className="card">
+              {user?.role === 'admin' && (
+                <div className="filter-bar">
+                  <div style={{flex:1}}/>
+                  <button className="btn btn-danger btn-sm" onClick={emptyDeletedCustomers} style={{whiteSpace:'nowrap'}}>🗑️ تفريغ المحذوفات نهائياً</button>
+                </div>
+              )}
               <div className="table-wrap">
                 <table>
                   <thead><tr>
